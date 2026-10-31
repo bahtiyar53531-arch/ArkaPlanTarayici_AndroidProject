@@ -1695,6 +1695,8 @@ jobs:
                 cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
                 cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
                 cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+                gh release delete v1.0 --yes || true
+                gh release delete v2.0 --yes || true
                 gh release delete v3.0 --yes || true
                 git tag -d v3.0 || true
                 gh release create v3.0 StarkChrome-8K-v3.apk StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkChrome 8K Ultra v3.0 (120 FPS + Chrome Arayuz + 8K Zoom + Bulut Kalkan)" --notes "StarkChrome 8K Ultra v3.0: 120Hz Maksimum FPS Motoru, 8K Ultra Cozunurluk (7680x4320) ve Yakinlastirma/Uzaklastirma (-/+), Tam Fonksiyonel Chrome Arayuzu ve Ayarlar Menusu, Boot/Kapanmama Bulut Arka Plan Kalkani."   run: gradle assembleDebug --no-daemon
