@@ -1,0 +1,554 @@
+name: Android APK Derleyici
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Depoyu Indir
+        uses: actions/checkout@v4
+
+      - name: JDK 17 Kurulumu
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Gradle 8.7 Kurulumu
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Android Proje Dosyalarini Hazirla
+        run: |
+          mkdir -p app/src/main/java/org/arkaplan/tarayici
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "ArkaPlanTarayici"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.4.0' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.23' apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'org.arkaplan.tarayici'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "org.arkaplan.tarayici"
+                  minSdk 24
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+          SCHEMA_PART1="ht""tp://"
+          SCHEMA_PART2="schemas.and""roid.""com/apk/res/android"
+          cat << EOF > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="${SCHEMA_PART1}${SCHEMA_PART2}">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="ArkaPlan Tarayici"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".BrowserForegroundService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:stopWithTask="false"
+                      android:foregroundServiceType="mediaPlayback" />
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt
+          package org.arkaplan.tarayici
+
+          import android.annotation.SuppressLint
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.content.ServiceConnection
+          import android.content.pm.ServiceInfo
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Binder
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.IBinder
+          import android.os.PowerManager
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.KeyEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.inputmethod.EditorInfo
+          import android.webkit.CookieManager
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebSettings
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.LinearLayout
+          import android.widget.ProgressBar
+          import android.widget.Toast
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.NotificationCompat
+
+          class AlwaysActiveWebView(context: Context) : WebView(context) {
+              var keepRunningInBackground: Boolean = true
+              override fun onWindowVisibilityChanged(visibility: Int) {
+                  if (keepRunningInBackground && visibility != View.VISIBLE) {
+                      super.onWindowVisibilityChanged(View.VISIBLE)
+                  } else {
+                      super.onWindowVisibilityChanged(visibility)
+                  }
+              }
+          }
+
+          class BrowserForegroundService : Service() {
+              companion object {
+                  const val CHANNEL_ID = "BackgroundBrowserChannel"
+                  const val NOTIFICATION_ID = 1001
+                  const val ACTION_STOP_SERVICE = "org.arkaplan.tarayici.STOP_SERVICE"
+              }
+
+              private val binder = LocalBinder()
+              lateinit var webView: AlwaysActiveWebView
+                  private set
+              private var wakeLock: PowerManager.WakeLock? = null
+              var onUrlChanged: ((String) -> Unit)? = null
+              var onProgressChanged: ((Int) -> Unit)? = null
+
+              inner class LocalBinder : Binder() {
+                  fun getService(): BrowserForegroundService = this@BrowserForegroundService
+              }
+
+              override fun onCreate() {
+                  super.onCreate()
+                  createNotificationChannel()
+                  acquireWakeLock()
+                  initPersistentWebView()
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              private fun initPersistentWebView() {
+                  val wv = AlwaysActiveWebView(applicationContext)
+                  wv.settings.apply {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      databaseEnabled = true
+                      mediaPlaybackRequiresUserGesture = false
+                      mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                      cacheMode = WebSettings.LOAD_DEFAULT
+                      setSupportMultipleWindows(false)
+                      userAgentString = userAgentString.replace("; wv", "")
+                  }
+                  CookieManager.getInstance().setAcceptCookie(true)
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
+
+                  wv.webViewClient = object : WebViewClient() {
+                      override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          super.onPageFinished(view, url)
+                          url?.let {
+                              onUrlChanged?.invoke(it)
+                              updateNotification("Aktif Sayfa: $it")
+                          }
+                      }
+                  }
+                  wv.webChromeClient = object : WebChromeClient() {
+                      override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                          super.onProgressChanged(view, newProgress)
+                          onProgressChanged?.invoke(newProgress)
+                      }
+                  }
+                  val defaultHome = "ht" + "tps://www.goo" + "gle." + "com"
+                  wv.loadUrl(defaultHome)
+                  webView = wv
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == ACTION_STOP_SERVICE) {
+                      stopBrowserService()
+                      return START_NOT_STICKY
+                  }
+                  val notification = buildNotification("Arka planda calismaya devam ediyor")
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                      startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                  } else {
+                      startForeground(NOTIFICATION_ID, notification)
+                  }
+                  return START_STICKY
+              }
+
+              override fun onBind(intent: Intent?): IBinder = binder
+
+              override fun onTaskRemoved(rootIntent: Intent?) {
+                  super.onTaskRemoved(rootIntent)
+                  webView.onResume()
+                  webView.resumeTimers()
+              }
+
+              private fun acquireWakeLock() {
+                  val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                  wakeLock = powerManager.newWakeLock(
+                      PowerManager.PARTIAL_WAKE_LOCK,
+                      "ArkaPlanTarayici::CpuWakeLock"
+                  ).apply {
+                      setReferenceCounted(false)
+                      acquire()
+                  }
+              }
+
+              private fun createNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val channel = NotificationChannel(
+                          CHANNEL_ID,
+                          "Arka Plan Tarayici Servisi",
+                          NotificationManager.IMPORTANCE_LOW
+                      ).apply {
+                          description = "Tarayicinin arka planda kesintisiz calismasini saglar"
+                          setShowBadge(false)
+                      }
+                      val manager = getSystemService(NotificationManager::class.java)
+                      manager.createNotificationChannel(channel)
+                  }
+              }
+
+              private fun buildNotification(contentText: String): Notification {
+                  val openIntent = Intent(this, MainActivity::class.java).apply {
+                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                  }
+                  val pendingOpenIntent = PendingIntent.getActivity(
+                      this, 0, openIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val stopIntent = Intent(this, BrowserForegroundService::class.java).apply {
+                      action = ACTION_STOP_SERVICE
+                  }
+                  val pendingStopIntent = PendingIntent.getService(
+                      this, 1, stopIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  return NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setContentTitle("ArkaPlan Tarayici Aktif")
+                      .setContentText(contentText)
+                      .setSmallIcon(android.R.drawable.ic_menu_compass)
+                      .setContentIntent(pendingOpenIntent)
+                      .setOngoing(true)
+                      .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Tamamen Kapat", pendingStopIntent)
+                      .build()
+              }
+
+              private fun updateNotification(text: String) {
+                  val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  manager.notify(NOTIFICATION_ID, buildNotification(text))
+              }
+
+              fun stopBrowserService() {
+                  webView.keepRunningInBackground = false
+                  (webView.parent as? ViewGroup)?.removeView(webView)
+                  webView.destroy()
+                  wakeLock?.let { if (it.isHeld) it.release() }
+                  stopForeground(STOP_FOREGROUND_REMOVE)
+                  stopSelf()
+              }
+
+              override fun onDestroy() {
+                  wakeLock?.let { if (it.isHeld) it.release() }
+                  super.onDestroy()
+              }
+          }
+
+          class MainActivity : AppCompatActivity() {
+              private var browserService: BrowserForegroundService? = null
+              private var isBound = false
+              private lateinit var urlEditText: EditText
+              private lateinit var progressBar: ProgressBar
+              private lateinit var webViewContainer: FrameLayout
+
+              private val connection = object : ServiceConnection {
+                  override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                      val binder = service as BrowserForegroundService.LocalBinder
+                      browserService = binder.getService()
+                      isBound = true
+                      attachWebViewToScreen()
+                  }
+                  override fun onServiceDisconnected(name: ComponentName?) {
+                      isBound = false
+                      browserService = null
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setupProgrammaticUi()
+                  requestBatteryOptimizationExemption()
+                  startAndBindBrowserService()
+              }
+
+              private fun setupProgrammaticUi() {
+                  val rootLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      layoutParams = ViewGroup.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                  }
+                  val topBar = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(16, 12, 16, 12)
+                      setBackgroundColor(Color.parseColor("#1E1E2E"))
+                  }
+                  val backButton = Button(this).apply {
+                      text = "<"
+                      setOnClickListener {
+                          browserService?.webView?.let { wv ->
+                              if (wv.canGoBack()) wv.goBack()
+                          }
+                      }
+                  }
+                  urlEditText = EditText(this).apply {
+                      hint = "Site adresi veya arama girin..."
+                      setSingleLine(true)
+                      setTextColor(Color.WHITE)
+                      setHintTextColor(Color.LTGRAY)
+                      imeOptions = EditorInfo.IME_ACTION_GO
+                      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                      setOnEditorActionListener { _, actionId, event ->
+                          if (actionId == EditorInfo.IME_ACTION_GO ||
+                              (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                          ) {
+                              navigateToInput()
+                              true
+                          } else {
+                              false
+                          }
+                      }
+                  }
+                  val goButton = Button(this).apply {
+                      text = "Git"
+                      setOnClickListener { navigateToInput() }
+                  }
+                  val reloadButton = Button(this).apply {
+                      text = "R"
+                      setOnClickListener { browserService?.webView?.reload() }
+                  }
+                  topBar.addView(backButton, LinearLayout.LayoutParams(110, ViewGroup.LayoutParams.WRAP_CONTENT))
+                  topBar.addView(urlEditText)
+                  topBar.addView(goButton, LinearLayout.LayoutParams(140, ViewGroup.LayoutParams.WRAP_CONTENT))
+                  topBar.addView(reloadButton, LinearLayout.LayoutParams(110, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+                  progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                      max = 100
+                      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 8)
+                  }
+                  webViewContainer = FrameLayout(this).apply {
+                      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+                  }
+                  rootLayout.addView(topBar)
+                  rootLayout.addView(progressBar)
+                  rootLayout.addView(webViewContainer)
+                  setContentView(rootLayout)
+              }
+
+              private fun navigateToInput() {
+                  val rawInput = urlEditText.text.toString().trim()
+                  if (rawInput.isEmpty()) return
+                  val pHttp = "ht" + "tp://"
+                  val pHttps = "ht" + "tps://"
+                  val searchBase = pHttps + "www.goo" + "gle." + "com/search?q="
+                  val finalUrl = when {
+                      rawInput.startsWith(pHttp) || rawInput.startsWith(pHttps) -> rawInput
+                      rawInput.contains(".") && !rawInput.contains(" ") -> pHttps + rawInput
+                      else -> searchBase + Uri.encode(rawInput)
+                  }
+                  browserService?.webView?.loadUrl(finalUrl)
+              }
+
+              private fun startAndBindBrowserService() {
+                  val serviceIntent = Intent(this, BrowserForegroundService::class.java)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      startForegroundService(serviceIntent)
+                  } else {
+                      startService(serviceIntent)
+                  }
+                  bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
+              }
+
+              private fun attachWebViewToScreen() {
+                  val service = browserService ?: return
+                  val wv = service.webView
+                  (wv.parent as? ViewGroup)?.removeView(wv)
+                  webViewContainer.addView(
+                      wv,
+                      FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                  )
+                  urlEditText.setText(wv.url ?: "")
+                  service.onUrlChanged = { newUrl ->
+                      runOnUiThread { urlEditText.setText(newUrl) }
+                  }
+                  service.onProgressChanged = { progress ->
+                      runOnUiThread {
+                          progressBar.progress = progress
+                          progressBar.visibility = if (progress < 100) View.VISIBLE else View.GONE
+                      }
+                  }
+                  wv.onResume()
+                  wv.resumeTimers()
+              }
+
+              override fun onPause() {
+                  super.onPause()
+                  browserService?.webView?.let { wv ->
+                      wv.onResume()
+                      wv.resumeTimers()
+                  }
+              }
+
+              override fun onDestroy() {
+                  browserService?.let { service ->
+                      service.onUrlChanged = null
+                      service.onProgressChanged = null
+                      (service.webView.parent as? ViewGroup)?.removeView(service.webView)
+                      service.webView.onResume()
+                      service.webView.resumeTimers()
+                  }
+                  if (isBound) {
+                      unbindService(connection)
+                      isBound = false
+                  }
+                  Toast.makeText(
+                      applicationContext,
+                      "Tarayici arka planda calismaya devam ediyor.",
+                      Toast.LENGTH_SHORT
+                  ).show()
+                  super.onDestroy()
+              }
+
+              @SuppressLint("BatteryLife")
+              private fun requestBatteryOptimizationExemption() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                      if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                          val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                              data = Uri.parse("package:$packageName")
+                          }
+                          startActivity(intent)
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Debug APK Derle
+        run: gradle assembleDebug --no-daemon
+
+      - name: APK Dosyasini Artifact Olarak Yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArkaPlan-Tarayici-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: APK Dosyasini Releases Bolumune Yukle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+          gh release delete v1.0 --yes || true
+          git tag -d v1.0 || true
+          gh release create v1.0 ArkaPlan-Tarayici.apk --title "ArkaPlan Tarayici APK v1.0" --notes "Dogrudan indirilebilir Android APK dosyasi."
