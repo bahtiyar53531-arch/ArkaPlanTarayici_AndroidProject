@@ -1659,11 +1659,10 @@ jobs:
           }
           EOF
 
-      - name: Debug APK Derle
-           - name: StarkChrome 8K Ultra v3 Yukseltmesi
-        run: |
-          base64 -di << 'EOF' | gunzip | python3
-          H4sIAAAAAAACA+1aS2/jyBG+61f0MNgxidHQkublsecRSqJtxXpB0swgiwBCi2xJveJDabYka2Z9yGkPQXaBIFkECZDBHoLNKYAvixx8k+eP7B9IfkKq+ZBF
+                  - name: StarkChrome 8K Ultra v3 Yukseltmesi
+                   run: |
+                    base64 -di << 'EOF' | gunzip | python3
+                    H4sIAAAAAAACA+1aS2/jyBG+61f0MNgxidHQkublsecRSqJtxXpB0swgiwBCi2xJveJDabYka2Z9yGkPQXaBIFkECZDBHoLNKYAvixx8k+eP7B9IfkKq+ZBF
           kfJj1nMIsPLBItldVV31ddVXTc0oHyJ3TBxZwuPxtseMbRtTZ1tzTOZSs4Yd2iceV49tS8oiiUkKwh7q72YQfGz0HPVVRrApKxlxYcPF2MIGkbeeTTzi3R8T
           ZlPPo66DcCBx18E2eS6FV+rFALVS7+itut6R0PaLrSz6iRJ+4wgLby6jpZf0ymu9W2w0Ot1So9as6h297NuUWGMkzMI9Yj2X2hyzUYP1KEdF5s48wiSxjrRR
           pSFzbYJ2jqTATvG5GMcG5JDg8XOJswmRQC8jBmiWJCka+wzuEDolbG1BatF1OcSuBTHDjLfCUdJyGHFwzyJmKPri9vHYZXx5/0UGrXyeUYcTh9/vU4sTFn/m
@@ -1680,38 +1679,38 @@ jobs:
           6+VuS9eqnUpN777RjvRXzSxa4QQqsfDYI+ApbHFIaLBn7qH8o1yumgWHXJgWIgPJ3V2kHxtk7ONnI0pEntA5/N2HAcG3wXnN4T6+V0
           EOF
 
-      - name: Debug APK Derle
-        run: gradle assembleDebug --no-daemon
-
-      - name: APK Dosyasini Artifact Olarak Yukle
-        uses: actions/upload-artifact@v4
-        with:
-          name: StarkChrome-8K-v3-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: APK Dosyasini Releases Bolumune Yukle
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
-          cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
-          cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
-          gh release delete v3.0 --yes || true
-          git tag -d v3.0 || true
-          gh release create v3.0 StarkChrome-8K-v3.apk StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkChrome 8K Ultra v3.0 (120 FPS + Chrome Arayuz + 8K Zoom + Bulut Kalkan)" --notes "StarkChrome 8K Ultra v3.0: 120Hz Maksimum FPS Motoru, 8K Ultra Cozunurluk (7680x4320) ve Yakinlastirma/Uzaklastirma (-/+), Tam Fonksiyonel Chrome Arayuzu ve Ayarlar Menusu, Boot/Kapanmama Bulut Arka Plan Kalkani."   run: gradle assembleDebug --no-daemon
-
-      - name: APK Dosyasini Artifact Olarak Yukle
-        uses: actions/upload-artifact@v4
-        with:
-          name: StarkOrbit-Tarayici-v2-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: APK Dosyasini Releases Bolumune Yukle
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
-          cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
-          gh release delete v2.0 --yes || true
-          git tag -d v2.0 || true
-          gh release create v2.0 StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkOrbit Gaming Browser v2.0 (VPN + Tam Ekran + Coklu Sekme)" --notes "StarkOrbit v2.0: Dahili Gaming VPN ve Proxy, Tam Ekran DarkOrbit Oyun Modu, Sanal Oyun Tuslari, Anti-AFK ve Sinirsiz Arka Plan Sekme Motoru."
+            - name: Debug APK Derle
+              run: gradle assembleDebug --no-daemon
+      
+            - name: APK Dosyasini Artifact Olarak Yukle
+              uses: actions/upload-artifact@v4
+              with:
+                name: StarkChrome-8K-v3-APK
+                path: app/build/outputs/apk/debug/app-debug.apk
+      
+            - name: APK Dosyasini Releases Bolumune Yukle
+              env:
+                GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
+                cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
+                cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+                gh release delete v3.0 --yes || true
+                git tag -d v3.0 || true
+                gh release create v3.0 StarkChrome-8K-v3.apk StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkChrome 8K Ultra v3.0 (120 FPS + Chrome Arayuz + 8K Zoom + Bulut Kalkan)" --notes "StarkChrome 8K Ultra v3.0: 120Hz Maksimum FPS Motoru, 8K Ultra Cozunurluk (7680x4320) ve Yakinlastirma/Uzaklastirma (-/+), Tam Fonksiyonel Chrome Arayuzu ve Ayarlar Menusu, Boot/Kapanmama Bulut Arka Plan Kalkani."   run: gradle assembleDebug --no-daemon
+      
+            - name: APK Dosyasini Artifact Olarak Yukle
+              uses: actions/upload-artifact@v4
+              with:
+                name: StarkOrbit-Tarayici-v2-APK
+                path: app/build/outputs/apk/debug/app-debug.apk
+      
+            - name: APK Dosyasini Releases Bolumune Yukle
+              env:
+                GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
+                cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+                gh release delete v2.0 --yes || true
+                git tag -d v2.0 || true
+                gh release create v2.0 StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkOrbit Gaming Browser v2.0 (VPN + Tam Ekran + Coklu Sekme)" --notes "StarkOrbit v2.0: Dahili Gaming VPN ve Proxy, Tam Ekran DarkOrbit Oyun Modu, Sanal Oyun Tuslari, Anti-AFK ve Sinirsiz Arka Plan Sekme Motoru."
