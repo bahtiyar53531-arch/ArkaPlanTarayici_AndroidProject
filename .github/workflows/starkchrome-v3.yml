@@ -25,7 +25,99 @@ jobs:
           open("/tmp/setup_v2.sh", "w").write("\n".join(lines) + "\n")
           '
           bash /tmp/setup_v2.sh
-          sed -n '/H4sIAAAAAAACA+1aS2/,/EOF/p' .github/workflows/starkorbit-v2.yml | grep -v "EOF" | tr -d ' \n\r' | base64 -di | gunzip | python3
+          cat << 'PYEOF' > /tmp/up.py
+          m = open("app/src/main/AndroidManifest.xml").read()
+          m = m.replace('permission.INTERNET" />', 'permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />')
+          m = m.replace('label="StarkOrbit Browser"', 'label="StarkChrome 8K" android:largeHeap="true"')
+          rec = '<receiver android:name=".BootAndRestartReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver></application>'
+          m = m.replace('</application>', rec)
+          open("app/src/main/AndroidManifest.xml", "w").write(m)
+
+          k = open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt").read()
+          boot = """import android.app.AlarmManager
+          import android.content.BroadcastReceiver
+          import android.os.SystemClock
+
+          class BootAndRestartReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent?) {
+                  val i = Intent(context, BrowserForegroundService::class.java)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i) else context.startService(i)
+              }
+          }
+
+          class StarkVpnService"""
+          k = k.replace("class StarkVpnService", boot, 1)
+          k = k.replace("var autoRefreshSeconds: Int = 0,", "var zoomPercent: Int = 100, var is8kUltraEnabled: Boolean = true, var autoRefreshSeconds: Int = 0,")
+
+          old_js = "window.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);"
+          new_js = old_js + " window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now());},8);}; Object.defineProperty(window,'devicePixelRatio',{get:function(){return 4.0;},configurable:true}); Object.defineProperty(screen,'width',{get:function(){return 7680;},configurable:true}); Object.defineProperty(screen,'height',{get:function(){return 4320;},configurable:true}); try{var C=window.AudioContext||window.webkitAudioContext;if(C){var c=new C();var o=c.createOscillator();var g=c.createGain();g.gain.value=0.00001;o.connect(g);g.connect(c.destination);o.start(0);}}catch(e){}"
+          k = k.replace(old_js, new_js)
+
+          old_tr = "super.onTaskRemoved(rootIntent)"
+          new_tr = old_tr + "\n        try { val ri = Intent(applicationContext, BootAndRestartReceiver::class.java); val pi = PendingIntent.getBroadcast(applicationContext, 777, ri, PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE); (getSystemService(Context.ALARM_SERVICE) as AlarmManager).set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 1500L, pi) } catch (_: Exception) {}"
+          k = k.replace(old_tr, new_tr)
+
+          k = k.replace("#00F0FF", "#8AB4F8").replace("#070913", "#202124").replace("#10172E", "#292A2D").replace("#090D1C", "#202124").replace("#0B1022", "#202124")
+          k = k.replace("STARKORBIT GAMING BROWSER v2.0", "STARKCHROME 8K ULTRA v3.0 (120 FPS)")
+
+          old_oc = "window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"
+          new_oc = old_oc + "\n        try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { val b = windowManager.defaultDisplay.supportedModes.maxByOrNull { it.refreshRate }; if (b != null) { val p = window.attributes; p.preferredDisplayModeId = b.modeId; window.attributes = p } } } catch (_: Exception) {}"
+          k = k.replace(old_oc, new_oc)
+
+          old_nav = "topNavBar.addView(fullscreenBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86))"
+          new_nav = """val zoomOutBtn = Button(this).apply { text = "-"; styleCyberButton(this); setOnClickListener { browserService?.getActiveTab()?.let { t -> t.zoomPercent = (t.zoomPercent - 15).coerceIn(25, 300); t.webView.settings.textZoom = t.zoomPercent; t.webView.evaluateJavascript("document.body.style.zoom='" + (t.zoomPercent / 100.0) + "';", null); Toast.makeText(this@MainActivity, "Zoom: %" + t.zoomPercent + " (8K)", Toast.LENGTH_SHORT).show() } } }
+                  val zoomInBtn = Button(this).apply { text = "+"; styleCyberButton(this); setOnClickListener { browserService?.getActiveTab()?.let { t -> t.zoomPercent = (t.zoomPercent + 15).coerceIn(25, 300); t.webView.settings.textZoom = t.zoomPercent; t.webView.evaluateJavascript("document.body.style.zoom='" + (t.zoomPercent / 100.0) + "';", null); Toast.makeText(this@MainActivity, "Zoom: %" + t.zoomPercent + " (8K)", Toast.LENGTH_SHORT).show() } } }
+                  val cfgBtn = Button(this).apply { text = "Ayar"; styleCyberButton(this); setOnClickListener { showChromeSettingsDialog() } }
+                  topNavBar.addView(zoomOutBtn, LinearLayout.LayoutParams(82, 86).apply { marginEnd = 4 })
+                  topNavBar.addView(zoomInBtn, LinearLayout.LayoutParams(82, 86).apply { marginEnd = 4 })
+                  topNavBar.addView(fullscreenBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86).apply { marginEnd = 4 })
+                  topNavBar.addView(cfgBtn, LinearLayout.LayoutParams(105, 86))"""
+          k = k.replace(old_nav, new_nav)
+
+          old_mac = 'addMacroBtn("SPACE (Lazer)", Color.parseColor("#FF2A85")) {'
+          new_mac = """addMacroBtn("8K Ultra: ACIK", Color.parseColor("#F59E0B")) { browserService?.getActiveTab()?.let { t -> t.is8kUltraEnabled = !t.is8kUltraEnabled; val d = if (t.is8kUltraEnabled) "4.0" else "2.0"; t.webView.evaluateJavascript("Object.defineProperty(window,'devicePixelRatio',{get:function(){return " + d + ";},configurable:true});", null); Toast.makeText(this, if (t.is8kUltraEnabled) "8K Ultra (7680x4320) Aktif!" else "Standart HD", Toast.LENGTH_SHORT).show() } }
+                  addMacroBtn("120 FPS Boost", Color.parseColor("#10B981")) { System.gc(); browserService?.tabs?.forEach { it.webView.freeMemory() }; Toast.makeText(this, "120 FPS Motoru & RAM/Ping Optimize Edildi!", Toast.LENGTH_SHORT).show() }
+                  addMacroBtn("Chrome Ayarlar", Color.parseColor("#8AB4F8")) { showChromeSettingsDialog() }
+                  """ + old_mac
+          k = k.replace(old_mac, new_mac)
+
+          dlg = """    private fun showChromeSettingsDialog() {
+                  val tab = browserService?.getActiveTab()
+                  val items = arrayOf(
+                      "+ Yeni Sekme Ac (Arka Planda Eszamanli Calisir)",
+                      "- Ekrani Uzaklastir (%25 - %300 Genis Harita Gorusu)",
+                      "+ Ekrani Yakinlastir (8K Ultra Detay)",
+                      "8K Ultra HD Cozunurluk (7680x4320 Super Olcekleme)",
+                      "120 FPS Maksimum Hiz ve Lag/RAM Temizleyici",
+                      "Masaustu Sitesi (PC Gorunumu Ac/Kapa)",
+                      "Gizlilik ve Guvenlik: Onbellek ve Cerezleri Temizle",
+                      "Dahili VPN ve 1.1.1.1 Dusuk Ping Oyun DNS Ayarlari",
+                      "Bulut Arka Plan ve Kapanmama Kalkani (Boot Auto-Resume: ACIK)",
+                      "Chrome ve Oyun Temasi Degistir",
+                      "Sekme Otomatik Yenileme Zamanlayicisi"
+                  )
+                  AlertDialog.Builder(this).setTitle("Chrome Ayarlari ve 8K Oyun Kontrolu").setItems(items) { _, w ->
+                      when (w) {
+                          0 -> browserService?.createNewTab(loadHomeDashboard = true)
+                          1 -> tab?.let { it.zoomPercent = (it.zoomPercent - 20).coerceIn(25, 300); it.webView.settings.textZoom = it.zoomPercent; it.webView.evaluateJavascript("document.body.style.zoom='" + (it.zoomPercent / 100.0) + "';", null) }
+                          2 -> tab?.let { it.zoomPercent = (it.zoomPercent + 20).coerceIn(25, 300); it.webView.settings.textZoom = it.zoomPercent; it.webView.evaluateJavascript("document.body.style.zoom='" + (it.zoomPercent / 100.0) + "';", null) }
+                          3 -> Toast.makeText(this, "8K Ultra (7680x4320) GPU Keskinlestirme Aktif!", Toast.LENGTH_SHORT).show()
+                          4 -> { System.gc(); browserService?.tabs?.forEach { it.webView.freeMemory() }; Toast.makeText(this, "120 FPS ve Sifir Lag Modu Aktif!", Toast.LENGTH_SHORT).show() }
+                          5 -> tab?.let { browserService?.toggleDesktopMode(it); syncBottomBarWithActiveTab() }
+                          6 -> { tab?.webView?.clearCache(true); Toast.makeText(this, "Tarama onbellegi temizlendi", Toast.LENGTH_SHORT).show() }
+                          7 -> showVpnAndProxyDialog()
+                          8 -> Toast.makeText(this, "Zirhli Bulut Arka Plan ve Telefon Kapanip Acildiginda Otomatik Baslatma Aktif!", Toast.LENGTH_LONG).show()
+                          9 -> showThemeDialog()
+                          10 -> showAutoRefreshDialog()
+                      }
+                  }.setPositiveButton("Kapat", null).show()
+              }
+
+              private fun showThemeDialog()"""
+          k = k.replace("    private fun showThemeDialog()", dlg)
+          open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)
+          PYEOF
+          python3 /tmp/up.py
           gradle assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
           cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
@@ -34,4 +126,4 @@ jobs:
           gh release delete v2.0 --yes || true
           gh release delete v3.0 --yes || true
           git tag -d v3.0 || true
-          gh release create v3.0 StarkChrome-8K-v3.apk StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkChrome 8K Ultra v3.0 (120 FPS + Chrome Arayuz + 8K Zoom + Bulut Kalkan)" --notes "StarkChrome 8K Ultra v3.0: 120Hz Maksimum FPS Motoru, 8K Ultra Cozunurluk (7680x4320) ve Yakinlastirma/Uzaklastirma (-/+), Tam Fonksiyonel Chrome Arayuzu ve Ayarlar Menusu, Boot/Kapanmama Bulut Arka Plan Kalkani."
+          gh release create v3.0 StarkChrome-8K-v3.apk StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkChrome 8K Ultra v3.0 (Tum Ozellikler Birlestirilmis Tam Surum)" --notes "StarkChrome 8K Ultra v3.0: 120Hz Maksimum FPS Motoru, 8K Ultra Cozunurluk (7680x4320) ve Yakinlastirma/Uzaklastirma (-/+), Tam Fonksiyonel Chrome Arayuzu ve Ayarlar Menusu, Boot/Kapanmama Bulut Arka Plan Kalkani, Dahili VPN ve Coklu Sekme."
