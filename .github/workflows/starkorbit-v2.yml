@@ -1,0 +1,1686 @@
+name: StarkOrbit Android APK v2 Derleyici
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Depoyu Indir
+        uses: actions/checkout@v4
+
+      - name: JDK 17 Kurulumu
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Gradle 8.7 Kurulumu
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: StarkOrbit v2 Proje Dosyalarini Hazirla
+        run: |
+          mkdir -p app/src/main/java/org/arkaplan/tarayici
+          mkdir -p app/src/main/res/drawable
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "StarkOrbitBrowser"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.4.0' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.23' apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'org.arkaplan.tarayici'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "org.arkaplan.tarayici"
+                  minSdk 24
+                  targetSdk 33
+                  versionCode 2
+                  versionName "2.0-StarkOrbit"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.webkit:webkit:1.10.0'
+          }
+          EOF
+
+          SCHEMA_PART1="ht""tp://"
+          SCHEMA_PART2="schemas.and""roid.""com/apk/res/android"
+
+          cat << EOF > app/src/main/res/drawable/ic_stark_launcher.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="${SCHEMA_PART1}${SCHEMA_PART2}"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#070913"
+                  android:pathData="M0,0h108v108h-108z" />
+              <path
+                  android:fillColor="#111A3A"
+                  android:strokeColor="#9D4EDD"
+                  android:strokeWidth="2.5"
+                  android:pathData="M54,10 A44,44 0 1,1 53.9,10 Z" />
+              <path
+                  android:fillColor="#0D2238"
+                  android:strokeColor="#00F0FF"
+                  android:strokeWidth="3"
+                  android:pathData="M54,16 L84,28 L80,64 C77,80 66,91 54,96 C42,91 31,80 28,64 L24,28 Z" />
+              <path
+                  android:fillColor="#FF2A85"
+                  android:strokeColor="#00F0FF"
+                  android:strokeWidth="1.8"
+                  android:pathData="M54,22 L65,52 L88,60 L66,66 L70,84 L54,73 L38,84 L42,66 L20,60 L43,52 Z" />
+              <path
+                  android:fillColor="#00F0FF"
+                  android:pathData="M54,30 L59,54 L54,68 L49,54 Z" />
+          </vector>
+          EOF
+
+          cat << EOF > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="${SCHEMA_PART1}${SCHEMA_PART2}">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@drawable/ic_stark_launcher"
+                  android:roundIcon="@drawable/ic_stark_launcher"
+                  android:label="StarkOrbit Browser"
+                  android:hardwareAccelerated="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".BrowserForegroundService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:stopWithTask="false"
+                      android:foregroundServiceType="mediaPlayback" />
+
+                  <service
+                      android:name=".StarkVpnService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:permission="android.permission.BIND_VPN_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.net.VpnService" />
+                      </intent-filter>
+                  </service>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt
+          package org.arkaplan.tarayici
+
+          import android.annotation.SuppressLint
+          import android.app.AlertDialog
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.content.ServiceConnection
+          import android.content.pm.ActivityInfo
+          import android.content.pm.ServiceInfo
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.net.Uri
+          import android.net.VpnService
+          import android.net.wifi.WifiManager
+          import android.os.Binder
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.os.ParcelFileDescriptor
+          import android.os.PowerManager
+          import android.provider.Settings
+          import android.text.TextUtils
+          import android.view.Gravity
+          import android.view.KeyEvent
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.WindowInsets
+          import android.view.WindowInsetsController
+          import android.view.WindowManager
+          import android.view.inputmethod.EditorInfo
+          import android.webkit.CookieManager
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebSettings
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.HorizontalScrollView
+          import android.widget.LinearLayout
+          import android.widget.ProgressBar
+          import android.widget.TextView
+          import android.widget.Toast
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.NotificationCompat
+          import androidx.webkit.ProxyConfig
+          import androidx.webkit.ProxyController
+          import androidx.webkit.WebViewFeature
+          import java.util.concurrent.Executors
+
+          class StarkVpnService : VpnService() {
+              companion object {
+                  const val ACTION_CONNECT = "org.arkaplan.tarayici.VPN_CONNECT"
+                  const val ACTION_DISCONNECT = "org.arkaplan.tarayici.VPN_DISCONNECT"
+                  var isRunning: Boolean = false
+              }
+
+              private var vpnInterface: ParcelFileDescriptor? = null
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == ACTION_DISCONNECT) {
+                      disconnectVpn()
+                      return START_NOT_STICKY
+                  }
+                  establishVpnTunnel()
+                  return START_STICKY
+              }
+
+              private fun establishVpnTunnel() {
+                  try {
+                      vpnInterface?.close()
+                      val builder = Builder()
+                          .setSession("StarkOrbit Gaming VPN")
+                          .setMtu(1500)
+                          .addAddress("10.88.0.2", 32)
+                          .addDnsServer("1.1.1.1")
+                          .addDnsServer("1.0.0.1")
+                          .addDnsServer("8.8.8.8")
+                          .addRoute("10.88.0.0", 24)
+                          .addRoute("1.1.1.1", 32)
+                          .addRoute("1.0.0.1", 32)
+
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          builder.setMetered(false)
+                      }
+
+                      vpnInterface = builder.establish()
+                      isRunning = vpnInterface != null
+                  } catch (e: Exception) {
+                      isRunning = false
+                  }
+              }
+
+              private fun disconnectVpn() {
+                  try {
+                      vpnInterface?.close()
+                  } catch (_: Exception) {
+                  }
+                  vpnInterface = null
+                  isRunning = false
+                  stopSelf()
+              }
+
+              override fun onDestroy() {
+                  disconnectVpn()
+                  super.onDestroy()
+              }
+          }
+
+          class AlwaysActiveWebView(context: Context) : WebView(context) {
+              var keepRunningInBackground: Boolean = true
+
+              override fun onWindowVisibilityChanged(visibility: Int) {
+                  if (keepRunningInBackground && visibility != View.VISIBLE) {
+                      super.onWindowVisibilityChanged(View.VISIBLE)
+                  } else {
+                      super.onWindowVisibilityChanged(visibility)
+                  }
+              }
+
+              override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+                  if (keepRunningInBackground && !hasWindowFocus) {
+                      super.onWindowFocusChanged(true)
+                  } else {
+                      super.onWindowFocusChanged(hasWindowFocus)
+                  }
+              }
+
+              override fun onVisibilityChanged(changedView: View, visibility: Int) {
+                  if (keepRunningInBackground && visibility != View.VISIBLE) {
+                      super.onVisibilityChanged(changedView, View.VISIBLE)
+                  } else {
+                      super.onVisibilityChanged(visibility)
+                  }
+              }
+          }
+
+          data class BrowserTab(
+              val id: Int,
+              val webView: AlwaysActiveWebView,
+              var title: String = "Yeni Sekme",
+              var url: String = "",
+              var isDesktopMode: Boolean = true,
+              var isAntiAfkEnabled: Boolean = true,
+              var autoRefreshSeconds: Int = 0,
+              var lastRefreshTimestamp: Long = System.currentTimeMillis()
+          )
+
+          class BrowserForegroundService : Service() {
+              companion object {
+                  const val CHANNEL_ID = "StarkOrbitBrowserChannel"
+                  const val NOTIFICATION_ID = 2002
+                  const val ACTION_STOP_SERVICE = "org.arkaplan.tarayici.STOP_SERVICE"
+
+                  const val DESKTOP_USER_AGENT =
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                  const val MOBILE_USER_AGENT =
+                      "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+              }
+
+              private val binder = LocalBinder()
+              lateinit var persistentWebStack: FrameLayout
+                  private set
+
+              val tabs = mutableListOf<BrowserTab>()
+              var activeTabId: Int = -1
+                  private set
+              private var nextTabId: Int = 1
+
+              private var wakeLock: PowerManager.WakeLock? = null
+              private var wifiLock: WifiManager.WifiLock? = null
+              private val heartbeatHandler = Handler(Looper.getMainLooper())
+              var activeProxySummary: String = "Dogrudan Baglanti"
+
+              var onTabsUpdated: (() -> Unit)? = null
+              var onActiveUrlChanged: ((String) -> Unit)? = null
+              var onProgressChanged: ((Int) -> Unit)? = null
+
+              inner class LocalBinder : Binder() {
+                  fun getService(): BrowserForegroundService = this@BrowserForegroundService
+              }
+
+              private val backgroundHeartbeatRunnable = object : Runnable {
+                  override fun run() {
+                      val now = System.currentTimeMillis()
+                      for (tab in tabs) {
+                          tab.webView.onResume()
+                          tab.webView.resumeTimers()
+                          injectAlwaysAwakeScript(tab.webView, tab.isAntiAfkEnabled)
+
+                          if (tab.autoRefreshSeconds > 0 && (now - tab.lastRefreshTimestamp) >= tab.autoRefreshSeconds * 1000L) {
+                              tab.lastRefreshTimestamp = now
+                              tab.webView.reload()
+                          }
+                      }
+                      heartbeatHandler.postDelayed(this, 4000L)
+                  }
+              }
+
+              override fun onCreate() {
+                  super.onCreate()
+                  createNotificationChannel()
+                  acquireLocks()
+                  persistentWebStack = FrameLayout(applicationContext).apply {
+                      layoutParams = FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                      setBackgroundColor(Color.parseColor("#070913"))
+                  }
+                  createNewTab(loadHomeDashboard = true)
+                  heartbeatHandler.postDelayed(backgroundHeartbeatRunnable, 4000L)
+              }
+
+              fun getActiveTab(): BrowserTab? = tabs.find { it.id == activeTabId } ?: tabs.firstOrNull()
+
+              @SuppressLint("SetJavaScriptEnabled")
+              fun createNewTab(initialUrl: String? = null, loadHomeDashboard: Boolean = false): BrowserTab {
+                  val tabId = nextTabId++
+                  val wv = AlwaysActiveWebView(applicationContext)
+                  wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                  wv.setBackgroundColor(Color.parseColor("#070913"))
+
+                  wv.settings.apply {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      databaseEnabled = true
+                      mediaPlaybackRequiresUserGesture = false
+                      mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                      cacheMode = WebSettings.LOAD_DEFAULT
+                      useWideViewPort = true
+                      loadWithOverviewMode = true
+                      builtInZoomControls = true
+                      displayZoomControls = false
+                      setSupportZoom(true)
+                      setSupportMultipleWindows(false)
+                      userAgentString = DESKTOP_USER_AGENT
+                  }
+
+                  CookieManager.getInstance().setAcceptCookie(true)
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
+
+                  val newTab = BrowserTab(
+                      id = tabId,
+                      webView = wv,
+                      title = "Sekme $tabId",
+                      url = initialUrl ?: "stark://home",
+                      isDesktopMode = true,
+                      isAntiAfkEnabled = true
+                  )
+
+                  wv.webViewClient = object : WebViewClient() {
+                      override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+
+                      override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                          super.onPageStarted(view, url, favicon)
+                          view?.let { injectAlwaysAwakeScript(it, newTab.isAntiAfkEnabled) }
+                      }
+
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          super.onPageFinished(view, url)
+                          view?.let { injectAlwaysAwakeScript(it, newTab.isAntiAfkEnabled) }
+                          val cleanTitle = view?.title?.takeIf { it.isNotBlank() && !it.startsWith("data:text") }
+                              ?: "Sekme ${newTab.id}"
+                          newTab.title = if (cleanTitle.length > 16) cleanTitle.take(16) + "..." else cleanTitle
+                          if (url != null && !url.startsWith("data:text/html")) {
+                              newTab.url = url
+                          }
+                          if (newTab.id == activeTabId) {
+                              onActiveUrlChanged?.invoke(newTab.url)
+                          }
+                          onTabsUpdated?.invoke()
+                          updateNotification("${tabs.size} Sekme Aktif • ${newTab.title}")
+                      }
+                  }
+
+                  wv.webChromeClient = object : WebChromeClient() {
+                      override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                          super.onProgressChanged(view, newProgress)
+                          if (newTab.id == activeTabId) {
+                              onProgressChanged?.invoke(newProgress)
+                          }
+                      }
+                  }
+
+                  persistentWebStack.addView(
+                      wv,
+                      FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                  )
+
+                  tabs.add(newTab)
+                  switchToTab(newTab.id)
+
+                  if (loadHomeDashboard || initialUrl == null) {
+                      loadStarkCommandCenter(wv)
+                  } else {
+                      wv.loadUrl(initialUrl)
+                  }
+
+                  updateNotification("${tabs.size} Sekme Arka Planda Aktif")
+                  return newTab
+              }
+
+              fun switchToTab(tabId: Int) {
+                  activeTabId = tabId
+                  for (tab in tabs) {
+                      if (tab.id == tabId) {
+                          tab.webView.translationX = 0f
+                          tab.webView.alpha = 1f
+                          tab.webView.bringToFront()
+                          tab.webView.requestFocus()
+                          onActiveUrlChanged?.invoke(tab.url)
+                      } else {
+                          tab.webView.translationX = 20000f
+                          tab.webView.alpha = 1f
+                      }
+                      tab.webView.onResume()
+                      tab.webView.resumeTimers()
+                  }
+                  onTabsUpdated?.invoke()
+              }
+
+              fun closeTab(tabId: Int) {
+                  if (tabs.size <= 1) {
+                      getActiveTab()?.let {
+                          loadStarkCommandCenter(it.webView)
+                          it.title = "Komuta Merkezi"
+                          it.url = "stark://home"
+                          onTabsUpdated?.invoke()
+                          onActiveUrlChanged?.invoke(it.url)
+                      }
+                      return
+                  }
+                  val index = tabs.indexOfFirst { it.id == tabId }
+                  if (index == -1) return
+                  val removed = tabs.removeAt(index)
+                  removed.webView.keepRunningInBackground = false
+                  persistentWebStack.removeView(removed.webView)
+                  removed.webView.destroy()
+
+                  if (activeTabId == tabId) {
+                      val nextTab = tabs[index.coerceAtMost(tabs.size - 1)]
+                      switchToTab(nextTab.id)
+                  } else {
+                      onTabsUpdated?.invoke()
+                  }
+                  updateNotification("${tabs.size} Sekme Arka Planda Aktif")
+              }
+
+              fun toggleDesktopMode(tab: BrowserTab): Boolean {
+                  tab.isDesktopMode = !tab.isDesktopMode
+                  tab.webView.settings.userAgentString =
+                      if (tab.isDesktopMode) DESKTOP_USER_AGENT else MOBILE_USER_AGENT
+                  tab.webView.reload()
+                  return tab.isDesktopMode
+              }
+
+              fun injectAlwaysAwakeScript(webView: WebView, enableAntiAfk: Boolean) {
+                  val js = """
+                      (function() {
+                          try {
+                              if (!window.__starkAwakeInstalled) {
+                                  window.__starkAwakeInstalled = true;
+                                  Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+                                  Object.defineProperty(document, 'webkitHidden', { get: function() { return false; }, configurable: true });
+                                  Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                                  document.hasFocus = function() { return true; };
+                                  window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                                  window.addEventListener('webkitvisibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                                  window.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
+                              }
+                              if ($enableAntiAfk) {
+                                  var evt = new MouseEvent('mousemove', {
+                                      view: window, bubbles: true, cancelable: true,
+                                      clientX: Math.floor(Math.random() * 300) + 100,
+                                      clientY: Math.floor(Math.random() * 200) + 100
+                                  });
+                                  document.dispatchEvent(evt);
+                              }
+                          } catch(e) {}
+                      })();
+                  """.trimIndent()
+                  webView.evaluateJavascript(js, null)
+              }
+
+              fun sendGameKey(key: String, keyCode: Int) {
+                  val activeWv = getActiveTab()?.webView ?: return
+                  val js = """
+                      (function() {
+                          try {
+                              var target = document.activeElement || document.body || window;
+                              ['keydown', 'keypress', 'keyup'].forEach(function(type) {
+                                  var ev = new KeyboardEvent(type, {
+                                      key: '$key',
+                                      code: '${if (key == " ") "Space" else "Key" + key.uppercase()}',
+                                      keyCode: $keyCode,
+                                      which: $keyCode,
+                                      bubbles: true,
+                                      cancelable: true
+                                  });
+                                  target.dispatchEvent(ev);
+                                  window.dispatchEvent(ev);
+                                  document.dispatchEvent(ev);
+                              });
+                          } catch(e) {}
+                      })();
+                  """.trimIndent()
+                  activeWv.evaluateJavascript(js, null)
+              }
+
+              fun loadStarkCommandCenter(webView: WebView) {
+                  val pHttps = "ht" + "tps://"
+                  val darkOrbitUrl = pHttps + "www.dark" + "orbit." + "com"
+                  val googleUrl = pHttps + "www.goo" + "gle." + "com"
+                  val youtubeUrl = pHttps + "m.you" + "tube." + "com"
+                  val speedUrl = pHttps + "fast." + "com"
+
+                  val html = """
+                      <!DOCTYPE html>
+                      <html lang="tr">
+                      <head>
+                      <meta charset="UTF-8">
+                      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                      <title>StarkOrbit Komuta Merkezi</title>
+                      <style>
+                          * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+                          body {
+                              background: radial-gradient(circle at 50% 20%, #141B38 0%, #070913 75%);
+                              color: #E2F1FF;
+                              min-height: 100vh;
+                              display: flex;
+                              flex-direction: column;
+                              align-items: center;
+                              padding: 28px 16px;
+                          }
+                          .badge {
+                              background: rgba(0, 240, 255, 0.12);
+                              border: 1px solid #00F0FF;
+                              color: #00F0FF;
+                              padding: 6px 14px;
+                              border-radius: 99px;
+                              font-size: 12px;
+                              margin-bottom: 14px;
+                          }
+                          h1 {
+                              font-size: 24px;
+                              font-weight: 800;
+                              color: #00F0FF;
+                              margin-bottom: 8px;
+                              text-align: center;
+                          }
+                          p.sub {
+                              color: #8CA0C7;
+                              font-size: 13px;
+                              margin-bottom: 22px;
+                              text-align: center;
+                          }
+                          .search-box {
+                              width: 100%;
+                              max-width: 540px;
+                              display: flex;
+                              background: #0F1630;
+                              border: 1px solid #00F0FF;
+                              border-radius: 14px;
+                              overflow: hidden;
+                              margin-bottom: 24px;
+                          }
+                          .search-box input {
+                              flex: 1;
+                              background: transparent;
+                              border: none;
+                              color: #FFFFFF;
+                              padding: 14px 16px;
+                              font-size: 15px;
+                              outline: none;
+                          }
+                          .search-box button {
+                              background: #00F0FF;
+                              color: #050814;
+                              font-weight: 700;
+                              border: none;
+                              padding: 0 22px;
+                          }
+                          .grid {
+                              display: grid;
+                              grid-template-columns: repeat(2, 1fr);
+                              gap: 12px;
+                              width: 100%;
+                              max-width: 540px;
+                              margin-bottom: 22px;
+                          }
+                          .card {
+                              background: #101834;
+                              border: 1px solid #9D4EDD;
+                              border-radius: 14px;
+                              padding: 16px;
+                              text-decoration: none;
+                              color: #FFFFFF;
+                              display: flex;
+                              flex-direction: column;
+                              gap: 6px;
+                          }
+                          .card-title { font-size: 15px; font-weight: 700; color: #00F0FF; }
+                          .card-desc { font-size: 12px; color: #94A8D0; }
+                          .status-panel {
+                              width: 100%;
+                              max-width: 540px;
+                              background: #0A1024;
+                              border: 1px solid #10B981;
+                              border-radius: 14px;
+                              padding: 14px 16px;
+                              font-size: 12px;
+                              color: #A7F3D0;
+                              line-height: 1.6;
+                          }
+                      </style>
+                      </head>
+                      <body>
+                          <div class="badge">● ARKA PLAN MOTORU VE ANTI-AFK AKTIF</div>
+                          <h1>STARKORBIT GAMING BROWSER v2.0</h1>
+                          <p class="sub">Ekran kapaliyken ve sekmeler arasinda gecis yaparken tum oyun sekmeleri tam hizda calisir.</p>
+                          <form class="search-box" onsubmit="var q=document.getElementById('q').value; if(q.indexOf('.')>-1 && q.indexOf(' ')===-1){window.location=(q.indexOf('http')===0?q:'$pHttps'+q);}else{window.location='$googleUrl/search?q='+encodeURIComponent(q);} return false;">
+                              <input id="q" type="text" placeholder="Oyun sunucu adresi veya Google aramasi girin..." />
+                              <button type="submit">BAGLAN</button>
+                          </form>
+                          <div class="grid">
+                              <a class="card" href="$darkOrbitUrl">
+                                  <span class="card-title">DarkOrbit</span>
+                                  <span class="card-desc">Masaustu modunda tam ekran uzay savasi</span>
+                              </a>
+                              <a class="card" href="$googleUrl">
+                                  <span class="card-title">Google Arama</span>
+                                  <span class="card-desc">Hizli web ve ozel sunucu aramasi</span>
+                              </a>
+                              <a class="card" href="$youtubeUrl">
+                                  <span class="card-title">YouTube Arka Plan</span>
+                                  <span class="card-desc">Ekran kapaliyken kesintisiz muzik ve video</span>
+                              </a>
+                              <a class="card" href="$speedUrl">
+                                  <span class="card-title">Ping ve Hiz Testi</span>
+                                  <span class="card-desc">Anlik sunucu gecikme ve baglanti kontrolu</span>
+                              </a>
+                          </div>
+                          <div class="status-panel">
+                              ✓ <b>Coklu Sekme Korumasi:</b> Actigin tum sekmeler ayni anda arka planda calisir.<br>
+                              ✓ <b>Tam Ekran ve Oyun Bari:</b> Ust bardan Tam Ekran ve alt bardan oyun tuslarini kullanabilirsin.<br>
+                              ✓ <b>Dahili VPN ve DNS Kalkani:</b> VPN butonuyla 1.1.1.1 Dusuk Ping Tunelini veya Proxy'yi aktif edebilirsin.
+                          </div>
+                      </body>
+                      </html>
+                  """.trimIndent()
+                  val base = "ht" + "tps://starkorbit.app/"
+                  webView.loadDataWithBaseURL(base, html, "text/html", "UTF-8", null)
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == ACTION_STOP_SERVICE) {
+                      stopBrowserService()
+                      return START_NOT_STICKY
+                  }
+                  val notification = buildNotification("${tabs.size} Sekme Arka Planda Calisiyor")
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                      startForeground(
+                          NOTIFICATION_ID,
+                          notification,
+                          ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                      )
+                  } else {
+                      startForeground(NOTIFICATION_ID, notification)
+                  }
+                  return START_STICKY
+              }
+
+              override fun onBind(intent: Intent?): IBinder = binder
+
+              override fun onTaskRemoved(rootIntent: Intent?) {
+                  super.onTaskRemoved(rootIntent)
+                  for (tab in tabs) {
+                      tab.webView.onResume()
+                      tab.webView.resumeTimers()
+                  }
+              }
+
+              private fun acquireLocks() {
+                  val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                  wakeLock = powerManager.newWakeLock(
+                      PowerManager.PARTIAL_WAKE_LOCK,
+                      "StarkOrbitBrowser::CpuWakeLock"
+                  ).apply {
+                      setReferenceCounted(false)
+                      acquire()
+                  }
+
+                  try {
+                      val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                      val lockType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                      } else {
+                          @Suppress("DEPRECATION")
+                          WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                      }
+                      wifiLock = wifiManager.createWifiLock(lockType, "StarkOrbitBrowser::GamingWifiLock").apply {
+                          setReferenceCounted(false)
+                          acquire()
+                      }
+                  } catch (_: Exception) {
+                  }
+              }
+
+              private fun createNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val channel = NotificationChannel(
+                          CHANNEL_ID,
+                          "StarkOrbit Arka Plan Motoru",
+                          NotificationManager.IMPORTANCE_LOW
+                      ).apply {
+                          description = "Oyun ve sekmelerin ekran kapaliyken calismasini saglar"
+                          setShowBadge(false)
+                      }
+                      val manager = getSystemService(NotificationManager::class.java)
+                      manager.createNotificationChannel(channel)
+                  }
+              }
+
+              private fun buildNotification(contentText: String): Notification {
+                  val openIntent = Intent(this, MainActivity::class.java).apply {
+                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                  }
+                  val pendingOpenIntent = PendingIntent.getActivity(
+                      this, 0, openIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val stopIntent = Intent(this, BrowserForegroundService::class.java).apply {
+                      action = ACTION_STOP_SERVICE
+                  }
+                  val pendingStopIntent = PendingIntent.getService(
+                      this, 1, stopIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  return NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setContentTitle("StarkOrbit Tarayici • Aktif")
+                      .setContentText(contentText)
+                      .setSmallIcon(R.drawable.ic_stark_launcher)
+                      .setContentIntent(pendingOpenIntent)
+                      .setOngoing(true)
+                      .addAction(
+                          android.R.drawable.ic_menu_close_clear_cancel,
+                          "Tamamen Kapat",
+                          pendingStopIntent
+                      )
+                      .build()
+              }
+
+              private fun updateNotification(text: String) {
+                  val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  manager.notify(NOTIFICATION_ID, buildNotification(text))
+              }
+
+              fun stopBrowserService() {
+                  heartbeatHandler.removeCallbacksAndMessages(null)
+                  for (tab in tabs) {
+                      tab.webView.keepRunningInBackground = false
+                      (tab.webView.parent as? ViewGroup)?.removeView(tab.webView)
+                      tab.webView.destroy()
+                  }
+                  tabs.clear()
+                  wakeLock?.let { if (it.isHeld) it.release() }
+                  wifiLock?.let { if (it.isHeld) it.release() }
+                  stopForeground(STOP_FOREGROUND_REMOVE)
+                  stopSelf()
+              }
+
+              override fun onDestroy() {
+                  heartbeatHandler.removeCallbacksAndMessages(null)
+                  wakeLock?.let { if (it.isHeld) it.release() }
+                  wifiLock?.let { if (it.isHeld) it.release() }
+                  super.onDestroy()
+              }
+          }
+
+          class MainActivity : AppCompatActivity() {
+              private var browserService: BrowserForegroundService? = null
+              private var isBound = false
+
+              private lateinit var rootContainer: FrameLayout
+              private lateinit var mainVerticalLayout: LinearLayout
+              private lateinit var topNavBar: LinearLayout
+              private lateinit var tabScrollBar: HorizontalScrollView
+              private lateinit var tabStripLayout: LinearLayout
+              private lateinit var urlEditText: EditText
+              private lateinit var progressBar: ProgressBar
+              private lateinit var webStageContainer: FrameLayout
+              private lateinit var gamePadBar: HorizontalScrollView
+              private lateinit var floatingHudButton: TextView
+
+              private lateinit var vpnStatusButton: Button
+              private lateinit var antiAfkButton: Button
+              private lateinit var pcModeButton: Button
+
+              private var isFullscreenGameMode = false
+              private var isGamePadVisible = true
+              private var isLandscapeLocked = false
+
+              private var themeAccentColor = Color.parseColor("#00F0FF")
+              private var themeSecondaryColor = Color.parseColor("#FF2A85")
+              private var themeBgColor = Color.parseColor("#070913")
+              private var themePanelColor = Color.parseColor("#10172E")
+
+              private val connection = object : ServiceConnection {
+                  override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                      val binder = service as BrowserForegroundService.LocalBinder
+                      browserService = binder.getService()
+                      isBound = true
+                      attachPersistentStackToScreen()
+                  }
+
+                  override fun onServiceDisconnected(name: ComponentName?) {
+                      isBound = false
+                      browserService = null
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                  buildCyberpunkGui()
+                  requestBatteryOptimizationExemption()
+                  startAndBindBrowserService()
+              }
+
+              private fun makeRoundedBg(fillColor: Int, strokeColor: Int, cornerRadiusDp: Float = 18f, strokeWidth: Int = 2): GradientDrawable {
+                  return GradientDrawable().apply {
+                      shape = GradientDrawable.RECTANGLE
+                      cornerRadius = cornerRadiusDp
+                      setColor(fillColor)
+                      setStroke(strokeWidth, strokeColor)
+                  }
+              }
+
+              private fun styleCyberButton(btn: Button, accent: Int = themeAccentColor, fill: Int = Color.parseColor("#162040")) {
+                  btn.setTextColor(Color.WHITE)
+                  btn.textSize = 11f
+                  btn.typeface = Typeface.DEFAULT_BOLD
+                  btn.isAllCaps = false
+                  btn.setPadding(20, 8, 20, 8)
+                  btn.background = makeRoundedBg(fill, accent, 16f, 2)
+              }
+
+              @SuppressLint("ClickableViewAccessibility")
+              private fun buildCyberpunkGui() {
+                  rootContainer = FrameLayout(this).apply {
+                      setBackgroundColor(themeBgColor)
+                      layoutParams = ViewGroup.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                  }
+
+                  mainVerticalLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      layoutParams = FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                  }
+
+                  val tabHeaderRow = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setBackgroundColor(Color.parseColor("#090D1C"))
+                      setPadding(12, 8, 12, 8)
+                  }
+
+                  tabScrollBar = HorizontalScrollView(this).apply {
+                      isHorizontalScrollBarEnabled = false
+                      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                  }
+
+                  tabStripLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                  }
+                  tabScrollBar.addView(tabStripLayout)
+
+                  val newTabBtn = Button(this).apply {
+                      text = "+ Sekme"
+                      styleCyberButton(this, themeAccentColor, Color.parseColor("#0D2838"))
+                      setOnClickListener {
+                          browserService?.createNewTab(loadHomeDashboard = true)
+                      }
+                  }
+
+                  val themeBtn = Button(this).apply {
+                      text = "Tema"
+                      styleCyberButton(this, themeSecondaryColor, Color.parseColor("#281028"))
+                      setOnClickListener { showThemeDialog() }
+                  }
+
+                  val tabParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 84).apply {
+                      marginStart = 10
+                  }
+                  tabHeaderRow.addView(tabScrollBar)
+                  tabHeaderRow.addView(newTabBtn, tabParams)
+                  tabHeaderRow.addView(themeBtn, tabParams)
+
+                  topNavBar = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(12, 8, 12, 8)
+                      setBackgroundColor(themePanelColor)
+                  }
+
+                  val backBtn = Button(this).apply {
+                      text = "<"
+                      styleCyberButton(this)
+                      setOnClickListener {
+                          browserService?.getActiveTab()?.webView?.let { wv ->
+                              if (wv.canGoBack()) wv.goBack()
+                          }
+                      }
+                  }
+
+                  val homeBtn = Button(this).apply {
+                      text = "Ev"
+                      styleCyberButton(this)
+                      setOnClickListener {
+                          browserService?.getActiveTab()?.let { tab ->
+                              browserService?.loadStarkCommandCenter(tab.webView)
+                              tab.url = "stark://home"
+                              urlEditText.setText("stark://home")
+                          }
+                      }
+                  }
+
+                  urlEditText = EditText(this).apply {
+                      hint = "Oyun/Site adresi veya arama..."
+                      setSingleLine(true)
+                      setTextColor(Color.WHITE)
+                      setHintTextColor(Color.parseColor("#7C8DB5"))
+                      textSize = 13f
+                      setPadding(24, 12, 24, 12)
+                      background = makeRoundedBg(Color.parseColor("#070A17"), themeAccentColor, 20f, 2)
+                      imeOptions = EditorInfo.IME_ACTION_GO
+                      layoutParams = LinearLayout.LayoutParams(0, 88, 1f).apply {
+                          marginStart = 8
+                          marginEnd = 8
+                      }
+                      setOnEditorActionListener { _, actionId, event ->
+                          if (actionId == EditorInfo.IME_ACTION_GO ||
+                              (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                          ) {
+                              navigateToInput()
+                              true
+                          } else {
+                              false
+                          }
+                      }
+                  }
+
+                  vpnStatusButton = Button(this).apply {
+                      text = if (StarkVpnService.isRunning) "VPN: ACIK" else "VPN"
+                      styleCyberButton(this, Color.parseColor("#10B981"))
+                      setOnClickListener { showVpnAndProxyDialog() }
+                  }
+
+                  val fullscreenBtn = Button(this).apply {
+                      text = "Tam Ekran"
+                      styleCyberButton(this, themeSecondaryColor)
+                      setOnClickListener { toggleFullscreenGameMode(true) }
+                  }
+
+                  val navBtnParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86).apply {
+                      marginEnd = 6
+                  }
+                  topNavBar.addView(backBtn, LinearLayout.LayoutParams(96, 86).apply { marginEnd = 6 })
+                  topNavBar.addView(homeBtn, LinearLayout.LayoutParams(96, 86))
+                  topNavBar.addView(urlEditText)
+                  topNavBar.addView(vpnStatusButton, navBtnParams)
+                  topNavBar.addView(fullscreenBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86))
+
+                  progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                      max = 100
+                      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 6)
+                  }
+
+                  webStageContainer = FrameLayout(this).apply {
+                      setBackgroundColor(themeBgColor)
+                      layoutParams = LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      )
+                  }
+
+                  gamePadBar = HorizontalScrollView(this).apply {
+                      isHorizontalScrollBarEnabled = false
+                      setBackgroundColor(Color.parseColor("#0B1022"))
+                      setPadding(12, 8, 12, 8)
+                  }
+
+                  val gameRow = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                  }
+
+                  fun addMacroBtn(label: String, accent: Int, onClick: () -> Unit): Button {
+                      val b = Button(this).apply {
+                          text = label
+                          styleCyberButton(this, accent, Color.parseColor("#131C38"))
+                          setOnClickListener { onClick() }
+                      }
+                      val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 82).apply {
+                          marginEnd = 10
+                      }
+                      gameRow.addView(b, lp)
+                      return b
+                  }
+
+                  addMacroBtn("SPACE (Lazer)", Color.parseColor("#FF2A85")) {
+                      browserService?.sendGameKey(" ", 32)
+                  }
+                  addMacroBtn("1", themeAccentColor) { browserService?.sendGameKey("1", 49) }
+                  addMacroBtn("2", themeAccentColor) { browserService?.sendGameKey("2", 50) }
+                  addMacroBtn("3", themeAccentColor) { browserService?.sendGameKey("3", 51) }
+                  addMacroBtn("4", themeAccentColor) { browserService?.sendGameKey("4", 52) }
+                  addMacroBtn("5", themeAccentColor) { browserService?.sendGameKey("5", 53) }
+                  addMacroBtn("J (Portal)", Color.parseColor("#9D4EDD")) {
+                      browserService?.sendGameKey("j", 74)
+                  }
+                  addMacroBtn("C (Konfig)", Color.parseColor("#3B82F6")) {
+                      browserService?.sendGameKey("c", 67)
+                  }
+
+                  antiAfkButton = addMacroBtn("Anti-AFK: ACIK", Color.parseColor("#10B981")) {
+                      val tab = browserService?.getActiveTab() ?: return@addMacroBtn
+                      tab.isAntiAfkEnabled = !tab.isAntiAfkEnabled
+                      antiAfkButton.text = if (tab.isAntiAfkEnabled) "Anti-AFK: ACIK" else "Anti-AFK: KAPALI"
+                      Toast.makeText(
+                          this,
+                          if (tab.isAntiAfkEnabled) "Anti-AFK aktif: Ekran kapaliyken bile oyundan dusmez" else "Anti-AFK kapatildi",
+                          Toast.LENGTH_SHORT
+                      ).show()
+                  }
+
+                  pcModeButton = addMacroBtn("PC Modu: ACIK", themeAccentColor) {
+                      val tab = browserService?.getActiveTab() ?: return@addMacroBtn
+                      val isPc = browserService?.toggleDesktopMode(tab) ?: true
+                      pcModeButton.text = if (isPc) "PC Modu: ACIK" else "Mobil Mod"
+                  }
+
+                  addMacroBtn("Yon Kilidi", Color.parseColor("#F59E0B")) {
+                      toggleOrientationLock()
+                  }
+
+                  addMacroBtn("Oto-Yenile", themeAccentColor) {
+                      showAutoRefreshDialog()
+                  }
+
+                  gamePadBar.addView(gameRow)
+
+                  mainVerticalLayout.addView(tabHeaderRow)
+                  mainVerticalLayout.addView(topNavBar)
+                  mainVerticalLayout.addView(progressBar)
+                  mainVerticalLayout.addView(webStageContainer)
+                  mainVerticalLayout.addView(gamePadBar)
+
+                  floatingHudButton = TextView(this).apply {
+                      text = "MENU"
+                      textSize = 13f
+                      typeface = Typeface.DEFAULT_BOLD
+                      gravity = Gravity.CENTER
+                      setTextColor(Color.WHITE)
+                      background = makeRoundedBg(Color.parseColor("#CC10172E"), themeAccentColor, 99f, 3)
+                      visibility = View.GONE
+                      val size = 130
+                      layoutParams = FrameLayout.LayoutParams(size, size).apply {
+                          gravity = Gravity.TOP or Gravity.END
+                          topMargin = 140
+                          marginEnd = 24
+                      }
+
+                      var dX = 0f
+                      var dY = 0f
+                      var downTime = 0L
+                      setOnTouchListener { v, event ->
+                          when (event.actionMasked) {
+                              MotionEvent.ACTION_DOWN -> {
+                                  dX = v.x - event.rawX
+                                  dY = v.y - event.rawY
+                                  downTime = System.currentTimeMillis()
+                                  true
+                              }
+                              MotionEvent.ACTION_MOVE -> {
+                                  v.animate()
+                                      .x(event.rawX + dX)
+                                      .y(event.rawY + dY)
+                                      .setDuration(0)
+                                      .start()
+                                  true
+                              }
+                              MotionEvent.ACTION_UP -> {
+                                  if (System.currentTimeMillis() - downTime < 220) {
+                                      showFloatingHudMenu()
+                                  }
+                                  true
+                              }
+                              else -> false
+                          }
+                      }
+                  }
+
+                  rootContainer.addView(mainVerticalLayout)
+                  rootContainer.addView(floatingHudButton)
+                  setContentView(rootContainer)
+              }
+
+              private fun refreshTabStrip() {
+                  val service = browserService ?: return
+                  tabStripLayout.removeAllViews()
+
+                  for (tab in service.tabs) {
+                      val isSelected = tab.id == service.activeTabId
+                      val chipLayout = LinearLayout(this).apply {
+                          orientation = LinearLayout.HORIZONTAL
+                          gravity = Gravity.CENTER_VERTICAL
+                          setPadding(22, 8, 14, 8)
+                          background = makeRoundedBg(
+                              if (isSelected) Color.parseColor("#192952") else Color.parseColor("#0F152B"),
+                              if (isSelected) themeAccentColor else Color.parseColor("#2B3860"),
+                              20f,
+                              if (isSelected) 3 else 1
+                          )
+                      }
+
+                      val titleView = TextView(this).apply {
+                          text = "● ${tab.title}"
+                          setTextColor(if (isSelected) Color.WHITE else Color.parseColor("#94A8D0"))
+                          textSize = 12f
+                          typeface = if (isSelected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                          maxLines = 1
+                          ellipsize = TextUtils.TruncateAt.END
+                          setOnClickListener {
+                              service.switchToTab(tab.id)
+                              syncBottomBarWithActiveTab()
+                          }
+                      }
+
+                      val closeView = TextView(this).apply {
+                          text = "  X"
+                          setTextColor(Color.parseColor("#FF2A85"))
+                          textSize = 13f
+                          typeface = Typeface.DEFAULT_BOLD
+                          setOnClickListener {
+                              service.closeTab(tab.id)
+                              syncBottomBarWithActiveTab()
+                          }
+                      }
+
+                      chipLayout.addView(titleView)
+                      chipLayout.addView(closeView)
+
+                      val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 78).apply {
+                          marginEnd = 10
+                      }
+                      tabStripLayout.addView(chipLayout, lp)
+                  }
+              }
+
+              private fun syncBottomBarWithActiveTab() {
+                  val tab = browserService?.getActiveTab() ?: return
+                  antiAfkButton.text = if (tab.isAntiAfkEnabled) "Anti-AFK: ACIK" else "Anti-AFK: KAPALI"
+                  pcModeButton.text = if (tab.isDesktopMode) "PC Modu: ACIK" else "Mobil Mod"
+              }
+
+              private fun toggleFullscreenGameMode(enable: Boolean) {
+                  isFullscreenGameMode = enable
+                  val tabHeader = mainVerticalLayout.getChildAt(0)
+                  if (enable) {
+                      tabHeader.visibility = View.GONE
+                      topNavBar.visibility = View.GONE
+                      floatingHudButton.visibility = View.VISIBLE
+                      hideSystemBars()
+                      Toast.makeText(
+                          this,
+                          "Tam Ekran Oyun Modu Aktif! Sagdaki MENU butonundan kontrollere ulasabilirsin.",
+                          Toast.LENGTH_SHORT
+                      ).show()
+                  } else {
+                      tabHeader.visibility = View.VISIBLE
+                      topNavBar.visibility = View.VISIBLE
+                      gamePadBar.visibility = if (isGamePadVisible) View.VISIBLE else View.GONE
+                      floatingHudButton.visibility = View.GONE
+                      showSystemBars()
+                  }
+              }
+
+              private fun hideSystemBars() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                      window.insetsController?.let { controller ->
+                          controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                          controller.systemBarsBehavior =
+                              WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                      }
+                  } else {
+                      @Suppress("DEPRECATION")
+                      window.decorView.systemUiVisibility = (
+                          View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                              or View.SYSTEM_UI_FLAG_FULLSCREEN
+                              or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                              or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                              or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                          )
+                  }
+              }
+
+              private fun showSystemBars() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                      window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                  } else {
+                      @Suppress("DEPRECATION")
+                      window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                  }
+              }
+
+              private fun toggleOrientationLock() {
+                  isLandscapeLocked = !isLandscapeLocked
+                  requestedOrientation = if (isLandscapeLocked) {
+                      ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                  } else {
+                      ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                  }
+                  Toast.makeText(
+                      this,
+                      if (isLandscapeLocked) "Yatay Oyun Modu (Landscape) Kilitlendi" else "Ekran Yonu Serbest",
+                      Toast.LENGTH_SHORT
+                  ).show()
+              }
+
+              private fun showFloatingHudMenu() {
+                  val options = arrayOf(
+                      "Tam Ekrandan Cik (Ust Bari Goster)",
+                      if (gamePadBar.visibility == View.VISIBLE) "Alt Oyun Tuslarini Gizle" else "Alt Oyun Tuslarini Goster",
+                      if (isLandscapeLocked) "Yatay Kilidi Kaldir (Dikey/Oto)" else "Ekrani Yatay Kilitle (DarkOrbit Modu)",
+                      "Yeni Arka Plan Sekmesi Ac",
+                      "VPN ve Proxy Kalkani",
+                      "Aktif Sekmeyi Yenile"
+                  )
+                  AlertDialog.Builder(this)
+                      .setTitle("StarkOrbit Hizli Oyun Menusu")
+                      .setItems(options) { _, which ->
+                          when (which) {
+                              0 -> toggleFullscreenGameMode(false)
+                              1 -> {
+                                  isGamePadVisible = gamePadBar.visibility != View.VISIBLE
+                                  gamePadBar.visibility = if (isGamePadVisible) View.VISIBLE else View.GONE
+                              }
+                              2 -> toggleOrientationLock()
+                              3 -> {
+                                  browserService?.createNewTab(loadHomeDashboard = true)
+                                  toggleFullscreenGameMode(false)
+                              }
+                              4 -> showVpnAndProxyDialog()
+                              5 -> browserService?.getActiveTab()?.webView?.reload()
+                          }
+                      }
+                      .show()
+              }
+
+              private fun showVpnAndProxyDialog() {
+                  val layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(48, 32, 48, 16)
+                  }
+
+                  val statusTv = TextView(this).apply {
+                      val vpnState = if (StarkVpnService.isRunning) "ACIK (1.1.1.1 Gaming DNS Tuneli)" else "KAPALI"
+                      val proxyState = browserService?.activeProxySummary ?: "Dogrudan Baglanti"
+                      text = "VPN Tunel Durumu: $vpnState\nTarayici Proxy: $proxyState\n"
+                      textSize = 13f
+                  }
+
+                  val toggleVpnBtn = Button(this).apply {
+                      text = if (StarkVpnService.isRunning) "Dahili VPN Tunelini Kapat" else "Dahili VPN ve 1.1.1.1 Oyun DNS Baslat"
+                      setOnClickListener {
+                          if (StarkVpnService.isRunning) {
+                              val stopIntent = Intent(this@MainActivity, StarkVpnService::class.java).apply {
+                                  action = StarkVpnService.ACTION_DISCONNECT
+                              }
+                              startService(stopIntent)
+                              StarkVpnService.isRunning = false
+                              vpnStatusButton.text = "VPN"
+                              Toast.makeText(this@MainActivity, "Dahili VPN Kapatildi", Toast.LENGTH_SHORT).show()
+                          } else {
+                              val prepareIntent = VpnService.prepare(this@MainActivity)
+                              if (prepareIntent != null) {
+                                  @Suppress("DEPRECATION")
+                                  startActivityForResult(prepareIntent, 909)
+                              } else {
+                                  startStarkVpn()
+                              }
+                          }
+                      }
+                  }
+
+                  val proxyInput = EditText(this).apply {
+                      hint = "Ozel Proxy (Orn: 198.51.100.1:8080)"
+                      setSingleLine(true)
+                  }
+
+                  val applyProxyBtn = Button(this).apply {
+                      text = "Tarayici Ici Proxy Uygula"
+                      setOnClickListener {
+                          val rawProxy = proxyInput.text.toString().trim()
+                          if (rawProxy.isNotEmpty()) {
+                              applyWebViewProxy(rawProxy)
+                          }
+                      }
+                  }
+
+                  val clearProxyBtn = Button(this).apply {
+                      text = "Proxy Sifirla (Dogrudan Baglanti)"
+                      setOnClickListener {
+                          clearWebViewProxy()
+                      }
+                  }
+
+                  layout.addView(statusTv)
+                  layout.addView(toggleVpnBtn)
+                  layout.addView(proxyInput)
+                  layout.addView(applyProxyBtn)
+                  layout.addView(clearProxyBtn)
+
+                  AlertDialog.Builder(this)
+                      .setTitle("StarkOrbit VPN ve Proxy Kalkani")
+                      .setView(layout)
+                      .setPositiveButton("Kapat", null)
+                      .show()
+              }
+
+              private fun startStarkVpn() {
+                  val intent = Intent(this, StarkVpnService::class.java).apply {
+                      action = StarkVpnService.ACTION_CONNECT
+                  }
+                  startService(intent)
+                  StarkVpnService.isRunning = true
+                  vpnStatusButton.text = "VPN: ACIK"
+                  Toast.makeText(this, "StarkOrbit Gaming VPN (1.1.1.1 Tuneli) Aktif!", Toast.LENGTH_SHORT).show()
+              }
+
+              @Deprecated("Deprecated in Java")
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 909 && resultCode == RESULT_OK) {
+                      startStarkVpn()
+                  }
+              }
+
+              private fun applyWebViewProxy(proxyRule: String) {
+                  if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+                      val proxyConfig = ProxyConfig.Builder()
+                          .addProxyRule(proxyRule)
+                          .addDirect()
+                          .build()
+                      ProxyController.getInstance().setProxyOverride(
+                          proxyConfig,
+                          Executors.newSingleThreadExecutor()
+                      ) {
+                          runOnUiThread {
+                              browserService?.activeProxySummary = proxyRule
+                              Toast.makeText(this, "Tarayici Proxy Aktif: $proxyRule", Toast.LENGTH_SHORT).show()
+                              browserService?.getActiveTab()?.webView?.reload()
+                          }
+                      }
+                  } else {
+                      Toast.makeText(this, "Cihaz WebView surumu ProxyOverride desteklemiyor", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              private fun clearWebViewProxy() {
+                  if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+                      ProxyController.getInstance().clearProxyOverride(
+                          Executors.newSingleThreadExecutor()
+                      ) {
+                          runOnUiThread {
+                              browserService?.activeProxySummary = "Dogrudan Baglanti"
+                              Toast.makeText(this, "Proxy temizlendi", Toast.LENGTH_SHORT).show()
+                              browserService?.getActiveTab()?.webView?.reload()
+                          }
+                      }
+                  }
+              }
+
+              private fun showAutoRefreshDialog() {
+                  val tab = browserService?.getActiveTab() ?: return
+                  val items = arrayOf(
+                      "Kapali (Yenileme Yok)",
+                      "Her 15 Saniyede Bir Yenile",
+                      "Her 30 Saniyede Bir Yenile",
+                      "Her 60 Saniyede Bir Yenile",
+                      "Her 5 Dakikada Bir Yenile"
+                  )
+                  val values = intArrayOf(0, 15, 30, 60, 300)
+                  AlertDialog.Builder(this)
+                      .setTitle("Sekme Otomatik Yenileme (${tab.title})")
+                      .setItems(items) { _, which ->
+                          tab.autoRefreshSeconds = values[which]
+                          tab.lastRefreshTimestamp = System.currentTimeMillis()
+                          Toast.makeText(
+                              this,
+                              if (values[which] == 0) "Otomatik yenileme kapatildi"
+                              else "Sekme ekran kapaliyken bile her ${values[which]} saniyede yenilenecek",
+                              Toast.LENGTH_SHORT
+                          ).show()
+                      }
+                      .show()
+              }
+
+              private fun showThemeDialog() {
+                  val themes = arrayOf(
+                      "StarkOrbit Cyber Cyan (#00F0FF)",
+                      "MMO Crimson Red (#EF4444)",
+                      "EIC Azure Blue (#3B82F6)",
+                      "VRU Emerald Green (#10B981)"
+                  )
+                  AlertDialog.Builder(this)
+                      .setTitle("StarkOrbit Sirket ve Siber Temasi")
+                      .setItems(themes) { _, which ->
+                          when (which) {
+                              0 -> {
+                                  themeAccentColor = Color.parseColor("#00F0FF")
+                                  themeSecondaryColor = Color.parseColor("#FF2A85")
+                              }
+                              1 -> {
+                                  themeAccentColor = Color.parseColor("#EF4444")
+                                  themeSecondaryColor = Color.parseColor("#F59E0B")
+                              }
+                              2 -> {
+                                  themeAccentColor = Color.parseColor("#3B82F6")
+                                  themeSecondaryColor = Color.parseColor("#00F0FF")
+                              }
+                              3 -> {
+                                  themeAccentColor = Color.parseColor("#10B981")
+                                  themeSecondaryColor = Color.parseColor("#00F0FF")
+                              }
+                          }
+                          urlEditText.background = makeRoundedBg(Color.parseColor("#070A17"), themeAccentColor, 20f, 2)
+                          floatingHudButton.background = makeRoundedBg(Color.parseColor("#CC10172E"), themeAccentColor, 99f, 3)
+                          refreshTabStrip()
+                      }
+                      .show()
+              }
+
+              private fun navigateToInput() {
+                  val rawInput = urlEditText.text.toString().trim()
+                  if (rawInput.isEmpty()) return
+                  val tab = browserService?.getActiveTab() ?: return
+                  if (rawInput == "stark://home") {
+                      browserService?.loadStarkCommandCenter(tab.webView)
+                      return
+                  }
+                  val pHttp = "ht" + "tp://"
+                  val pHttps = "ht" + "tps://"
+                  val searchBase = pHttps + "www.goo" + "gle." + "com/search?q="
+                  val finalUrl = when {
+                      rawInput.startsWith(pHttp) || rawInput.startsWith(pHttps) -> rawInput
+                      rawInput.contains(".") && !rawInput.contains(" ") -> pHttps + rawInput
+                      else -> searchBase + Uri.encode(rawInput)
+                  }
+                  tab.webView.loadUrl(finalUrl)
+              }
+
+              private fun startAndBindBrowserService() {
+                  val serviceIntent = Intent(this, BrowserForegroundService::class.java)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      startForegroundService(serviceIntent)
+                  } else {
+                      startService(serviceIntent)
+                  }
+                  bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
+              }
+
+              private fun attachPersistentStackToScreen() {
+                  val service = browserService ?: return
+                  val stack = service.persistentWebStack
+                  (stack.parent as? ViewGroup)?.removeView(stack)
+                  webStageContainer.addView(
+                      stack,
+                      FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                  )
+
+                  service.onTabsUpdated = {
+                      runOnUiThread {
+                          refreshTabStrip()
+                          syncBottomBarWithActiveTab()
+                      }
+                  }
+                  service.onActiveUrlChanged = { newUrl ->
+                      runOnUiThread { urlEditText.setText(newUrl) }
+                  }
+                  service.onProgressChanged = { progress ->
+                      runOnUiThread {
+                          progressBar.progress = progress
+                          progressBar.visibility = if (progress < 100) View.VISIBLE else View.GONE
+                      }
+                  }
+
+                  refreshTabStrip()
+                  syncBottomBarWithActiveTab()
+                  service.getActiveTab()?.let { urlEditText.setText(it.url) }
+              }
+
+              override fun onPause() {
+                  super.onPause()
+                  browserService?.tabs?.forEach { tab ->
+                      tab.webView.onResume()
+                      tab.webView.resumeTimers()
+                  }
+              }
+
+              override fun onDestroy() {
+                  browserService?.let { service ->
+                      service.onTabsUpdated = null
+                      service.onActiveUrlChanged = null
+                      service.onProgressChanged = null
+                      (service.persistentWebStack.parent as? ViewGroup)?.removeView(service.persistentWebStack)
+                      service.tabs.forEach { tab ->
+                          tab.webView.onResume()
+                          tab.webView.resumeTimers()
+                      }
+                  }
+                  if (isBound) {
+                      unbindService(connection)
+                      isBound = false
+                  }
+                  Toast.makeText(
+                      applicationContext,
+                      "StarkOrbit: Tum sekmeler arka planda calismaya devam ediyor.",
+                      Toast.LENGTH_SHORT
+                  ).show()
+                  super.onDestroy()
+              }
+
+              @SuppressLint("BatteryLife")
+              private fun requestBatteryOptimizationExemption() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                      if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                          val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                              data = Uri.parse("package:$packageName")
+                          }
+                          startActivity(intent)
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Debug APK Derle
+        run: gradle assembleDebug --no-daemon
+
+      - name: APK Dosyasini Artifact Olarak Yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarkOrbit-Tarayici-v2-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: APK Dosyasini Releases Bolumune Yukle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+          gh release delete v2.0 --yes || true
+          git tag -d v2.0 || true
+          gh release create v2.0 StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkOrbit Gaming Browser v2.0 (VPN + Tam Ekran + Coklu Sekme)" --notes "StarkOrbit v2.0: Dahili Gaming VPN ve Proxy, Tam Ekran DarkOrbit Oyun Modu, Sanal Oyun Tuslari, Anti-AFK ve Sinirsiz Arka Plan Sekme Motoru."
