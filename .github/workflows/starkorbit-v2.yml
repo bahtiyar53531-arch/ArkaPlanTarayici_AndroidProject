@@ -330,7 +330,7 @@ jobs:
                       super.onWindowFocusChanged(hasWindowFocus)
                   }
               }
-}
+            }
               
 
           data class BrowserTab(
