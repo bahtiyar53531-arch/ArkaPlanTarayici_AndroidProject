@@ -331,14 +331,7 @@ jobs:
                   }
               }
 
-              override fun onVisibilityChanged(changedView: View, visibility: Int) {
-                  if (keepRunningInBackground && visibility != View.VISIBLE) {
-                      super.onVisibilityChanged(changedView, View.VISIBLE)
-                  } else {
-                      super.onVisibilityChanged(visibility)
-                  }
-              }
-          }
+              
 
           data class BrowserTab(
               val id: Int,
