@@ -194,7 +194,7 @@ jobs:
                                 if (!pm.isIgnoringBatteryOptimizations(packageName)) {"""
           k = k.replace(old_perm, new_perm)
           k = k.replace('if (key == " ") "Space" else "Key" + key.uppercase()', 'if (key == " ") "Space" else if (key.startsWith("F") && key.length > 1) key else "Key" + key.uppercase()')
-                    open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)
+                     open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)
           PYEOF
           python3 /tmp/up.py
           gradle assembleDebug --no-daemon
