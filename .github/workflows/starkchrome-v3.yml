@@ -315,6 +315,7 @@ jobs:
                   }.setPositiveButton("Kapat", null).show()
               }
 
+
               private fun showThemeDialog()"""
                      ai_dlg = dlg
             k = k.replace("private fun dp(", ai_dlg.split("private fun showThemeDialog")[0].replace("private fun ", "fun ") + "\n    private fun dp(")
@@ -322,11 +323,11 @@ jobs:
             PYEOF
             python3 /tmp/up.py
             gradle assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
-          cp app/build/outputs/apk/debug/app-debug.apk StarkOrbit-Tarayici-v2.apk
+          cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk
           cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
-          gh release delete v1.0 --yes || true
-          gh release delete v2.0 --yes || true
-          gh release delete v3.0 --yes || true
-          git tag -d v3.0 || true
-          gh release create v3.0 StarkChrome-8K-v3.apk StarkOrbit-Tarayici-v2.apk ArkaPlan-Tarayici.apk --title "StarkChrome 8K Ultra v3.0 (Tum Ozellikler Birlestirilmis Tam Surum)" --notes "StarkChrome 8K Ultra v3.0: 120Hz Maksimum FPS Motoru, 8K Ultra Cozunurluk (7680x4320) ve Yakinlastirma/Uzaklastirma (-/+), Tam Fonksiyonel Chrome Arayuzu ve Ayarlar Menusu, Boot/Kapanmama Bulut Arka Plan Kalkani, Dahili VPN ve Coklu Sekme."
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          gh release delete v1.0 --cleanup-tag -y || true
+          gh release delete v2.0 --cleanup-tag -y || true
+          gh release delete v3.0 --cleanup-tag -y || true
+          gh release delete v4.0 --cleanup-tag -y || true
+          gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk ArkaPlan-Tarayici.apk --title "Orbitra 8K AI Bot Ozel Tarayici v4.0 (Tam Surum)" --notes "Orbitra Ozel Tarayici v4.0: Direkt Orbitra Acilisi, Gizlenebilir HUD, Instagram ve Ekran Kapali Arka Plan Bot Korumasi, Yapay Zeka Galaxy Gate Pilotu (Alpha-Kronos, Hades, Kabus, F3/F4), 8K Cozunurluk, Zoom (-/+) ve Gaming VPN." --latest
