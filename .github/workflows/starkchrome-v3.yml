@@ -169,7 +169,7 @@ jobs:
                             }.setPositiveButton("Kapat", null).show()
                         }
                         private fun showThemeDialog()"""
-          k = k.replace("              private fun showThemeDialog()", ai_dlg)
+          k = k.replace("override fun onStop()", ai_dlg.split("private fun showThemeDialog")[0] + "\n    override fun onStop()")
           old_attach = "val stack = service.persistentWebStack"
           new_attach = "service.unmountFromLiveOverlay()\n                  val stack = service.persistentWebStack"
           k = k.replace(old_attach, new_attach)
