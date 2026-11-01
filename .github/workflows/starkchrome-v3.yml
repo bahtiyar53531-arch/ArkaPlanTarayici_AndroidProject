@@ -195,7 +195,9 @@ jobs:
           k = k.replace(old_perm, new_perm)
           k = k.replace('if (key == " ") "Space" else "Key" + key.uppercase()', 'if (key == " ") "Space" else if (key.startsWith("F") && key.length > 1) key else "Key" + key.uppercase()')
                                  open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)   
-          PYEOF
+                                  
+                                  python3 /tmp/up.py
+                                  PYEOF
           sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/; s/^[ ]*boot =/boot =/; s/^[ ]*rec =/rec =/; s/^[ ]*m =/m =/' /tmp/up.py && python3 /tmp/up.py
           gradle assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk
