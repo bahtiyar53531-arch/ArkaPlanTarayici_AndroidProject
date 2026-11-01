@@ -1,4 +1,4 @@
-name: StarkChrome 8K Ultra v3 Derleyici
+name: Orbitra 8K AI Bot v4 Derleyici
 on: [push, workflow_dispatch]
 permissions:
   contents: write
@@ -7,6 +7,206 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Orbitra v4 Hazirla ve Derle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 -c '
+          s = open(".github/workflows/starkorbit-v2.yml").read()
+          b = s.split("mkdir -p app/src/main/java/org/arkaplan/tarayici", 1)[1].split("StarkChrome", 1)[0]
+          lines = ["mkdir -p app/src/main/java/org/arkaplan/tarayici"] + [l[10:] if l.startswith("          ") else "" for l in b.splitlines() if "- name:" not in l]
+          open("/tmp/setup_v2.sh", "w").write("\n".join(lines) + "\n")
+          '
+          bash /tmp/setup_v2.sh
+          cat << 'PYEOF' > /tmp/up.py
+          m = open("app/src/main/AndroidManifest.xml").read()
+          m = m.replace('permission.INTERNET" />', 'permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />')
+          m = m.replace('label="StarkOrbit Browser"', 'label="Orbitra 8K Bot" android:largeHeap="true"')
+          rec = '<receiver android:name=".BootAndRestartReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver></application>'
+          m = m.replace('</application>', rec)
+          open("app/src/main/AndroidManifest.xml", "w").write(m)
+          k = open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt").read()
+          boot = """import android.app.AlarmManager
+          import android.content.BroadcastReceiver
+          import android.graphics.PixelFormat
+          import android.os.SystemClock
+          class BootAndRestartReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent?) {
+                  val i = Intent(context, BrowserForegroundService::class.java)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i) else context.startService(i)
+              }
+          }
+          class StarkVpnService"""
+          k = k.replace("class StarkVpnService", boot, 1)
+          k = k.replace("var autoRefreshSeconds: Int = 0,", "var zoomPercent: Int = 100, var is8kUltraEnabled: Boolean = true, var isAiBotEnabled: Boolean = false, var aiGateName: String = \"Kapali\", var autoRefreshSeconds: Int = 0,")
+          old_load = "if (loadHomeDashboard || initialUrl == null) {\n                      loadStarkCommandCenter(wv)\n                  } else {\n                      wv.loadUrl(initialUrl)\n                  }"
+          new_load = 'val orbitraUrl = "ht" + "tps://orbitragame.space/kayit?ref=KMNPGS"\n                  wv.loadUrl(initialUrl ?: orbitraUrl)'
+          k = k.replace(old_load, new_load)
+          old_binder = "private val binder = LocalBinder()"
+          new_binder = """private val binder = LocalBinder()
+                        private var overlayHolder: FrameLayout? = null
+                        private var isOverlayMounted = false
+                        private var aiTick = 0
+                        fun mountToLiveOverlay() {
+                            if (isOverlayMounted) return
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(applicationContext)) return
+                            try {
+                                val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                                val h = overlayHolder ?: FrameLayout(applicationContext).also { overlayHolder = it }
+                                (persistentWebStack.parent as? ViewGroup)?.removeView(persistentWebStack)
+                                h.addView(persistentWebStack, FrameLayout.LayoutParams(1, 1))
+                                val t = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+                                val p = WindowManager.LayoutParams(1, 1, t, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0 }
+                                wm.addView(h, p)
+                                isOverlayMounted = true
+                                for (tab in tabs) { tab.webView.onResume(); tab.webView.resumeTimers() }
+                            } catch (_: Exception) { isOverlayMounted = false }
+                        }
+                        fun unmountFromLiveOverlay() {
+                            if (!isOverlayMounted) return
+                            try {
+                                val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                                overlayHolder?.let { h -> (persistentWebStack.parent as? ViewGroup)?.removeView(persistentWebStack); wm.removeView(h) }
+                            } catch (_: Exception) {}
+                            isOverlayMounted = false
+                        }"""
+          k = k.replace(old_binder, new_binder, 1)
+          k = k.replace("injectAlwaysAwakeScript(tab.webView, tab.isAntiAfkEnabled)", "injectAlwaysAwakeScript(tab.webView, tab.isAntiAfkEnabled); runOrbitraAiTick(tab)")
+          ai_fn = """              fun runOrbitraAiTick(tab: BrowserTab) {
+                            aiTick++
+                            val aiFlag = if (tab.isAiBotEnabled) "true" else "false"
+                            val gate = tab.aiGateName
+                            val js = "(function(){try{" +
+                                "Object.defineProperty(window,'onblur',{get:function(){return null;},set:function(){},configurable:true});" +
+                                "Object.defineProperty(window,'onpagehide',{get:function(){return null;},set:function(){},configurable:true});" +
+                                "Object.defineProperty(document,'onvisibilitychange',{get:function(){return null;},set:function(){},configurable:true});" +
+                                "['visibilitychange','webkitvisibilitychange','blur','focusout','pagehide','freeze','unload'].forEach(function(ev){" +
+                                "window.addEventListener(ev,function(e){e.stopImmediatePropagation();e.preventDefault();},true);" +
+                                "document.addEventListener(ev,function(e){e.stopImmediatePropagation();e.preventDefault();},true);});" +
+                                "window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now());},8);};" +
+                                "Object.defineProperty(window,'devicePixelRatio',{get:function(){return 4.0;},configurable:true});" +
+                                "Object.defineProperty(screen,'width',{get:function(){return 7680;},configurable:true});" +
+                                "Object.defineProperty(screen,'height',{get:function(){return 4320;},configurable:true});" +
+                                "try{var C=window.AudioContext||window.webkitAudioContext;if(C&&!window.__orbAud){window.__orbAud=true;var c=new C();var o=c.createOscillator();var g=c.createGain();g.gain.value=0.00001;o.connect(g);g.connect(c.destination);o.start(0);}}catch(e){}" +
+                                "if(" + aiFlag + "){" +
+                                "function pk(k,c,kc){var t=document.querySelector('canvas')||document.activeElement||document.body||window;['keydown','keypress','keyup'].forEach(function(tp){var e=new KeyboardEvent(tp,{key:k,code:c,keyCode:kc,which:kc,bubbles:true,cancelable:true});t.dispatchEvent(e);window.dispatchEvent(e);document.dispatchEvent(e);});}" +
+                                "var els=document.querySelectorAll('button,a,div,span');for(var i=0;i<els.length;i++){var tx=(els[i].innerText||'').trim();if(tx.indexOf('" + gate + "')>-1 && '" + gate + "'!=='Kapali'){els[i].click();}}" +
+                                "if(" + aiTick + "%4===1){pk('F3','F3',114);}" +
+                                "if(" + aiTick + "%4===2){pk('F4','F4',115);}" +
+                                "if(" + aiTick + "%2===0){pk(' ','Space',32);pk('1','Digit1',49);}" +
+                                "if(" + aiTick + "%6===0){pk('j','KeyJ',74);}" +
+                                "}" +
+                                "}catch(e){}})();"
+                            tab.webView.evaluateJavascript(js, null)
+                        }
+                        fun injectAlwaysAwakeScript("""
+          k = k.replace("              fun injectAlwaysAwakeScript(", ai_fn, 1)
+          old_tr = "super.onTaskRemoved(rootIntent)"
+          new_tr = old_tr + "\n                  mountToLiveOverlay()\n                  try { val ri = Intent(applicationContext, BootAndRestartReceiver::class.java); val pi = PendingIntent.getBroadcast(applicationContext, 777, ri, PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE); (getSystemService(Context.ALARM_SERVICE) as AlarmManager).set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 1200L, pi) } catch (_: Exception) {}"
+          k = k.replace(old_tr, new_tr)
+          k = k.replace("urlEditText = EditText(this).apply {", "urlEditText = EditText(this).apply {\n                      visibility = View.GONE")
+          k = k.replace('text = "Ev"', 'text = "Orbitra"')
+          k = k.replace('browserService?.loadStarkCommandCenter(tab.webView)', 'tab.webView.loadUrl("ht" + "tps://orbitragame.space/")')
+          old_oc = "window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"
+          new_oc = old_oc + "\n                  try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { val b = windowManager.defaultDisplay.supportedModes.maxByOrNull { it.refreshRate }; if (b != null) { val p = window.attributes; p.preferredDisplayModeId = b.modeId; window.attributes = p } } } catch (_: Exception) {}"
+          k = k.replace(old_oc, new_oc)
+          old_nav = "topNavBar.addView(fullscreenBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86))"
+          new_nav = """val zoomOutBtn = Button(this).apply { text = "-"; styleCyberButton(this); setOnClickListener { browserService?.getActiveTab()?.let { t -> t.zoomPercent = (t.zoomPercent - 15).coerceIn(25, 300); t.webView.settings.textZoom = t.zoomPercent; t.webView.evaluateJavascript("document.body.style.zoom='" + (t.zoomPercent / 100.0) + "';", null); Toast.makeText(this@MainActivity, "Harita: %" + t.zoomPercent, Toast.LENGTH_SHORT).show() } } }
+                            val zoomInBtn = Button(this).apply { text = "+"; styleCyberButton(this); setOnClickListener { browserService?.getActiveTab()?.let { t -> t.zoomPercent = (t.zoomPercent + 15).coerceIn(25, 300); t.webView.settings.textZoom = t.zoomPercent; t.webView.evaluateJavascript("document.body.style.zoom='" + (t.zoomPercent / 100.0) + "';", null); Toast.makeText(this@MainActivity, "Harita: %" + t.zoomPercent, Toast.LENGTH_SHORT).show() } } }
+                            val aiTopBtn = Button(this).apply { text = "AI Kapi"; styleCyberButton(this, Color.parseColor("#10B981")); setOnClickListener { showOrbitraAiDialog() } }
+                            fullscreenBtn.text = "Gizle"
+                            topNavBar.addView(zoomOutBtn, LinearLayout.LayoutParams(90, 86).apply { marginEnd = 6 })
+                            topNavBar.addView(zoomInBtn, LinearLayout.LayoutParams(90, 86).apply { marginEnd = 6 })
+                            topNavBar.addView(aiTopBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86).apply { marginEnd = 6 })
+                            topNavBar.addView(fullscreenBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 86))"""
+          k = k.replace(old_nav, new_nav)
+          k = k.replace("tabHeader.visibility = View.GONE\n                      topNavBar.visibility = View.GONE\n                      floatingHudButton.visibility = View.VISIBLE", "tabHeader.visibility = View.GONE\n                      topNavBar.visibility = View.GONE\n                      gamePadBar.visibility = View.GONE\n                      floatingHudButton.visibility = View.VISIBLE")
+          old_mac = 'addMacroBtn("SPACE (Lazer)", Color.parseColor("#FF2A85")) {'
+          new_mac = """addMacroBtn("F3 (Hedef)", Color.parseColor("#10B981")) { browserService?.sendGameKey("F3", 114); Toast.makeText(this, "F3 Hedef Sec", Toast.LENGTH_SHORT).show() }
+                            addMacroBtn("F4 (Oto-Bot)", Color.parseColor("#10B981")) { browserService?.sendGameKey("F4", 115); Toast.makeText(this, "F4 Oto-Bot Baslatildi!", Toast.LENGTH_SHORT).show() }
+                            addMacroBtn("AI Kapi Pilotu", Color.parseColor("#9D4EDD")) { showOrbitraAiDialog() }
+                            addMacroBtn("F (FPS)", Color.parseColor("#F59E0B")) { browserService?.sendGameKey("f", 70) }
+                            """ + old_mac
+          k = k.replace(old_mac, new_mac)
+          ai_dlg = """              private fun showOrbitraAiDialog() {
+                            val tab = browserService?.getActiveTab() ?: return
+                            val gates = arrayOf(
+                                "AI Kapi ve Bot Pilotunu Kapat",
+                                "Alpha Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Beta Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Gamma Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Delta Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Epsilon Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Zeta Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Kappa Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Lambda Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Kronos Kapisi (Oto Dalga + F3/F4 + Portal J)",
+                                "Hades Grup Kapisi (Oto Savas + F3/F4)",
+                                "Kabus Kapisi (Etkinlik Oto Savas)",
+                                "x-5 / x-6 Kristallon Oto-Farm (Surekli F3 + F4 Bot)",
+                                "x-7 / x-8 Boss Kristallon Oto-Farm (Surekli F3 + F4 Bot)",
+                                "4-5 Uber Yaratik Oto-Farm (Surekli F3 + F4 Bot)"
+                            )
+                            val names = arrayOf("Kapali", "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Kappa", "Lambda", "Kronos", "Hades", "Kabus", "Kristallon", "Boss Kristallon", "Uber")
+                            AlertDialog.Builder(this).setTitle("Orbitra Yapay Zeka (AI) Kapi ve Bot Pilotu").setItems(gates) { _, w ->
+                                if (w == 0) {
+                                    tab.isAiBotEnabled = false
+                                    tab.aiGateName = "Kapali"
+                                    Toast.makeText(this, "AI Kapi Pilotu Kapatildi", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    tab.isAiBotEnabled = true
+                                    tab.aiGateName = names[w]
+                                    browserService?.runOrbitraAiTick(tab)
+                                    Toast.makeText(this, "AI Pilot Aktif: " + names[w] + " (Instagram veya Ekran Kapaliyken de Devam Eder!)", Toast.LENGTH_LONG).show()
+                                }
+                            }.setPositiveButton("Kapat", null).show()
+                        }
+                        private fun showThemeDialog()"""
+          k = k.replace("              private fun showThemeDialog()", ai_dlg)
+          old_attach = "val stack = service.persistentWebStack"
+          new_attach = "service.unmountFromLiveOverlay()\n                  val stack = service.persistentWebStack"
+          k = k.replace(old_attach, new_attach)
+          old_pause = "override fun onPause() {\n                  super.onPause()"
+          new_pause = """override fun onResume() {
+                            super.onResume()
+                            if (isBound && browserService != null) attachPersistentStackToScreen()
+                        }
+                        override fun onStop() {
+                            super.onStop()
+                            browserService?.mountToLiveOverlay()
+                        }
+                        override fun onPause() {
+                            super.onPause()"""
+          k = k.replace(old_pause, new_pause)
+          k = k.replace("(service.persistentWebStack.parent as? ViewGroup)?.removeView(service.persistentWebStack)", "service.mountToLiveOverlay()")
+          old_perm = "if (!pm.isIgnoringBatteryOptimizations(packageName)) {"
+          new_perm = """if (!Settings.canDrawOverlays(this)) {
+                                    Toast.makeText(this, "Instagram veya ekran kapaliyken oyundan atmamasi icin Diger Uygulamalarin Uzerinde Goster iznini acin!", Toast.LENGTH_LONG).show()
+                                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                                }
+                                if (!pm.isIgnoringBatteryOptimizations(packageName)) {"""
+          k = k.replace(old_perm, new_perm)
+          k = k.replace('if (key == " ") "Space" else "Key" + key.uppercase()', 'if (key == " ") "Space" else if (key.startsWith("F") && key.length > 1) key else "Key" + key.uppercase()')
+          open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)
+          PYEOF
+          python3 /tmp/up.py
+          gradle assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk
+          cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+          gh release delete v1.0 --yes || true
+          gh release delete v2.0 --yes || true
+          gh release delete v3.0 --yes || true
+          gh release delete v4.0 --yes || true
+          git tag -d v4.0 || true
+          gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk StarkChrome-8K-v3.apk ArkaPlan-Tarayici.apk --title "Orbitra Ozel Oyun Istemcisi v4.0 (Direkt Orbitra + Yapay Zeka Kapi Botu + Instagram/Arka Plan Kalkan)" --notes "Orbitra Ozel Istemci v4.0: URL cubugu olmadan direkt Orbitra acilisi, F3/F4 Sunucu Oto-Bot ve Yapay Zeka (AI) Galaksi Kapisi Pilotu (Alpha-Kronos, Hades, Kabus), Gizlenebilir Kontrol Paneli, Instagram veya Ekran Kapaliyken Oyundan Atmama Kalkani (Canli Pencere Katmani)." uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
