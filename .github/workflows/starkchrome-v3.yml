@@ -169,11 +169,11 @@ jobs:
                             }.setPositiveButton("Kapat", null).show()
                         }
                         private fun showThemeDialog()"""
-          k = k.replace("override fun onStop()", ai_dlg.split("private fun showThemeDialog")[0] + "\n    override fun onStop()")
+          k = k.replace("override fun onPause()", ai_dlg.split("private fun showThemeDialog")[0] + "\n    override fun onPause()")
           old_attach = "val stack = service.persistentWebStack"
           new_attach = "service.unmountFromLiveOverlay()\n                  val stack = service.persistentWebStack"
           k = k.replace(old_attach, new_attach)
-          old_pause = "override fun onPause() {\n                  super.onPause()"
+          old_pause = "override fun onPause( {\n                  super.onPause()"
           new_pause = """override fun onResume() {
                             super.onResume()
                             if (isBound && browserService != null) attachPersistentStackToScreen()
