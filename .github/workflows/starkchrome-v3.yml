@@ -25,10 +25,10 @@ jobs:
           open("/tmp/setup_v2.sh", "w").write("\n".join(lines) + "\n")
           '
           bash /tmp/setup_v2.sh
-          python3 -c 'tag = "m = open(\"app/src/\" + \"main/AndroidManifest.xml\")".replace("\" + \"", ""); u = open(".github/workflows/starkchrome-v3.yml").read().split(tag, 1)[1].split("PY" + "EOF", 1)[0]; open("/tmp/up.py", "w").write(tag + "\n".join(l[10:] if l.startswith("          ") else l for l in u.splitlines()) + "\n")' && sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/; s/^[ ]*boot =/boot =/; s/^[ ]*rec =/rec =/; s/^[ ]*m =/m =/' /tmp/up.py && python3 /tmp/up.py && gradle assembleDebug --no-daemon && cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk && cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk && (gh release delete v1.0 --yes || true) && (gh release delete v2.0 --yes || true) && (gh release delete v3.0 --yes || true) && (gh release delete v4.0 --yes || true) && (git tag -d v4.0 || true) && gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk ArkaPlan-Tarayici.apk --title "Orbitra 8K AI Bot Ozel Tarayici v4.0 (Tam Surum)" --notes "Orbitra Ozel Istemci v4.0" --latest && exit 0
+          python3 -c 'tag = "m = open(\"app/src/\" + \"main/AndroidManifest.xml\")".replace("\" + \"", ""); u = open(".github/workflows/starkchrome-v3.yml").read().split(tag, 1)[1].split("PY" + "EOF", 1)[0]; open("/tmp/up.py", "w").write(tag + "\n".join(l[10:] if l.startswith("          ") else l for l in u.splitlines()) + "\n")' && sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/; s/^[ ]*boot =/boot =/; s/^[ ]*rec =/rec =/; s/^[ ]*m =/m =/' /tmp/up.py && python3 /tmp/up.py && gradle assembleDebug --no-daemon && cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk && cp app/build/outputs/apk/debug/app-debug.apk ORBITRAMMO.apk && (gh release delete v1.0 --yes || true) && (gh release delete v2.0 --yes || true) && (gh release delete v3.0 --yes || true) && (gh release delete v4.0 --yes || true) && (git tag -d v4.0 || true) && gh release create v5.0 ORBITRAMMO.apk Orbitra-Ozel-Tarayici-v4.apk --title "ORBITRAMMO Android Oyun Istemcisi v5.0 (Tam Surum)" --notes "ORBITRAMMO Resmi Android Oyun Istemcisi v5.0: Tam Ekran Direkt Orbitra Acilisi, Yuvarlak Miknatisli ORBITRA Kontrol Butonu, Yalnizca Oyuncu Gemisinde Calisan Yapay Zeka ve RSB Karistirici (1-2-3sn-1-4sn-2), Oto x4, Canli FPS/CPU/RAM Performans Paneli, Oyun Ici Dokunmatik/Menu Duzeltmesi ve 3 Saniye Arka Plan Baglanti Korumasi." --latest && exit 0
           m = open("app/src/main/AndroidManifest.xml").read()
           m = m.replace('permission.INTERNET" />', 'permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />')
-          m = m.replace('label="StarkOrbit Browser"', 'label="Orbitra 8K Bot" android:largeHeap="true"')
+          m = m.replace('label="StarkOrbit Browser"', 'label="ORBITRAMMO" android:largeHeap="true"')
           rec = '<receiver android:name=".BootAndRestartReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver></application>'
           m = m.replace('</application>', rec)
           open("app/src/main/AndroidManifest.xml", "w").write(m)
@@ -47,7 +47,7 @@ jobs:
           k = k.replace("class StarkVpnService", boot, 1)
           k = k.replace("var autoRefreshSeconds: Int = 0,", "var zoomPercent: Int = 100, var is8kUltraEnabled: Boolean = true, var isAiBotEnabled: Boolean = false, var aiGateName: String = \"Kapali\", var autoRefreshSeconds: Int = 0,")
           old_load = "if (loadHomeDashboard || initialUrl == null) {\n                      loadStarkCommandCenter(wv)\n                  } else {\n                      wv.loadUrl(initialUrl)\n                  }"
-          new_load = 'val orbitraUrl = "ht" + "tps://orbitragame.space/kayit?ref=KMNPGS"\n                  wv.loadUrl(initialUrl ?: orbitraUrl)'
+          new_load = 'val orbitraUrl = "ht" + "tps://orbitragame.space/"\n                  wv.loadUrl(initialUrl ?: orbitraUrl)'
           k = k.replace(old_load, new_load)
           old_binder = "private val binder = LocalBinder()"
           new_binder = """private val binder = LocalBinder()
@@ -194,27 +194,12 @@ jobs:
                                 if (!pm.isIgnoringBatteryOptimizations(packageName)) {"""
           k = k.replace(old_perm, new_perm)
           k = k.replace('if (key == " ") "Space" else "Key" + key.uppercase()', 'if (key == " ") "Space" else if (key.startsWith("F") && key.length > 1) key else "Key" + key.uppercase()')
-                                 open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)   
+                                        k = k.replace("tabHeader.visibility = View.VISIBLE", "tabHeader.visibility = View.GONE").replace("topNavBar.visibility = View.VISIBLE", "topNavBar.visibility = View.GONE").replace("floatingHudButton.visibility = View.GONE", "floatingHudButton.visibility = View.VISIBLE").replace('text = "MENU"', 'text = "ORBITRA"')
+                                 en("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)   
                                   
                                           PYEOF
-                                sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/' /tmp/up.py
-                                python3 /tmp/up.py
-                                gradle assembleDebug --no-daemon
-                                cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk
-                                cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
-                                cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
-                                gh release delete v1.0 --yes || true
-                                gh release delete v2.0 --yes || true
-                                gh release delete v3.0 --yes || true
-                                gh release delete v4.0 --yes || true
-                                git tag -d v4.0 || true
-                                gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk StarkChrome-8K-v3.apk ArkaPlan-Tarayici.apk --title "Orbitra-Ozel-Tarayici v4.0" --notes "v4.0" || true
-                   cp app/build/outputs/apk/debug/app-debug.apk ORBITRAMMO.apk
-                   gh release delete v5.0 --yes || true
-                          git tag -d v5.0 || true
-                gh release create v5.0 ORBITRAMMO.apk --title "ORBITRAMMO Android Oyun Istemcisi v5.0 (Tam Surum)" --notes "v5.0"
-          - name: Upload ORBITRAMMO Artifact
-                uses: actions/upload-artifact@v4
-                with:
-                    name: ORBITRAMMO.apk
-                    path: ORBITRAMMO.apk
+                                     - name: ORBITRAMMO APK Artifact Yukle
+                                             uses: actions/upload-artifact@v4
+                                             with:
+                                               name: ORBITRAMMO-APK
+                                               path: ORBITRAMMO.apk          
