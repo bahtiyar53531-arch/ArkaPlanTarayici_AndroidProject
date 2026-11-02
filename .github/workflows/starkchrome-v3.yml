@@ -208,4 +208,14 @@ jobs:
                                 gh release delete v3.0 --yes || true
                                 gh release delete v4.0 --yes || true
                                 git tag -d v4.0 || true
-                                gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk StarkChrome-8K-v3.apk ArkaPlan-Tarayici.apk --title "Orbitra 8K AI Bot v4" --notes "Orbitra 8K AI Bot v4 Otomatik Derleme ve Guncelleme"
+                                gh release create v4.0 Orbitra-Ozel-Tarayici-
+      cp app/build/outputs/apk/debug/app-debug.apk ORBITRAMMO.apk
+      gh release delete v5.0 --yes || true
+      git tag -d v5.0 || true
+      gh release create v5.0 ORBITRAMMO.apk --title "ORBITRAMMO Android Oyun Istemcisi v5.0 (Tam Surum)" --notes "v5.0"
+      - name: Upload ORBITRAMMO Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORBITRAMMO.apk
+          path: ORBITRAMMO.apk
+          v4.apk StarkChrome-8K-v3.apk ArkaPlan-Tarayici.apk --title "Orbitra 8K AI Bot v4" --notes "Orbitra 8K AI Bot v4 Otomatik Derleme ve Guncelleme"
