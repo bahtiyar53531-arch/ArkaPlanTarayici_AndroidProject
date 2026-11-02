@@ -163,7 +163,7 @@ jobs:
                                 } else {
                                     tab.isAiBotEnabled = true
                                     tab.aiGateName = names[w]
-                                    browserService?.runOrbitraAiTick(tab)
+                                    browserService?.sendGameKey("F4", 115)
                                     Toast.makeText(this, "AI Pilot Aktif: " + names[w] + " (Instagram veya Ekran Kapaliyken de Devam Eder!)", Toast.LENGTH_LONG).show()
                                 }
                             }.setPositiveButton("Kapat", null).show()
