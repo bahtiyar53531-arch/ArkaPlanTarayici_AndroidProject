@@ -196,7 +196,7 @@ jobs:
           k = k.replace('if (key == " ") "Space" else "Key" + key.uppercase()', 'if (key == " ") "Space" else if (key.startsWith("F") && key.length > 1) key else "Key" + key.uppercase()')
                                  open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)   
                                   
-                                        PYEOF
+                                          PYEOF
                                 sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/' /tmp/up.py
                                 python3 /tmp/up.py
                                 gradle assembleDebug --no-daemon
