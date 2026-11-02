@@ -1,7 +1,7 @@
 name: StarkChrome 8K Ultra v3 Derleyici
 on: [push, workflow_dispatch]
 permissions:
-  contents: write
+  contents: write 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
