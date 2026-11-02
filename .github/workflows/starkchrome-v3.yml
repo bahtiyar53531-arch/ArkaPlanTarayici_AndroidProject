@@ -107,7 +107,7 @@ jobs:
                             tab.webView.evaluateJavascript(js, null)
                         }
                         fun unmountFromLiveOverlay()"""
-          k = k.replace("      fountFromLiveOverlay()", ai_fn, 1)
+          k = k.replace("runOrbitraAiTick(tab)", "run { " + ai_fn.split("aiTick++", 1)[1].split("fun ")[0].replace("aiTick", "(System.currentTimeMillis()/1000)"), 1)
           old_tr = "super.onTaskRemoved(rootIntent)"
           new_tr = old_tr + "\n                  mountToLiveOverlay()\n                  try { val ri = Intent(applicationContext, BootAndRestartReceiver::class.java); val pi = PendingIntent.getBroadcast(applicationContext, 777, ri, PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE); (getSystemService(Context.ALARM_SERVICE) as AlarmManager).set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 1200L, pi) } catch (_: Exception) {}"
           k = k.replace(old_tr, new_tr)
