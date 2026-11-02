@@ -196,19 +196,19 @@ jobs:
           k = k.replace('if (key == " ") "Space" else "Key" + key.uppercase()', 'if (key == " ") "Space" else if (key.startsWith("F") && key.length > 1) key else "Key" + key.uppercase()')
                                  open("app/src/main/java/org/arkaplan/tarayici/BackgroundBrowserApp.kt", "w").write(k)   
                                   
-                                  python3 /tmp/up.py
-                                 PYEOF
-         sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/; s/^[ ]*boot =/boot =/; s/^[ ]*rec =/rec =/; s/^[ ]*m =/m =/' /tmp/up.py && python3 /tmp/up.py
-         gradle assembleDebug --no-daemon
-         cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk
-         cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
-         cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
-         gh release delete v1.0 --yes || true
-         gh release delete v2.0 --yes || true
-         gh release delete v3.0 --yes || true
-         gh release delete v4.0 --yes || true
-         git tag -d v4.0 || true
-         gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk StarkChrome-8K-v3.apk ArkaPlan-Tarayici.apk --title "Orbitra Ozel Oyun Istemcisi v4.0 (Direkt Orbitra + Yapay Zeka Kapi Botu + Instagram/Arka Plan Kalkan)" --notes "Orbitra Ozel Istemci v4.0: URL cubugu olmadan direkt Orbitra acilisi, F3/F4 Sunucu Oto-Bot ve Yapay Zeka (AI) Galaksi Kapisi Pilotu (Alpha-Kronos, Hades, Kabus), Gizlenebilir Kontrol Paneli, Instagram veya Ekran Kapaliyken Oyundan Atmama Kalkani (Canli Pencere Katmani)." uses: actions/checkout@v4
+                                  PYEOF
+                                   PYEOFpython3 /tmp/up.pypython3 /tmp/up.py
+           sed -i 's/^[ ]*open(/open(/; s/^[ ]*k =/k =/; s/^[ ]*old_/old_/; s/^[ ]*new_/new_/; s/^[ ]*ai_/ai_/; s/^[ ]*boot =/boot =/; s/^[ ]*rec =/rec =/; s/^[ ]*m =/m =/' /tmp/up.py && python3 /tmp/up.py
+           gradle assembleDebug --no-daemon
+           cp app/build/outputs/apk/debug/app-debug.apk Orbitra-Ozel-Tarayici-v4.apk
+           cp app/build/outputs/apk/debug/app-debug.apk StarkChrome-8K-v3.apk
+           cp app/build/outputs/apk/debug/app-debug.apk ArkaPlan-Tarayici.apk
+           gh release delete v1.0 --yes || true
+           gh release delete v2.0 --yes || true
+           gh release delete v3.0 --yes || true
+           gh release delete v4.0 --yes || true
+           git tag -d v4.0 || true
+           gh release create v4.0 Orbitra-Ozel-Tarayici-v4.apk StarkChrome-8K-v3.apk ArkaPlan-Tarayici.apk --title "Orbitra Ozel Oyun Istemcisi v4.0 (Direkt Orbitra + Yapay Zeka Kapi Botu + Instagram/Arka Plan Kalkan)" --notes "Orbitra Ozel Istemci v4.0: URL cubugu olmadan direkt Orbitra acilisi, F3/F4 Sunucu Oto-Bot ve Yapay Zeka (AI) Galaksi Kapisi Pilotu (Alpha-Kronos, Hades, Kabus), Gizlenebilir Kontrol Paneli, Instagram veya Ekran Kapaliyken Oyundan Atmama Kalkani (Canli Pencere Katmani)." uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
