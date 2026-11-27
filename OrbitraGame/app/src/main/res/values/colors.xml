@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ORBITRAGAME.SPACE marka renkleri -->
+    <color name="space_black">#FF02040D</color>
+    <color name="space_blue">#FF2F7BFF</color>
+    <color name="space_turquoise">#FF19E3D6</color>
+    <color name="text_primary">#FFEAF6FF</color>
+    <color name="text_secondary">#FF9FB8D9</color>
+    <color name="panel_bg">#E6081433</color>
+    <color name="panel_stroke">#5519E3D6</color>
+</resources>

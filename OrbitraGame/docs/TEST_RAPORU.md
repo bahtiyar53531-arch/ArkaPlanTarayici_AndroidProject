@@ -1,0 +1,97 @@
+# Test Raporu — ORBITRAGAME.SPACE v1.0.0
+
+Tarih: 27 Kasım 2026
+
+## Önce açık konuşalım
+
+Bu sürüm bir **bulut Linux sunucusunda** geliştirildi ve derlendi. Bu ortamda:
+
+- **Fiziksel Android telefon/tablet yok.**
+- **Android emülatörü çalıştırılamadı** (sunucuda donanım sanallaştırması / KVM yok;
+  x86 Android imajları bu olmadan açılmıyor).
+- **Oyun hesabı yok:** Giriş sayfasında kullanıcı adı + şifre + doğrulama kodu
+  isteniyor; bu yüzden gerçek oyun ekranına (`/oyun`) girilip oyun, sohbet ve
+  oyun sunucusu WebSocket'i **test edilemedi.** Ayrıca sitenin `robots.txt`
+  dosyası `/oyun` ve oyun dosyalarının otomatik araçlarla çekilmesini yasaklıyor;
+  buna uyuldu.
+
+Bu nedenle aşağıdaki "cihazda test" maddeleri **senin telefonunda yapılmalı.**
+Burada yapılabilen her şey otomatik testlerle doğrulandı.
+
+## Burada yapılan otomatik testler ve sonuçları
+
+| # | Test | Sonuç |
+|---|---|---|
+| A | `core` birim testleri (alan adı güvenliği, yükleme yüzdesi, FPS, ping, zoom, yeniden bağlanma, soket izleme) | **18 / 18 geçti** |
+| B | Robolectric arayüz testleri (gerçek Skia çizimi): açılış ekranı dikey/yatay, %60 → %100 animasyonu, performans paneli, MainActivity açılış → menü açma → arka plan → ön plan → çıkış yaşam döngüsü | **3 / 3 geçti** (ekran görüntüleri `docs/screenshots/`) |
+| C | Enjekte betik (`orbitra_probe.js`) gerçek Chromium motorunda, WebGL2 + WebSocket'li test oyunu ile (`tools/js-probe-test`) | **15 / 15 kontrol geçti** |
+| D | Aynı betik gerçek `orbitragame.space/login` sayfasında (mobil Chromium) | Sayfa hatası yok; form ve sayfa normal çalıştı |
+| E | Android Lint (release) | **0 hata**, yalnızca kozmetik uyarılar |
+| F | Debug + release APK derleme | Başarılı (debug ~5 MB, release ~1,4 MB, R8 küçültmeli) |
+| G | APK doğrulama (`apksigner verify`, `aapt2 dump badging`) | İmza geçerli; paket `space.orbitragame.app`, minSdk 24, targetSdk 36, simge/etiket doğru |
+
+### C testinin ayrıntısı (betik oyunu bozuyor mu?)
+
+| Kontrol | Sonuç |
+|---|---|
+| Oyun FPS'i betik olmadan / betikle | 59,9 / 60,0 — fark yok |
+| Betiğin ölçtüğü oyun FPS'i gerçek değere yakın (±%10) | 60,0 (gerçek 60,0) |
+| WebSocket yankı (echo) trafiği betikli ve betiksiz aynı | Evet |
+| `instanceof WebSocket`, `WebSocket.OPEN`, WebSocket alt sınıfı | Korunuyor |
+| `requestAnimationFrame` kimliği ve `cancelAnimationFrame` | Korunuyor |
+| Soket açıldı / kapandı (+ kapanma kodu) bildirimi | Doğru |
+| Tarayıcı FPS'i ve "oyun hazır" sinyali | Doğru |
+| Sayfa hatası | Yok |
+
+### Bu testlerde bulunup düzeltilen gerçek hatalar
+
+- Bazı WebView sürümlerinde desteklenmeyen isteğe bağlı ayarlar uygulamayı
+  çökertebiliyordu → artık güvenle atlanıyor.
+- Ekran yenileme hızını okuyan kod bazı durumlarda istisna fırlatıyordu → düzeltildi.
+- Ekran kapandıktan sonra gelen ping sonucu kapanmış ekrana yazmaya çalışıyordu → düzeltildi.
+- Yatay ekranda açılış ekranındaki durum satırı ekrandan taşıyordu → düzeltildi.
+
+## İstenen 15 test — durum ve telefonda nasıl yapılır
+
+| # | Test | Burada | Telefonda nasıl test edilir |
+|---|---|---|---|
+| 1 | Oyun doğru açılıyor mu? | Kısmen: uygulama açılışı ve yükleme akışı (B), giriş sayfası (D) | Uygulamayı aç; açılış ekranı yüzdesi ilerlemeli, giriş sayfası veya oyun açılmalı. |
+| 2 | Kullanıcı giriş yapabiliyor mu? | **Yapılamadı** (hesap yok) | Kullanıcı adı, şifre, doğrulama kodu ile giriş yap; "Beni hatırla"yı seç; uygulamayı kapatıp aç → doğrudan oyuna girmeli. |
+| 3 | Sunucu bağlantısı korunuyor mu? | Mantık birim testli (A); gerçek sunucu **test edilemedi** | Menü → Ping'i aç; "Sunucu: Bağlı" görünmeli. 10 dk oyna. |
+| 4 | WebSocket çalışıyor mu? | Test oyununda doğrulandı (C) | Panelde "Sunucu: Bağlı (n)" ve oyunun canlı hareketi. |
+| 5 | Oyun içi sohbet çalışıyor mu? | **Yapılamadı** | Sohbete yaz; klavye açılınca yazı alanı görünür kalmalı. |
+| 6 | FPS göstergesi doğru mu? | Test oyununda ±%10 içinde doğru (C) | Menü → FPS. "FPS", "Tarayıcı", "Ekran" değerleri; ağır sahnede düşüş ve gerekiyorsa "DÜŞÜK FPS" uyarısı. |
+| 7 | Ping ölçümü çalışıyor mu? | İstatistik testli (A); gerçek ağ **cihazda** | Menü → Ping. Wi-Fi'de tipik 20–80 ms; uçak modunda "kayıp" artmalı. |
+| 8 | Dikey ve yatay ekran | Açılış ekranı her iki yönde çizildi (B) | Menü → Dikey / Yatay / Otomatik; oyun yeniden yüklenmeden yeniden boyutlanmalı. |
+| 9 | Tam ekran | **Cihazda** | Menü → Tam ekran; durum ve gezinme çubukları gizlenmeli, kenardan kaydırınca geçici görünmeli. |
+| 10 | Küçük pencere modu | **Cihazda** (Robolectric PiP desteklemez) | Ana ekran tuşu → oyun köşede küçük pencerede devam etmeli; sürükle, iki parmakla boyutlandır, dokun → genişlet. |
+| 11 | Arka plana alındığında bağlantı | **Cihazda** | PiP'i kapat (Ayarlar → otomatik küçük pencere kapalı), ana ekrana dön, 1–5–15 dk bekle, geri dön; panelde sunucu durumunu kontrol et. |
+| 12 | Dönünce oyun devam ediyor mu? | Yeniden yükleme yapılmadığı kod ve yaşam döngüsü testiyle doğrulandı (B) | Arka plandan dön; oyun kaldığı yerden devam etmeli, açılış ekranı tekrar görünmemeli. |
+| 13 | Zoom oyun kontrollerini bozuyor mu? | **Cihazda** | Menü → Yakınlaştır/Uzaklaştır/İki parmak; ardından oyunda dokunma ve iki parmak hareketlerini dene. |
+| 14 | Uzun kullanımda bellek | **Cihazda** | Paneli aç, 1 saat oyna; "Uyg MB" ve "JS MB" sürekli artmamalı. |
+| 15 | Farklı telefonlarda performans | **Cihazda** | En az bir düşük, bir orta seviye cihazda FPS ve ısınmayı karşılaştır. |
+
+## Bilinen sınırlamalar (bilerek yapılmış tercihler)
+
+- **Arka planda süreklilik garanti değil.** Android ve üreticiler arka plandaki
+  uygulamayı kısıtlayabilir. En güvenli yol otomatik küçük penceredir.
+- **Ping**, oyun soketinin bağlandığı sunucuya **TCP el sıkışma süresidir.**
+  Site Cloudflare arkasında olduğu için bu, ağ geçidine (edge) kadar olan
+  gecikmedir; oyun sunucusunun kendi işlem süresini içermez. Oyunun soket
+  trafiğine bilerek ek paket gönderilmez.
+- **Oyun FPS**, oyunun `requestAnimationFrame` döngüsünün saniyedeki kare
+  sayısıdır. Oyun bu döngünün içinde kendi kare atlaması yapıyorsa gerçekte
+  çizilen kare sayısı daha düşük olabilir. Oyun `requestAnimationFrame`
+  kullanmıyorsa "FPS —" görünür.
+- **Uygulama zoom'u** sayfaya farklı bir görüş alanı boyutu bildirir (oyun
+  döndürmedeki gibi yeniden boyutlanır). Oyunun koordinatları ve WebGL'i
+  bozulmaz; yakınlaştırmada görüntü biraz yumuşayabilir.
+- **Sesli iletişim:** Uygulama mikrofon iznini oyun isterse ve sen onaylarsan
+  verir. Ancak sitenin incelenen sayfalarında `Permissions-Policy:
+  microphone=()` başlığı var; yani mikrofonu site tarafı kapatmış olabilir.
+- **Arka planda ses:** Bağlantı koruma açıkken oyun sesleri arka planda da
+  duyulabilir (sesi oyunun kendi ayarından kapatabilirsin).
+- **Küçük pencere boyutu** Android tarafından yönetilir; uygulama en küçük
+  boyutu kendisi belirleyemez. Kullanıcı iki parmakla küçültüp kenara itebilir.
+- **Ödeme sayfası** gibi `orbitragame.space` dışındaki sayfalar uygulama içinde
+  açılmaz; "Tarayıcıda aç" seçeneği sunulur.

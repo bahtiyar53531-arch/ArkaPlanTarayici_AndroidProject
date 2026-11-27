@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notif_channel_session">Oyun oturumu</string>
+    <string name="notif_channel_session_desc">Oyun arka plandayken bağlantının korunduğunu gösterir.</string>
+    <string name="notif_title">ORBITRAGAME.SPACE çalışıyor</string>
+    <string name="notif_text">Oyun bağlantısı arka planda korunuyor</string>
+    <string name="notif_return">Oyuna dön</string>
+    <string name="notif_close">Kapat</string>
+
+    <string name="menu_fullscreen">Tam ekran</string>
+    <string name="menu_portrait">Dikey</string>
+    <string name="menu_landscape">Yatay</string>
+    <string name="menu_auto_rotate">Otomatik</string>
+    <string name="menu_fps">FPS</string>
+    <string name="menu_ping">Ping</string>
+    <string name="menu_zoom_in">Yakınlaştır</string>
+    <string name="menu_zoom_out">Uzaklaştır</string>
+    <string name="menu_zoom_reset">Varsayılan</string>
+    <string name="menu_zoom_pinch">İki parmak</string>
+    <string name="menu_pip">Küçük pencere</string>
+    <string name="menu_reconnect">Yeniden bağlan</string>
+    <string name="menu_restart">Yeniden başlat</string>
+    <string name="menu_settings">Ayarlar</string>
+    <string name="menu_close">Menüyü kapat</string>
+    <string name="control_button">Uygulama kontrol menüsü</string>
+
+    <string name="error_title_offline">İnternet bağlantısı yok</string>
+    <string name="error_msg_offline">Bağlantı geri geldiğinde oyun otomatik olarak yüklenecek.</string>
+    <string name="error_title_server">Oyun sunucusuna ulaşılamıyor</string>
+    <string name="error_title_ssl">Güvenli bağlantı kurulamadı</string>
+    <string name="error_msg_ssl">Sunucunun güvenlik sertifikası doğrulanamadı. Güvenliğiniz için bağlantı durduruldu.</string>
+    <string name="retry">Tekrar dene</string>
+
+    <string name="exit_title">Ne yapmak istersin?</string>
+    <string name="exit_pip">Küçük pencere</string>
+    <string name="exit_background">Arka plana al</string>
+    <string name="exit_quit">Çıkış</string>
+    <string name="cancel">Vazgeç</string>
+    <string name="ok">Tamam</string>
+
+    <string name="restart_confirm_title">Uygulama yeniden başlatılsın mı?</string>
+    <string name="restart_confirm_msg">Oyun bağlantısı kapanır ve uygulama baştan açılır. Giriş bilgilerin korunur.</string>
+    <string name="restart">Yeniden başlat</string>
+
+    <string name="external_link_title">Harici bağlantı</string>
+    <string name="external_link_msg">Bu bağlantı oyunun dışında. Tarayıcıda açılsın mı?\n\n%1$s</string>
+    <string name="open">Aç</string>
+
+    <string name="settings_title">Ayarlar</string>
+    <string name="zoom_mode_hint">İki parmakla yakınlaştır / uzaklaştır.\nBu modda oyuna dokunuş gönderilmez.</string>
+    <string name="zoom_mode_done">Bitti</string>
+    <string name="pip_reconnect">Yeniden bağlan</string>
+    <string name="pip_not_supported">Bu cihaz küçük pencere (PiP) modunu desteklemiyor.</string>
+    <string name="pip_disabled">Küçük pencere izni kapalı. Ayarlar → Uygulamalar → ORBITRAGAME.SPACE → Pencere içinde pencere iznini açın.</string>
+</resources>
