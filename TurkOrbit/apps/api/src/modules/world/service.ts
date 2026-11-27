@@ -156,8 +156,37 @@ export class WorldService {
    * haritasına taşınır (madde 15.6) ve bildirim döner.
    */
   async enterWorld(playerId: string): Promise<{ map: MapResponse; relocated: boolean }> {
-    const { pilot, notice } = await withTransaction(this.db, async (c) => this.relocateIfClosed(c, await this.pilotById(c, playerId, true)));
+    const { pilot, notice } = await withTransaction(this.db, async (c) => {
+      const p = await this.pilotById(c, playerId, true);
+      // Gemisi yok edilmiş (ör. bağlantısı kopukken) pilot istasyonda yeniden doğar.
+      const hp = await c.query<{ hitpoints: number }>('SELECT ps.hitpoints FROM players pl JOIN player_ships ps ON ps.id = pl.active_ship_id WHERE pl.id = $1', [p.id]);
+      if (hp.rows[0] && hp.rows[0].hitpoints <= 0) {
+        const r = await this.respawnTx(c, p);
+        return { pilot: r, notice: 'Gemin yok edilmişti; acil onarımla şirket istasyonunda yeniden doğdun. Tam onarım için hangarı kullan.' };
+      }
+      return this.relocateIfClosed(c, p);
+    });
     return { map: await this.buildMap(pilot, notice), relocated: notice !== null };
+  }
+
+  /** Oyun sunucusu: ölen pilot şirketinin başlangıç haritasında (istasyon) acil onarımla yeniden doğar. */
+  async respawnAtHome(playerId: string): Promise<MapResponse> {
+    const pilot = await withTransaction(this.db, async (c) => this.respawnTx(c, await this.pilotById(c, playerId, true)));
+    return this.buildMap(pilot, null);
+  }
+
+  private async respawnTx(c: Queryable, p: PilotWorldRow): Promise<PilotWorldRow> {
+    const home = await this.mapById(c, p.home_map_id);
+    const combat = await getSetting<{ respawn_hp_ratio?: number }>(c, 'combat');
+    const ratio = Math.min(1, Math.max(0.01, combat?.respawn_hp_ratio ?? 0.1));
+    await c.query('UPDATE players SET map_id = $2, pos_x = $3, pos_y = $4, pos_updated_at = now() WHERE id = $1', [p.id, home.id, home.spawn_x, home.spawn_y]);
+    await c.query(
+      `UPDATE player_ships ps SET hitpoints = GREATEST(ps.hitpoints, GREATEST(1, round(st.hitpoints * $2::numeric)::int))
+       FROM players pl, ship_types st WHERE pl.id = $1 AND ps.id = pl.active_ship_id AND st.id = ps.ship_type_id`,
+      [p.id, ratio],
+    );
+    await c.query(`INSERT INTO map_transitions (player_id, from_map_id, to_map_id, reason) VALUES ($1, $2, $3, 'respawn')`, [p.id, p.map_id, home.id]);
+    return { ...p, map_id: home.id, pos_x: home.spawn_x, pos_y: home.spawn_y };
   }
 
   private async relocateIfClosed(c: Queryable, p: PilotWorldRow): Promise<{ pilot: PilotWorldRow; notice: string | null }> {

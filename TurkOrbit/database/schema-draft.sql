@@ -100,42 +100,8 @@ CREATE TABLE resource_nodes (
   respawn_seconds integer NOT NULL
 );
 
--- ============================================================ 8. NPC VE YAPAY ZEKÂ (Aşama 9)
-CREATE TABLE npc_types (
-  id             serial PRIMARY KEY,
-  code           text NOT NULL UNIQUE,
-  name           text NOT NULL,
-  family         text NOT NULL,                 -- NPC ailesi (aynı aile farklı haritalarda yeniden kullanılır)
-  sprite_key     text NOT NULL,
-  hitpoints      integer NOT NULL CHECK (hitpoints > 0),
-  shield         integer NOT NULL DEFAULT 0,
-  shield_absorb  numeric(3,2) NOT NULL DEFAULT 0.5,
-  damage         integer NOT NULL,
-  attack_rate_ms integer NOT NULL DEFAULT 1000,
-  attack_range   integer NOT NULL DEFAULT 600,
-  speed          integer NOT NULL,
-  -- {"behavior":"aggressive|passive|defensive","aggro_range":700,"flee_hp":0.1,"patrol_radius":900}
-  ai             jsonb NOT NULL,
-  is_boss        boolean NOT NULL DEFAULT false,
-  boss_abilities jsonb NOT NULL DEFAULT '[]'::jsonb,
-  reward_table_id integer,                      -- FK aşağıda
-  experience     integer NOT NULL DEFAULT 0,
-  honor          integer NOT NULL DEFAULT 0,
-  is_archived    boolean NOT NULL DEFAULT false,
-  updated_at     timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE npc_spawns (
-  id              serial PRIMARY KEY,
-  map_id          integer NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
-  npc_type_id     integer NOT NULL REFERENCES npc_types(id),
-  area            jsonb NOT NULL,
-  max_alive       smallint NOT NULL,
-  respawn_seconds integer NOT NULL,
-  -- Haritaya özel değişiklikler: {"hitpoints_mult":1.2,"damage_mult":1.1}
-  overrides       jsonb NOT NULL DEFAULT '{}'::jsonb,
-  is_enabled      boolean NOT NULL DEFAULT true
-);
+-- ============================================================ 8. NPC VE YAPAY ZEKÂ
+-- (Aşama 9 → 0005_combat.sql: npc_types, npc_spawns, reward_tables, reward_entries, combat_deaths, npc_kill_log.)
 
 -- Yıldız Kapıları (Galaxy Gate muadili)
 CREATE TABLE gates (
@@ -171,23 +137,7 @@ CREATE TABLE player_gates (
   PRIMARY KEY (player_id, gate_id)
 );
 
--- ============================================================ 9. ÖDÜL TABLOLARI
-CREATE TABLE reward_tables (
-  id    serial PRIMARY KEY,
-  code  text NOT NULL UNIQUE,
-  name  text NOT NULL
-);
-CREATE TABLE reward_entries (
-  id              serial PRIMARY KEY,
-  reward_table_id integer NOT NULL REFERENCES reward_tables(id) ON DELETE CASCADE,
-  reward_type     text NOT NULL CHECK (reward_type IN ('currency', 'item', 'experience', 'honor', 'resource')),
-  ref_code        text NOT NULL,                -- para birimi kodu veya item_types.code
-  min_amount      bigint NOT NULL,
-  max_amount      bigint NOT NULL,
-  chance          numeric(6,5) NOT NULL CHECK (chance > 0 AND chance <= 1),
-  CHECK (max_amount >= min_amount)
-);
-ALTER TABLE npc_types ADD CONSTRAINT npc_types_reward_fk FOREIGN KEY (reward_table_id) REFERENCES reward_tables(id);
+-- ============================================================ 9. ÖDÜL TABLOLARI (0005'te uygulandı)
 ALTER TABLE gates ADD CONSTRAINT gates_reward_fk FOREIGN KEY (completion_reward_table_id) REFERENCES reward_tables(id);
 ALTER TABLE achievements ADD COLUMN reward_table_id integer REFERENCES reward_tables(id);
 

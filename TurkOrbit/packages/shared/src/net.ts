@@ -10,8 +10,9 @@
  * Mesajlar şimdilik JSON'dur (kısa alan adlarıyla). İkili protokol Aşama 16'da (performans) ele alınacak.
  */
 import { z } from 'zod';
+import { AMMO_CODES, ROCKET_CODES, type CombatState, type Fx, type RewardMessage } from './combat.js';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 /** Sunucu simülasyon adımı (20 Hz). */
 export const TICK_MS = 50;
 /** Kaç tikte bir anlık görüntü gönderilir (2 → 10 Hz). */
@@ -113,6 +114,13 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.strictObject({ t: z.literal('in'), i: z.array(inputCommand).min(1).max(10) }),
   z.strictObject({ t: z.literal('jump'), p: z.number().int().positive() }),
   z.strictObject({ t: z.literal('ping'), c: finite }),
+  // --- Aşama 9: savaş niyetleri (hasar, menzil ve atış hızı yalnızca sunucuda hesaplanır)
+  z.strictObject({ t: z.literal('target'), id: z.number().int().positive().nullable() }),
+  z.strictObject({ t: z.literal('attack'), on: z.boolean() }),
+  z.strictObject({ t: z.literal('ammo'), c: z.enum(AMMO_CODES) }),
+  z.strictObject({ t: z.literal('rtype'), c: z.enum(ROCKET_CODES) }),
+  z.strictObject({ t: z.literal('rocket') }),
+  z.strictObject({ t: z.literal('respawn') }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type InputCommand = z.infer<typeof inputCommand>;
@@ -128,20 +136,28 @@ export function sanitizeInput(cmd: InputCommand, width: number, height: number):
 // ------------------------------------------------------------------ sunucu → istemci
 /** Kendi gemi durumu: [x, y, vx, vy, h] (2 ondalık) */
 export type SelfState = [number, number, number, number, number];
-/** Görünen varlık: [id, x, y, h, vx, vy] (konum tam sayı, yön 2 ondalık) */
-export type EntityState = [number, number, number, number, number, number];
+/** Görünen varlık: [id, x, y, h, vx, vy, can%, kalkan%] (konum tam sayı, yön 2 ondalık, yüzdeler 0–100) */
+export type EntityState = [number, number, number, number, number, number, number, number];
+/** Kendi değerlerin: [can, azami can, kalkan, azami kalkan, anlık hız] (hız yavaşlatma etkisini içerir; tahmin bunu kullanır) */
+export type SelfStats = [number, number, number, number, number];
 
 export interface EntityInfo {
   id: number;
-  /** pilot adı */
+  /** tür: p = pilot, n = NPC, c = kargo kutusu */
+  k: 'p' | 'n' | 'c';
+  /** ad (pilot adı / NPC türü) */
   n: string;
-  /** şirket kodu ve rengi */
+  /** şirket kodu (NPC ve kargo için boş) ve renk */
   cc: string;
   c: string;
-  /** gemi çizim anahtarı */
+  /** çizim anahtarı (gemi, NPC ailesi, kargo) */
   s: string;
-  /** seviye */
+  /** seviye / kademe */
   l: number;
+  /** çizim ölçeği (NPC) */
+  z?: number;
+  /** boss mu */
+  b?: boolean;
 }
 
 export interface ShipInfo {
@@ -155,15 +171,18 @@ export interface ShipInfo {
 
 export type ServerMessage =
   | { t: 'welcome'; id: number; tick: number; tickMs: number; map: import('./world.js').MapResponse; you: SelfState }
-  | { t: 'map'; tick: number; map: import('./world.js').MapResponse; you: SelfState; reason: 'portal' | 'map_closed' }
-  | { t: 'snap'; k: number; a: number; y: SelfState; e: EntityState[] }
+  | { t: 'map'; tick: number; map: import('./world.js').MapResponse; you: SelfState; reason: 'portal' | 'map_closed' | 'respawn' }
+  | { t: 'snap'; k: number; a: number; y: SelfState; st: SelfStats; e: EntityState[]; fx?: Fx[] }
   | { t: 'enter'; e: EntityInfo[] }
   | { t: 'leave'; e: number[] }
   | { t: 'pilot'; ship: ShipInfo; radar: number }
   | { t: 'notice'; kind: 'info' | 'error' | 'success'; text: string }
   | { t: 'error'; code: string; message: string }
   | { t: 'kick'; code: number; message: string }
-  | { t: 'pong'; c: number; s: number };
+  | { t: 'pong'; c: number; s: number }
+  | ({ t: 'cs' } & CombatState)
+  | RewardMessage
+  | { t: 'dead'; by: string | null; kind: 'npc' | 'player' | 'other' };
 
 /** WebSocket kapanış kodları (4000–4999 uygulamaya ayrılmıştır) */
 export const CLOSE_CODES = {

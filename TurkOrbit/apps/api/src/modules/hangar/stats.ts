@@ -2,6 +2,8 @@ import { computeLoadoutStats, slotCount, type ItemCategory, type LoadoutStats, t
 import type { Queryable } from '../../db/pool.js';
 
 export interface ActiveShipStats {
+  /** player_ships.id (oyun sunucusu can değerini bu satıra yazar) */
+  shipId: string;
   name: string;
   spriteKey: string;
   hitpoints: number;
@@ -65,5 +67,5 @@ export async function activeShipStats(db: Queryable, playerId: string): Promise<
         upgradeMultiplier: r.upgrade_level > 0 && r.stat_bonus ? 1 + Number(r.stat_bonus) : 1,
       })),
   );
-  return { name: s.name, spriteKey: s.sprite, hitpoints: Math.min(s.hitpoints, s.max_hp), maxHitpoints: s.max_hp, stats };
+  return { shipId: s.id, name: s.name, spriteKey: s.sprite, hitpoints: Math.min(s.hitpoints, s.max_hp), maxHitpoints: s.max_hp, stats };
 }

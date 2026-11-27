@@ -25,6 +25,8 @@ export const GAME_CHANNELS = {
   kick: 'game:kick',
 };
 
+export type PlayerUpdateReason = 'stats' | 'ship' | 'repair' | 'inventory';
+
 export interface TicketPayload {
   userId: string;
   sessionId: string;
@@ -95,9 +97,12 @@ export class GameBridge {
     }
   }
 
-  async notifyPlayerUpdated(playerId: string) {
+  /**
+   * reason: stats (konfigürasyon/ekipman) · ship (aktif gemi değişti) · repair (can değişti) · inventory (mühimmat sayıları)
+   */
+  async notifyPlayerUpdated(playerId: string, reason: PlayerUpdateReason = 'stats') {
     if (!this.redis) return;
-    await this.redis.publish(GAME_CHANNELS.playerUpdated, JSON.stringify({ playerId })).catch((err: unknown) => {
+    await this.redis.publish(GAME_CHANNELS.playerUpdated, JSON.stringify({ playerId, reason })).catch((err: unknown) => {
       this.log.warn({ err, playerId }, 'oyun sunucusuna değişiklik bildirilemedi');
     });
   }

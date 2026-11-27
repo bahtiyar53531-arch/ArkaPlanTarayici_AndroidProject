@@ -36,9 +36,14 @@ async function startServer(opts: { lingerSeconds?: number; helloTimeoutMs?: numb
 beforeAll(async () => {
   ctx = await createTestContext();
 });
-afterAll(async () => ctx.close());
+afterAll(async () => {
+  await ctx.rt.db.query('UPDATE npc_spawns SET is_enabled = true');
+  await ctx.close();
+});
 beforeEach(async () => {
   await resetDatabase(ctx.rt);
+  // Hareket/bağlantı testleri NPC'siz haritalarda çalışır (savaş testleri: combat.test.ts)
+  await ctx.rt.db.query('UPDATE npc_spawns SET is_enabled = false');
   const started = await startServer();
   server = started.s;
   sub = started.sub;

@@ -132,6 +132,10 @@ export const settingsSchema = z.strictObject({
     zoomIn: keyCode,
     zoomOut: keyCode,
     fullscreen: keyCode,
+    /** Aşama 9: ateş aç/kapa, roket, en yakın hedef */
+    attack: keyCode,
+    rocket: keyCode,
+    nextTarget: keyCode,
   }),
   graphics: z.strictObject({
     quality: z.enum(['low', 'medium', 'high']),
@@ -167,6 +171,9 @@ export function defaultSettings(device: DeviceClass): PlayerSettings {
       zoomIn: 'Equal',
       zoomOut: 'Minus',
       fullscreen: 'KeyF',
+      attack: 'Space',
+      rocket: 'KeyR',
+      nextTarget: 'Tab',
     },
     graphics: { quality: device === 'phone' ? 'medium' : 'high', fpsLimit: 60, showFps: false },
     hud: { scale: device === 'phone' ? 0.9 : 1, minimapSize: touch ? 'small' : 'medium', showCoordinates: true },

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 uçtan uca (E2E) test
+ * TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 + 9 uçtan uca (E2E) test
  *
  * Gerçek API sürecini başlatır, e-postaları GERÇEK SMTP üzerinden yakalar ve iki ayrı hesapla
  * (PC web oturumu + Android uygulama oturumu) tüm kayıt/giriş akışlarını HTTP üzerinden dener.
@@ -122,7 +122,7 @@ class GameConn {
     const ws = new WebSocket(`ws://127.0.0.1:${GAME_PORT}/game`, { headers: { origin: WEB } });
     await new Promise((res, rej) => (ws.once('open', res), ws.once('error', rej)));
     const c = new GameConn(ws);
-    c.send({ t: 'hello', v: 1, ticket: t.json.ticket });
+    c.send({ t: 'hello', v: 2, ticket: t.json.ticket });
     c.welcome = await c.wait('welcome');
     return c;
   }
@@ -176,13 +176,29 @@ const env = {
 let server;
 let game;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 + 9 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
   const mig = spawnSync(tsx, ['apps/api/src/scripts/migrate.ts'], { cwd: ROOT, env, encoding: 'utf8' });
   if (mig.status !== 0) throw new Error(`migration başarısız:\n${mig.stdout}\n${mig.stderr}`);
   console.log(mig.stdout.trim());
+  {
+    // Hareket adımları NPC'siz; savaş adımı için K-1'e tek bir zayıf test NPC'si
+    const c = new pg.Client({ connectionString: DB_URL });
+    await c.connect();
+    await c.query(`UPDATE npc_spawns SET is_enabled = false`);
+    await c.query(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-e2e', 'E2E')`);
+    await c.query(
+      `INSERT INTO npc_types (code, name, family, level, sprite_key, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id)
+       VALUES ('test-e2e', 'Deneme Çakalı', 'cakal', 1, 'npc-cakal', 80, 0, 0, 0, 1000, 450, 1, '{"behavior":"passive","patrol_radius":1}', 1000, (SELECT id FROM reward_tables WHERE code = 'npc.test-e2e'))`,
+    );
+    await c.query(`INSERT INTO reward_entries (reward_table_id, reward_type, ref_code, min_amount, max_amount, chance, delivery)
+                   VALUES ((SELECT id FROM reward_tables WHERE code = 'npc.test-e2e'), 'currency', 'KREDI', 300, 300, 1, 'direct')`);
+    await c.query(`INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds)
+                   VALUES ((SELECT id FROM maps WHERE code = 'K-1'), (SELECT id FROM npc_types WHERE code = 'test-e2e'), '{"type":"circle","x":8000,"y":8000,"r":1}', 1, 600)`);
+    await c.end();
+  }
   const redisFlush = spawnSync('redis-cli', ['-u', REDIS_URL, 'FLUSHDB'], { encoding: 'utf8' });
   if (redisFlush.status !== 0) console.warn('Uyarı: redis-cli bulunamadı, Redis db temizlenemedi.');
 
@@ -515,6 +531,24 @@ async function main() {
     expect(m.map.code === 'K-1' && typeof m.notice === 'string' && m.notice.length > 10, JSON.stringify({ code: m.map.code, notice: m.notice }));
     const t = await db.query(`SELECT reason FROM map_transitions ORDER BY id DESC LIMIT 1`);
     expect(t.rows[0].reason === 'map_closed', JSON.stringify(t.rows));
+  });
+  await step('Savaş: A (web) WebSocket ile NPC\'yi hedefler ve vurur; sunucu NPC\'yi yok eder, ödül defterli verilir (Aşama 9)', async () => {
+    await place('AnadoluKartali', 7700, 8000, 'K-1');
+    const g = await GameConn.open(pc);
+    const npc = (await g.wait('enter', (m) => m.e.some((x) => x.k === 'n'))).e.find((x) => x.k === 'n');
+    expect(npc.n === 'Deneme Çakalı', JSON.stringify(npc));
+    g.send({ t: 'target', id: npc.id });
+    g.send({ t: 'attack', on: true });
+    const reward = await g.wait('reward', () => true, 8000);
+    expect(reward.xp === 1000 && reward.currencies[0]?.amount === 300, JSON.stringify(reward));
+    const l = await db.query(`SELECT l.delta, l.ref_type FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id WHERE u.username = 'AnadoluKartali' AND l.reason = 'npc_reward'`);
+    expect(l.rows.length === 1 && Number(l.rows[0].delta) === 300 && l.rows[0].ref_type === 'npc_kill', JSON.stringify(l.rows));
+    // Ödül veritabanına yazılınca gelir; patlama efekti bir sonraki anlık görüntüde (sırası değişebilir)
+    await g.wait('snap', (m) => (m.fx ?? []).some((f) => f[0] === 'x' && f[1] === npc.id), 3000);
+    const fx = g.msgs.filter((m) => m.t === 'snap').flatMap((m) => m.fx ?? []);
+    expect(fx.some((f) => f[0] === 'l' && f[2] === npc.id), 'lazer efekti gelmeli');
+    await g.close();
+    await waitOffline('AnadoluKartali');
   });
   await step('Ayarlar cihaz sınıfına göre ayrı saklanır; geçersiz değer reddedilir; B, A\'nın ayarını görmez', async () => {
     const d = (await pc.req('GET', '/settings?deviceClass=desktop')).json.settings;

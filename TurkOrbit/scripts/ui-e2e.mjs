@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1, 5, 6, 7 ve 8 arayüz (tarayıcı) uçtan uca testi
+ * TÜRK ORBIT — Aşama 1, 5, 6, 7, 8 ve 9 arayüz (tarayıcı) uçtan uca testi
  *
  * Gerçek API + Vite istemcisi + SMTP alıcısı başlatır, Chromium ile masaüstü ve iPhone görünümünde
  * kayıt → e-posta bağlantısı → giriş → hesap güvenliği → cihazlar arası oturum kapatma akışını dener
@@ -10,7 +10,7 @@
  * Kullanım:  npm run test:ui
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, openSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,7 @@ const SHOTS5 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri
 const SHOTS6 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-06');
 const SHOTS7 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-07');
 const SHOTS8 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-08');
+const SHOTS9 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-09');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -45,6 +46,7 @@ mkdirSync(SHOTS5, { recursive: true });
 mkdirSync(SHOTS6, { recursive: true });
 mkdirSync(SHOTS7, { recursive: true });
 mkdirSync(SHOTS8, { recursive: true });
+mkdirSync(SHOTS9, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -119,7 +121,7 @@ let browser;
 let db;
 const fpsReadings = {};
 try {
-  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8)\n');
+  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8, 9)\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   const c = new pg.Client({ connectionString: DB_URL });
   await c.connect();
@@ -129,6 +131,29 @@ try {
   const mig = spawnSync(tsx, ['apps/api/src/scripts/migrate.ts'], { cwd: ROOT, env, encoding: 'utf8' });
   if (mig.status !== 0) throw new Error(mig.stderr);
   spawnSync('redis-cli', ['-u', REDIS_URL, 'FLUSHDB']);
+  // Önceki adımlar NPC'siz haritalarda; savaş adımları için G-1'e iki test NPC'si (zayıf pasif + güçlü saldırgan)
+  {
+    const s = new pg.Client({ connectionString: DB_URL });
+    await s.connect();
+    await s.query(`UPDATE npc_spawns SET is_enabled = false`);
+    await s.query(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-cakal', 'Eğitim'), ('npc.test-akrep', 'Eğitim')`);
+    await s.query(
+      `INSERT INTO npc_types (code, name, family, level, sprite_key, scale, color_hex, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id) VALUES
+       ('test-cakal', 'Eğitim Çakalı', 'cakal', 1, 'npc-cakal', 0.9, '#E0A93B', 120, 0, 0, 0, 1000, 450, 200, '{"behavior":"passive","patrol_radius":1}', 6000, (SELECT id FROM reward_tables WHERE code = 'npc.test-cakal')),
+       ('test-akrep', 'Kızgın Akrep', 'akrep', 3, 'npc-akrep', 1.3, '#E0533D', 99999, 0, 0, 6000, 1000, 600, 300, '{"behavior":"aggressive","aggro_range":800,"patrol_radius":1}', 0, (SELECT id FROM reward_tables WHERE code = 'npc.test-akrep'))`,
+    );
+    await s.query(
+      `INSERT INTO reward_entries (reward_table_id, reward_type, ref_code, min_amount, max_amount, chance, delivery) VALUES
+       ((SELECT id FROM reward_tables WHERE code = 'npc.test-cakal'), 'currency', 'KREDI', 500, 500, 1, 'direct'),
+       ((SELECT id FROM reward_tables WHERE code = 'npc.test-cakal'), 'item', 'ammo.isk1', 30, 30, 1, 'cargo')`,
+    );
+    await s.query(
+      `INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds) VALUES
+       ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM npc_types WHERE code = 'test-cakal'), '{"type":"circle","x":14000,"y":4000,"r":1}', 1, 600),
+       ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM npc_types WHERE code = 'test-akrep'), '{"type":"circle","x":6000,"y":9000,"r":1}', 1, 600)`,
+    );
+    await s.end();
+  }
   procs.push(spawn(tsx, ['apps/api/src/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'ignore', 'inherit'] }));
   procs.push(
     spawn(path.join(ROOT, 'node_modules/.bin/vite'), ['--host', '127.0.0.1', '--port', String(WEB_PORT), '--strictPort'], {
@@ -137,8 +162,12 @@ try {
       stdio: ['ignore', 'ignore', 'inherit'],
     }),
   );
+  // Oyun sunucusu günlüğü (hata ayıklama için): test-results/ui-e2e-game.log
+  mkdirSync(path.join(ROOT, 'test-results'), { recursive: true });
+  const gameLog = openSync(path.join(ROOT, 'test-results/ui-e2e-game.log'), 'w');
   startGame = async () => {
-    gameProc = spawn(tsx, ['apps/api/src/game/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'ignore', 'inherit'] });
+    gameProc = spawn(tsx, ['apps/api/src/game/index.ts'], { cwd: ROOT, env: { ...env, LOG_LEVEL: 'info' }, stdio: ['ignore', gameLog, gameLog] });
+    gameProc.on('exit', (code, signal) => console.log(`      [oyun sunucusu süreci çıktı: kod ${code}, sinyal ${signal}]`));
     procs.push(gameProc);
     await waitHttp(`http://127.0.0.1:${GAME_PORT}/health`);
   };
@@ -469,16 +498,72 @@ try {
   });
   await step('Oyun sunucusu yeniden başlatılır → iki istemci de "yeniden bağlanılıyor" gösterir ve kendiliğinden bağlanır', async () => {
     gameProc.kill('SIGTERM');
-    await pc.getByTestId('conn-banner').waitFor({ timeout: 8000 });
-    await pc2.getByTestId('conn-banner').waitFor({ timeout: 8000 });
-    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '03-yeniden-baglaniyor.jpg') });
-    await startGame();
+    try {
+      await pc.getByTestId('conn-banner').waitFor({ timeout: 8000 });
+      await pc2.getByTestId('conn-banner').waitFor({ timeout: 8000 });
+      await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '03-yeniden-baglaniyor.jpg') });
+    } finally {
+      // Bu adım başarısız olsa bile sonraki adımlar için oyun sunucusu yeniden başlatılır (zincirleme hata olmaz)
+      await startGame();
+    }
     await pc.getByTestId('conn-banner').waitFor({ state: 'detached', timeout: 25000 });
     await pc2.getByTestId('conn-banner').waitFor({ state: 'detached', timeout: 25000 });
     await pc.getByText('Yeniden bağlandın.').waitFor();
     await pc.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
   });
   await desktop2.close();
+
+  console.log('Aşama 9 — NPC ve savaş (masaüstü)');
+  await step('NPC radar menzilinde görünür; Tab ile hedeflenir; hedef paneli adını ve canını gösterir', async () => {
+    await teleport(pc, A.username, 13600, 4000, 'G-1');
+    await pc.getByTestId('action-bar').waitFor();
+    await sleep(1000);
+    await pc.keyboard.press('Tab');
+    const panel = pc.getByTestId('target-panel');
+    await panel.getByText('Eğitim Çakalı').waitFor({ timeout: 6000 });
+    await panel.getByText('%100').first().waitFor();
+  });
+  await step('Boşluk ile ateş: lazer ve hasar sayıları; NPC yok edilir; ödül (deneyim + Kredi) ve seviye atlama bildirilir, defterde kayıtlı', async () => {
+    await pc.keyboard.press('Space');
+    await pc.getByTestId('attack-button').getByText('Ateşi kes').waitFor({ timeout: 3000 });
+    await sleep(600);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS9, '01-npc-savas-lazer.jpg') });
+    await pc.getByText(/Eğitim Çakalı yok edildi: \+6\.000 deneyim · \+500 Kredi/).waitFor({ timeout: 10000 });
+    await pc.getByText('Seviye atladın! Artık seviye 2.').waitFor({ timeout: 6000 });
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS9, '02-odul-seviye-kargo.jpg') });
+    const l = await db.query(
+      `SELECT l.delta FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id
+       WHERE u.username = $1 AND l.reason = 'npc_reward'`,
+      [A.username],
+    );
+    if (l.rows.length !== 1 || Number(l.rows[0].delta) !== 500) throw new Error(`ödül defteri: ${JSON.stringify(l.rows)}`);
+  });
+  await step('Kargo kutusu: tıklayınca gemi gider ve toplar; IŞK-1 sayısı 30 artar (harcanan atışlar düşülmüş olarak)', async () => {
+    const count = async () => Number((await pc.getByTestId('action-bar').locator('.hud-slot-count').first().innerText()).replace(/\./g, ''));
+    const before = await count();
+    if (!(before < 2000 && before >= 1994)) throw new Error(`atışlar mühimmattan düşülmeliydi: ${before}`);
+    await pc.mouse.click(640 + 260, 430);
+    await pc.getByText(/Kargo kutusu toplandı: 30 × IŞK-1 Batarya/).waitFor({ timeout: 10000 });
+    for (let i = 0; i < 20 && (await count()) !== before + 30; i++) await sleep(200);
+    if ((await count()) !== before + 30) throw new Error(`kargo sonrası ${await count()}, beklenen ${before + 30}`);
+  });
+  await step('Saldırgan NPC pilotu yok eder: ölüm ekranı; "İstasyonda yeniden doğ" ile istasyonda %10 canla devam', async () => {
+    await teleport(pc, A.username, 6000, 9650, 'G-1');
+    const overlay = pc.getByTestId('death-overlay');
+    await overlay.waitFor({ timeout: 10000 });
+    await overlay.getByText('Kızgın Akrep tarafından vuruldun.', { exact: false }).waitFor();
+    await sleep(700);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS9, '03-olum-ekrani.jpg') });
+    await overlay.getByRole('button', { name: 'İstasyonda yeniden doğ' }).click();
+    await overlay.waitFor({ state: 'detached', timeout: 10000 });
+    await pc.getByTestId('hud-hp').getByText('400 / 4.000').waitFor({ timeout: 6000 });
+    const d = await db.query(`SELECT count(*)::int AS n FROM combat_deaths`);
+    if (d.rows[0].n !== 1) throw new Error('ölüm kaydı yok');
+    await sleep(900);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS9, '04-istasyonda-yeniden-dogus.jpg') });
+    // Telefon adımları G-2'de devam eder
+    await teleport(pc, A.username, 2200, 6250, 'G-2');
+  });
 
   console.log('iPhone 13 görünümü');
   await step('Aynı hesapla telefondan giriş', async () => {
@@ -505,6 +590,7 @@ try {
     await singleCanvas(phone);
     await phone.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
     await phone.getByTestId('joystick').waitFor();
+    await phone.getByTestId('attack-button').waitFor(); // dokunmatik savaş butonları
     await phone.getByText('Daha geniş görüş için telefonu yan çevir').waitFor();
     const ended = pc.getByTestId('conn-ended');
     await ended.getByText('Başka bir cihazda oyundasın').waitFor({ timeout: 8000 });
@@ -626,7 +712,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

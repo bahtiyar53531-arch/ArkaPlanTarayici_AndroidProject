@@ -141,3 +141,113 @@ export function createAsteroidTextures(scene: Phaser.Scene) {
     g.destroy();
   }
 }
+
+/**
+ * NPC aile dokuları (Aşama 9): açık renkli silüetler; sahnede ailenin rengiyle boyanır (setTint).
+ * Hepsi "yukarı" bakar (gemilerle aynı yön kuralı: rotation = yön + π/2).
+ */
+export function createNpcTextures(scene: Phaser.Scene) {
+  const S = 128;
+  const m = S / 2;
+  const make = (key: string, draw: (g: Phaser.GameObjects.Graphics) => void) => {
+    if (scene.textures.exists(key)) return;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    draw(g);
+    g.generateTexture(key, S, S);
+    g.destroy();
+  };
+  const V = (x: number, y: number) => new Phaser.Math.Vector2(x, y);
+  const eyes = (g: Phaser.GameObjects.Graphics, y: number, dx: number) => {
+    g.fillStyle(0xfff3b0, 1);
+    g.fillCircle(m - dx, y, 4);
+    g.fillCircle(m + dx, y, 4);
+  };
+
+  // Çakal: ince, sivri, kulaklı ok başı
+  make('npc-cakal', (g) => {
+    const body = [V(m, 10), V(m + 16, 36), V(m + 30, 26), V(m + 26, 58), V(m + 40, 100), V(m, 84), V(m - 40, 100), V(m - 26, 58), V(m - 30, 26), V(m - 16, 36)];
+    g.fillStyle(0xe8e8e8, 1);
+    g.fillPoints(body, true);
+    g.lineStyle(4, 0x2a2a2a, 0.9);
+    g.strokePoints(body, true, true);
+    g.fillStyle(0x9a9a9a, 1);
+    g.fillTriangle(m, 30, m + 12, 70, m - 12, 70);
+    eyes(g, 44, 10);
+  });
+
+  // Akrep: segmentli gövde, kıskaçlar, kıvrık kuyruk ve iğne
+  make('npc-akrep', (g) => {
+    g.fillStyle(0xe8e8e8, 1);
+    g.lineStyle(4, 0x2a2a2a, 0.9);
+    for (let i = 0; i < 4; i++) {
+      g.fillEllipse(m, 48 + i * 14, 40 - i * 6, 18);
+      g.strokeEllipse(m, 48 + i * 14, 40 - i * 6, 18);
+    }
+    // kıskaçlar
+    g.fillCircle(m - 28, 26, 11);
+    g.fillCircle(m + 28, 26, 11);
+    g.strokeCircle(m - 28, 26, 11);
+    g.strokeCircle(m + 28, 26, 11);
+    g.lineStyle(6, 0xe8e8e8, 1);
+    g.lineBetween(m - 14, 42, m - 26, 30);
+    g.lineBetween(m + 14, 42, m + 26, 30);
+    // kuyruk (gövdenin arkasında yukarı kıvrılır)
+    g.lineStyle(7, 0xd0d0d0, 1);
+    g.beginPath();
+    g.arc(m + 18, 104, 18, Math.PI, Math.PI * 1.9, false);
+    g.strokePath();
+    g.fillStyle(0xffe08a, 1);
+    g.fillTriangle(m + 34, 92, m + 44, 84, m + 38, 100);
+    eyes(g, 44, 8);
+  });
+
+  // Örümcek: yuvarlak gövde + 8 bacak
+  make('npc-orumcek', (g) => {
+    g.lineStyle(5, 0xd8d8d8, 1);
+    for (let i = 0; i < 4; i++) {
+      const y = 46 + i * 12;
+      g.lineBetween(m - 16, y, m - 46, y - 18 + i * 10);
+      g.lineBetween(m - 46, y - 18 + i * 10, m - 56, y + 4 + i * 6);
+      g.lineBetween(m + 16, y, m + 46, y - 18 + i * 10);
+      g.lineBetween(m + 46, y - 18 + i * 10, m + 56, y + 4 + i * 6);
+    }
+    g.fillStyle(0xe8e8e8, 1);
+    g.lineStyle(4, 0x2a2a2a, 0.9);
+    g.fillCircle(m, 40, 16);
+    g.strokeCircle(m, 40, 16);
+    g.fillEllipse(m, 78, 44, 52);
+    g.strokeEllipse(m, 78, 44, 52);
+    g.fillStyle(0x9a9a9a, 1);
+    g.fillTriangle(m, 64, m + 9, 84, m - 9, 84);
+    eyes(g, 36, 6);
+  });
+
+  // Yarasa: geniş kanat zarı
+  make('npc-yarasa', (g) => {
+    const wing = [V(m, 30), V(m + 22, 40), V(m + 58, 30), V(m + 50, 58), V(m + 60, 72), V(m + 36, 70), V(m + 26, 86), V(m, 76), V(m - 26, 86), V(m - 36, 70), V(m - 60, 72), V(m - 50, 58), V(m - 58, 30), V(m - 22, 40)];
+    g.fillStyle(0xe2e2e2, 1);
+    g.fillPoints(wing, true);
+    g.lineStyle(4, 0x2a2a2a, 0.9);
+    g.strokePoints(wing, true, true);
+    g.fillStyle(0xbdbdbd, 1);
+    g.fillEllipse(m, 56, 22, 38);
+    g.fillTriangle(m - 8, 40, m - 4, 26, m, 40);
+    g.fillTriangle(m + 8, 40, m + 4, 26, m, 40);
+    eyes(g, 46, 5);
+  });
+
+  // Kargo kutusu
+  if (!scene.textures.exists('cargo')) {
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0xf5b700, 0.25);
+    g.fillCircle(32, 32, 30);
+    g.fillStyle(0x8a5a00, 1);
+    g.fillRoundedRect(14, 14, 36, 36, 6);
+    g.lineStyle(4, 0xffd75e, 1);
+    g.strokeRoundedRect(14, 14, 36, 36, 6);
+    g.lineBetween(14, 32, 50, 32);
+    g.lineBetween(32, 14, 32, 50);
+    g.generateTexture('cargo', 64, 64);
+    g.destroy();
+  }
+}

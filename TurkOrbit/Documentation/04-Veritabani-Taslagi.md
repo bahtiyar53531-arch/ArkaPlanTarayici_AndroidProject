@@ -8,7 +8,8 @@
 | [database/migrations/0002_player_profile.sql](../database/migrations/0002_player_profile.sql) | ✅ **Uygulanan migration** (Aşama 5). |
 | [database/migrations/0003_hangar.sql](../database/migrations/0003_hangar.sql) | ✅ **Uygulanan migration** (Aşama 6). |
 | [database/migrations/0004_world.sql](../database/migrations/0004_world.sql) | ✅ **Uygulanan migration** (Aşama 7). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 8–17). 0001 → 0004 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 89 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0005_combat.sql](../database/migrations/0005_combat.sql) | ✅ **Uygulanan migration** (Aşama 9). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 10–17). 0001 → 0005 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 93 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -77,6 +78,19 @@ Aşama 8'de veritabanı şeması değişmedi. Anlık oyun durumu bellekte (oyun 
 | kanal `game:kick` | Tek aktif oturum: eski bağlantıyı (hangi süreçte olursa) kapat | — |
 | kanal `game:player-updated` | Hangar değişikliği → oyun sunucusu istatistikleri yeniden yükler | — |
 
+## 1f. Aşama 9'da uygulanan tablolar (0005)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `npc_types` | 11 NPC türü (4 aile, 2 kadim/boss) | Can, kalkan, emme oranı, hasar, atış aralığı, menzil, hız; `ai` JSON (`behavior`: `passive` / `aggressive` / `kite`, sürü, zehir, yavaşlatma, bağ mesafesi); deneyim, şeref, ödül tablosu |
+| `reward_tables`, `reward_entries` | Ödül tabloları (52 satır) | Tür: para, eşya, deneyim, şeref, kaynak; `min ≤ max`; `0 < chance ≤ 1`; `delivery`: `direct` (doğrudan) / `cargo` (kargo kutusu) |
+| `npc_spawns` | 21 haritada 111 doğma alanı (en fazla 414 canlı NPC) | Alan dairesi, `max_alive`, `respawn_seconds`, `overrides` (harita bazlı çarpan), `is_enabled` |
+| `combat_deaths` | Pilot ölüm kaydı | Harita, konum, öldüren türü (`npc` / `player` / `other`), NPC türü veya pilot |
+| `npc_kill_log` | NPC öldürme kaydı | `kill_id` benzersiz: aynı öldürme iki kez ödüllenemez; ödül defterindeki `ref_id` ile aynı |
+| `game_settings.combat` | Savaş ayarları | Yeniden doğma canı, kalkan yenilenmesi, kargo sahiplik/ömür süresi, PvP şerefi, hasar sapması |
+
+Ödüller mevcut defterlere yazılır: `currency_ledger` (`npc_reward`), `item_ledger` (`cargo_loot`, `ammo_used`), `players.experience/honor`, `player_stats` (`npc_kills`, `player_kills`, `deaths`, `cargo_collected`).
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
@@ -86,8 +100,8 @@ Aşama 8'de veritabanı şeması değişmedi. Anlık oyun durumu bellekte (oyun 
 | Eşya, envanter, konfigürasyon, PET | ✅ 0003'te uygulandı | 6 ✅ |
 | Yetenekler | `skill_nodes, player_skills` | 9 |
 | Harita | ✅ `map_portals, map_zones` 0004'te uygulandı; taslakta `resource_nodes` (madencilik) | 7 ✅ / 11 |
-| NPC ve kapılar | `npc_types, npc_spawns, gates, gate_waves, player_gates` | 9 |
-| Ödüller | `reward_tables, reward_entries` | 9 |
+| NPC ve kapılar | ✅ `npc_types, npc_spawns` 0005'te uygulandı; taslakta `gates, gate_waves, player_gates` (Yıldız Kapıları) | 9 ✅ / 10-11 |
+| Ödüller | ✅ `reward_tables, reward_entries` 0005'te uygulandı | 9 ✅ |
 | Görevler | `quests, quest_objectives, player_quests` | 10 |
 | Ekonomi | `currencies, wallets, currency_ledger, item_ledger, shop_categories, shop_offers, auctions, auction_bids, crafting_recipes, daily_login_rewards, player_daily_logins` | 11 |
 | Sosyal | `clans, clan_ranks, clan_members, clan_applications, clan_diplomacy, clan_treasury_ledger, friendships, player_blocks, chat_messages, reports, notifications` | 12 |

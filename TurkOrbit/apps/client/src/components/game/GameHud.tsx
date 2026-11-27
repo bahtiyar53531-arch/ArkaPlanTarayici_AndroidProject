@@ -1,4 +1,4 @@
-import { type GalaxyResponse, type PlayerSettings } from '@turkorbit/shared';
+import { AMMO_CODES, AMMO_COLORS, AMMO_LABELS, ROCKET_LABELS, type GalaxyResponse, type PlayerSettings } from '@turkorbit/shared';
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as RPointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../../api/client';
@@ -30,13 +30,13 @@ export function PilotPanel({ c }: { c: GameController }) {
         <b>{pilot.pilotName}</b>
         <span className="hud-level">Sv {pilot.level}</span>
       </div>
-      <div className="hud-bar hp" title="Can">
-        <span style={{ width: `${(pilot.ship.hitpoints / pilot.ship.maxHitpoints) * 100}%` }} />
-        <em>{fmt(pilot.ship.hitpoints)}</em>
+      <div className="hud-bar hp" title="Can" data-testid="hud-hp">
+        <span style={{ width: `${(s.hp / Math.max(1, s.maxHp)) * 100}%` }} />
+        <em>{fmt(s.hp)} / {fmt(s.maxHp)}</em>
       </div>
-      <div className="hud-bar sh" title="Kalkan">
-        <span style={{ width: pilot.ship.shield > 0 ? '100%' : '0%' }} />
-        <em>{fmt(pilot.ship.shield)}</em>
+      <div className="hud-bar sh" title="Kalkan" data-testid="hud-shield">
+        <span style={{ width: `${s.maxShield > 0 ? (s.shield / s.maxShield) * 100 : 0}%` }} />
+        <em>{fmt(s.shield)} / {fmt(s.maxShield)}</em>
       </div>
       <div className="hud-map">
         <b>{map.code}</b> {map.name} {map.pvpEnabled ? <span className="hud-tag danger">PvP</span> : <span className="hud-tag ok">Güvenli</span>}
@@ -121,11 +121,17 @@ export function Minimap({ c }: { c: GameController }) {
       ctx.stroke();
       for (const o of c.ships.values()) {
         if (!Number.isFinite(o.x)) continue;
+        if (o.info.k === 'c') {
+          // Kargo kutusu (yalnızca kargo algılama menzilinde gönderilir)
+          ctx.fillStyle = '#F5B700';
+          ctx.fillRect(o.x * sx - 2, o.y * sy - 2, 4, 4);
+          continue;
+        }
         ctx.beginPath();
-        ctx.arc(o.x * sx, o.y * sy, 3, 0, Math.PI * 2);
+        ctx.arc(o.x * sx, o.y * sy, o.info.k === 'n' ? 2.5 : 3, 0, Math.PI * 2);
         ctx.fillStyle = o.info.c;
         ctx.fill();
-        if (o.info.cc !== c.map.pilot.company.code) {
+        if (o.info.k === 'p' && o.info.cc !== c.map.pilot.company.code) {
           ctx.strokeStyle = '#ff4d6d';
           ctx.lineWidth = 1.5;
           ctx.stroke();
@@ -307,6 +313,125 @@ export function ConnectionBanner({ c }: { c: GameController }) {
             <button type="button" className="btn btn-primary" onClick={() => location.reload()}>Sayfayı yenile</button>
           )}
           <Link className="btn btn-secondary" to="/hangar">Hangara dön</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ====================================================================== hedef paneli
+export function TargetPanel({ c }: { c: GameController }) {
+  useController(c);
+  const id = c.state.combat.target;
+  if (id === null) return null;
+  const t = c.ships.get(id);
+  if (!t) return null;
+  const d = Number.isFinite(t.x) ? Math.round(Math.hypot(t.x - c.state.position.x, t.y - c.state.position.y)) : null;
+  const inRange = d !== null && d <= c.state.combat.laserRange;
+  const enemy = t.info.k === 'n' || t.info.cc !== c.map.pilot.company.code;
+  return (
+    <div className={`hud-panel hud-target${enemy ? ' enemy' : ''}`} data-testid="target-panel">
+      <div className="hud-target-head">
+        <span className="hud-dot" style={{ background: t.info.c }} />
+        <b>{t.info.n}</b>
+        <span className="hud-level">{t.info.k === 'n' ? `Sv ${t.info.l}${t.info.b ? ' · Kadim' : ''}` : `Sv ${t.info.l} · ${t.info.cc}`}</span>
+        <button type="button" className="hud-x" aria-label="Hedefi bırak" onClick={() => c.selectTarget(null)}>×</button>
+      </div>
+      <div className="hud-bar hp small"><span style={{ width: `${t.hp}%` }} /><em>%{t.hp}</em></div>
+      <div className="hud-bar sh small"><span style={{ width: `${t.sh}%` }} /><em>%{t.sh}</em></div>
+      <div className="hud-target-foot">
+        {d !== null && <span>{fmt(d)} birim</span>}
+        {c.state.combat.attacking ? (inRange ? <span className="hud-tag danger">Ateş ediliyor</span> : <span className="hud-tag warn">Menzil dışı — yaklaş</span>) : null}
+      </div>
+    </div>
+  );
+}
+
+// ====================================================================== mühimmat, roket ve ateş çubuğu
+export function ActionBar({ c, touch }: { c: GameController; touch: boolean }) {
+  useController(c);
+  const cs = c.state.combat;
+  const k = c.settings.keys;
+  const key = (code: string) => code.replace(/^Key|^Digit/, '').replace('Space', 'Boşluk');
+  return (
+    <div className={`hud-actions${touch ? ' touch' : ''}`} data-testid="action-bar">
+      <div className="hud-ammo" role="radiogroup" aria-label="Lazer mühimmatı">
+        {AMMO_CODES.map((code, i) => (
+          <button
+            key={code}
+            type="button"
+            role="radio"
+            aria-checked={cs.ammo === code}
+            className={`hud-slot${cs.ammo === code ? ' active' : ''}${(cs.counts[code] ?? 0) === 0 ? ' empty' : ''}`}
+            onClick={() => c.selectAmmo(code)}
+            title={`${AMMO_LABELS[code]} (${i + 1})`}
+          >
+            <i style={{ background: `#${AMMO_COLORS[code].toString(16).padStart(6, '0')}` }} />
+            {!touch && <kbd>{i + 1}</kbd>}
+            <span className="hud-slot-name">{AMMO_LABELS[code]}</span>
+            <span className="hud-slot-count">{fmtShort(cs.counts[code] ?? 0)}</span>
+          </button>
+        ))}
+      </div>
+      {!touch && <CombatButtons c={c} touch={false} />}
+    </div>
+  );
+}
+
+/** Roket, en yakın hedef ve ateş butonları (dokunmatikte joystick'in karşı tarafında, büyük). */
+export function CombatButtons({ c, touch, side }: { c: GameController; touch: boolean; side?: 'left' | 'right' }) {
+  useController(c);
+  const cs = c.state.combat;
+  const k = c.settings.keys;
+  const key = (code: string) => code.replace(/^Key|^Digit/, '').replace('Space', 'Boşluk');
+  return (
+    <div className={`hud-combat-buttons${touch ? ` touch ${side ?? 'right'}` : ''}`}>
+        <button type="button" className="hud-slot rocket" onClick={() => c.fireRocket()} title={`${ROCKET_LABELS[cs.rocket]} roketi (${key(k.rocket)})`} data-testid="rocket-button">
+          {!touch && <kbd>{key(k.rocket)}</kbd>}
+          <span className="hud-slot-name">{ROCKET_LABELS[cs.rocket]}</span>
+          <span className="hud-slot-count">{fmtShort(cs.counts[cs.rocket] ?? 0)}</span>
+          {cs.rocketCooldownMs > 0 && <span className="hud-cooldown" />}
+        </button>
+        <button type="button" className="hud-slot target" onClick={() => c.targetNearest(c.state.position)} title={`En yakın hedef (${key(k.nextTarget)})`} data-testid="target-button">
+          {!touch && <kbd>{key(k.nextTarget)}</kbd>}
+          <span className="hud-slot-name">Hedef</span>
+          <span aria-hidden="true">🎯</span>
+        </button>
+        <button
+          type="button"
+          className={`hud-attack${cs.attacking ? ' on' : ''}`}
+          onClick={() => c.toggleAttack()}
+          aria-pressed={cs.attacking}
+          data-testid="attack-button"
+          title={`Ateş aç/kapa (${key(k.attack)})`}
+        >
+          {cs.attacking ? 'Ateşi kes' : 'Ateş'}
+          {!touch && <kbd>{key(k.attack)}</kbd>}
+        </button>
+      </div>
+  );
+}
+
+const fmtShort = (n: number) => (n >= 10000 ? `${Math.floor(n / 1000)}B` : fmt(n));
+
+// ====================================================================== ölüm ekranı
+export function DeathOverlay({ c }: { c: GameController }) {
+  useController(c);
+  const d = c.state.dead;
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!d) setBusy(false);
+  }, [d]);
+  if (!d) return null;
+  return (
+    <div className="hud-overlay death" role="alertdialog" aria-label="Gemin yok edildi" data-testid="death-overlay">
+      <div className="hud-overlay-card conn">
+        <h2>Gemin yok edildi</h2>
+        <p>{d.by ? `${d.by} tarafından vuruldun.` : 'Gemin yok edildi.'} Şirket istasyonunda acil onarımla (canın %10'u) yeniden doğabilirsin. Tam onarım hangarda.</p>
+        <div className="conn-actions">
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { setBusy(true); c.respawn(); }}>
+            {busy ? 'Yeniden doğuluyor…' : 'İstasyonda yeniden doğ'}
+          </button>
         </div>
       </div>
     </div>

@@ -84,7 +84,8 @@ export async function resetDatabase(rt: Runtime) {
          ('repair', '{"currency": "KREDI", "per_1000_hp": 250}'::jsonb),
          ('inventory', '{"max_items": 300}'::jsonb),
          ('movement', '{"tolerance": 1.25, "slack": 300, "max_elapsed_seconds": 10}'::jsonb),
-         ('portal', '{"jump_radius": 450}'::jsonb)
+         ('portal', '{"jump_radius": 450}'::jsonb),
+         ('combat', '{"respawn_hp_ratio": 0.1, "shield_regen_delay_ms": 4000, "shield_regen_ratio_per_sec": 0.08, "repair_delay_ms": 5000, "loot_owner_ms": 15000, "loot_ttl_ms": 60000, "loot_pickup_radius": 90, "pvp_honor": 100, "damage_variance": 0.1, "out_of_combat_ms": 5000}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

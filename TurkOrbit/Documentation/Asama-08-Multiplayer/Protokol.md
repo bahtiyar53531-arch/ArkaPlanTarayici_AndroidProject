@@ -2,6 +2,8 @@
 
 **Adres:** `wss://turkorbit.com/game` (geliştirmede `ws://localhost:5173/game` → Vite → `ws://127.0.0.1:4001/game`)
 **Sürüm:** `PROTOCOL_VERSION = 1` · **Tik:** 50 ms (20 Hz) · **Anlık görüntü:** her 2 tikte (10 Hz)
+
+> **Güncel sürüm 2 (Aşama 9):** Savaş mesajları eklendi; `snap.e[]` 8 öğeli (can % ve kalkan % eklendi), yeni `snap.st` (can, kalkan ve anlık hız), `snap.fx` efekt listesi, `enter.e[].k` varlık türü. Ayrıntı: [Aşama 9 — Savaş Kuralları ve Protokol Ekleri](../Asama-09-NPC-Savas/Savas-Kurallari-ve-Protokol.md). Bu belgedeki diğer kurallar (bilet, tik, AOI, tek oturum, kapanış kodları) geçerlidir.
 **Tanımlar:** `packages/shared/src/net.ts` (sunucu ve istemci aynı dosyayı kullanır)
 
 > **İlke:** Sunucu otoritelidir. İstemci yalnızca **niyet** gönderir (yön, hedef nokta, geçit). Konumu yalnızca oyun sunucusu hesaplar. İstemcinin konum yazabileceği bir mesaj yoktur; Aşama 7'deki REST konum ve geçit uç noktaları kaldırıldı.

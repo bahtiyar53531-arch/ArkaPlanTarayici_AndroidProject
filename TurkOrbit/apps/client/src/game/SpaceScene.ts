@@ -1,7 +1,9 @@
+import { AMMO_COLORS, AMMO_CODES } from '@turkorbit/shared';
 import Phaser from 'phaser';
 import type { GameController, Vec } from './controller';
 import {
   createAsteroidTextures,
+  createNpcTextures,
   createGlowTexture,
   createPortalTexture,
   createStarTexture,
@@ -40,7 +42,9 @@ export class SpaceScene extends Phaser.Scene {
   private pos: Vec = { x: 0, y: 0 };
   private heading = -Math.PI / 2;
   /** Diğer pilotların gemileri ve ad etiketleri */
-  private remotes = new Map<number, { img: Phaser.GameObjects.Image; label: Phaser.GameObjects.Text; key: string }>();
+  private remotes = new Map<number, { img: Phaser.GameObjects.Image; label: Phaser.GameObjects.Text | null; bars: Phaser.GameObjects.Graphics; key: string; size: number }>();
+  private targetRing!: Phaser.GameObjects.Graphics;
+  private burst: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private loadingKeys = new Set<string>();
   private nameLabel!: Phaser.GameObjects.Text;
   private targetMarker!: Phaser.GameObjects.Arc;
@@ -127,6 +131,7 @@ export class SpaceScene extends Phaser.Scene {
     // --- bölgeler
     createStationTexture(this);
     createAsteroidTextures(this);
+    createNpcTextures(this);
     for (const z of m.zones) {
       if (z.zoneType === 'safe') {
         this.add.circle(z.x, z.y, z.r, 0x34d399, 0.04).setStrokeStyle(6, 0x34d399, 0.25).setDepth(-30);
@@ -186,10 +191,21 @@ export class SpaceScene extends Phaser.Scene {
     this.ship = this.add.image(this.pos.x, this.pos.y, this.shipKey).setDepth(5).setScale(1.1);
     this.ship.rotation = this.heading + Math.PI / 2;
     this.nameLabel = this.add
-      .text(this.pos.x, this.pos.y - 95, m.pilot.pilotName, { fontFamily: 'system-ui, sans-serif', fontSize: '40px', color: '#ffffff', stroke: '#050816', strokeThickness: 6 })
+      .text(this.pos.x, this.pos.y - 95, m.pilot.pilotName, { fontFamily: 'system-ui, sans-serif', fontSize: '34px', color: '#ffffff', stroke: '#050816', strokeThickness: 6 })
       .setOrigin(0.5)
       .setDepth(6)
       .setAlpha(0.9);
+    this.targetRing = this.add.graphics().setDepth(7);
+    this.burst = this.add.particles(0, 0, 'glow', {
+      speed: { min: 60, max: 260 },
+      lifespan: 700,
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 1, end: 0 },
+      tint: [0xffd27f, 0xff8a3d, 0xff4d4d],
+      blendMode: Phaser.BlendModes.ADD,
+      emitting: false,
+    });
+    this.burst.setDepth(8);
     this.targetMarker = this.add.circle(0, 0, 28, 0x29c5ff, 0.15).setStrokeStyle(4, 0x29c5ff, 0.9).setVisible(false).setDepth(3);
     cam.startFollow(this.ship, true, 0.12, 0.12);
     cam.centerOn(this.pos.x, this.pos.y);
@@ -199,7 +215,13 @@ export class SpaceScene extends Phaser.Scene {
     this.input.addPointer(1);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (this.input.pointer1.isDown && this.input.pointer2.isDown) return;
-      if (this.touch && this.c.settings.controls.mode !== 'tap') return;
+      // Önce bir gemiye/NPC'ye tıklandı mı bak: hedef seçimi (kargo kutusuna tıklanınca oraya gidilir)
+      const hit = this.pick(p.worldX, p.worldY);
+      if (hit && hit.k !== 'c') {
+        this.c.selectTarget(hit.id);
+        return;
+      }
+      if (this.touch && this.c.settings.controls.mode !== 'tap' && !hit) return;
       this.c.setTarget({ x: Phaser.Math.Clamp(p.worldX, 0, w), y: Phaser.Math.Clamp(p.worldY, 0, h) });
     });
     this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => this.changeZoom(dy > 0 ? -0.1 : 0.1));
@@ -290,14 +312,19 @@ export class SpaceScene extends Phaser.Scene {
     this.ship.setPosition(r.x, r.y);
     this.ship.rotation = r.h + Math.PI / 2;
     this.nameLabel.setPosition(r.x, r.y - 95);
+    const alive = !c.state.dead;
+    this.ship.setVisible(alive);
+    this.nameLabel.setVisible(alive);
     if (this.emitter) {
-      this.emitter.emitting = r.moving;
+      this.emitter.emitting = r.moving && alive;
       this.emitter.setPosition(r.x - Math.cos(r.h) * 52, r.y - Math.sin(r.h) * 52);
     }
     const target = c.state.target;
     this.targetMarker.setVisible(!!target);
     if (target) this.targetMarker.setPosition(target.x, target.y);
     this.syncRemotes();
+    this.drawTargetRing();
+    this.playFx();
 
     // --- yakın geçit
     let near = null;
@@ -333,32 +360,152 @@ export class SpaceScene extends Phaser.Scene {
     }
   }
 
-  /** Diğer pilotların gemilerini kontrolcünün enterpolasyonlu konumlarıyla eşler. */
+  /** Diğer pilotları, NPC'leri ve kargo kutularını kontrolcünün enterpolasyonlu konumlarıyla eşler. */
   private syncRemotes() {
+    const targetId = this.c.state.combat.target;
     for (const [id, s] of this.c.ships) {
       if (!Number.isFinite(s.x)) continue;
       let r = this.remotes.get(id);
       if (!r) {
-        const key = `ship:${s.info.s}:${s.info.c}`;
-        if (!this.textures.exists(key)) this.loadShipTexture(key, s.info.s, s.info.c);
-        const img = this.add.image(s.x, s.y, this.textures.exists(key) ? key : this.shipKey).setDepth(4).setScale(1.1);
-        const label = this.add
-          .text(s.x, s.y - 95, `${s.info.n} · Sv ${s.info.l}`, { fontFamily: 'system-ui, sans-serif', fontSize: '40px', color: s.info.c, stroke: '#050816', strokeThickness: 6 })
-          .setOrigin(0.5)
-          .setDepth(6);
-        r = { img, label, key };
+        const k = s.info.k;
+        const key = k === 'p' ? `ship:${s.info.s}:${s.info.c}` : k === 'n' ? s.info.s : 'cargo';
+        if (k === 'p' && !this.textures.exists(key)) this.loadShipTexture(key, s.info.s, s.info.c);
+        const img = this.add.image(s.x, s.y, this.textures.exists(key) ? key : this.shipKey).setDepth(k === 'c' ? 2 : 4);
+        let size = 1.1;
+        if (k === 'n') {
+          size = 0.95 * (s.info.z ?? 1);
+          img.setTint(Number.parseInt(s.info.c.slice(1), 16));
+        } else if (k === 'c') {
+          size = 1;
+          this.tweens.add({ targets: img, angle: 360, duration: 6000, repeat: -1 });
+        }
+        img.setScale(size);
+        const label =
+          k === 'c'
+            ? null
+            : this.add
+                .text(s.x, s.y - 95 * size, k === 'n' ? `${s.info.n} · Sv ${s.info.l}${s.info.b ? ' ★' : ''}` : `${s.info.n} · Sv ${s.info.l}`, {
+                  fontFamily: 'system-ui, sans-serif',
+                  fontSize: '34px',
+                  color: s.info.c,
+                  stroke: '#050816',
+                  strokeThickness: 6,
+                })
+                .setOrigin(0.5)
+                .setDepth(6);
+        r = { img, label, bars: this.add.graphics().setDepth(6), key, size };
         this.remotes.set(id, r);
       }
       if (r.img.texture.key !== r.key && this.textures.exists(r.key)) r.img.setTexture(r.key);
       r.img.setPosition(s.x, s.y);
-      r.img.rotation = s.h + Math.PI / 2;
-      r.label.setPosition(s.x, s.y - 95);
+      if (s.info.k !== 'c') r.img.rotation = s.h + Math.PI / 2;
+      r.label?.setPosition(s.x, s.y - 95 * r.size);
+      // Can/kalkan çubukları: hedefteyse veya hasarlıysa
+      r.bars.clear();
+      if (s.info.k !== 'c' && (id === targetId || s.hp < 100)) {
+        const w = 110 * Math.max(0.8, r.size);
+        const x0 = s.x - w / 2;
+        const y0 = s.y - 70 * r.size;
+        r.bars.fillStyle(0x0b1230, 0.85).fillRect(x0 - 2, y0 - 2, w + 4, 22);
+        r.bars.fillStyle(0x34d399, 1).fillRect(x0, y0, (w * s.hp) / 100, 8);
+        r.bars.fillStyle(0x29c5ff, 1).fillRect(x0, y0 + 10, (w * s.sh) / 100, 8);
+      }
     }
     for (const [id, r] of this.remotes) {
       if (!this.c.ships.has(id)) {
         r.img.destroy();
-        r.label.destroy();
+        r.label?.destroy();
+        r.bars.destroy();
         this.remotes.delete(id);
+      }
+    }
+  }
+
+  /** Tıklanan dünya noktasına en yakın varlık (ekranda ~40 piksel içinde). */
+  private pick(wx: number, wy: number): { id: number; k: 'p' | 'n' | 'c' } | null {
+    const radius = 70 / this.cameras.main.zoom;
+    let best: { id: number; k: 'p' | 'n' | 'c' } | null = null;
+    let bestD = radius;
+    for (const [id, s] of this.c.ships) {
+      if (!Number.isFinite(s.x)) continue;
+      const d = Math.hypot(s.x - wx, s.y - wy) - (s.info.k === 'n' ? 30 * (s.info.z ?? 1) : 0);
+      if (d < bestD) {
+        bestD = d;
+        best = { id, k: s.info.k };
+      }
+    }
+    return best;
+  }
+
+  private posOf(id: number): Vec | null {
+    if (id === this.c.myEntityId) return this.pos;
+    const s = this.c.ships.get(id);
+    return s && Number.isFinite(s.x) ? { x: s.x, y: s.y } : null;
+  }
+
+  private drawTargetRing() {
+    this.targetRing.clear();
+    const id = this.c.state.combat.target;
+    if (id === null) return;
+    const p = this.posOf(id);
+    if (!p) return;
+    const s = this.c.ships.get(id);
+    const r = 70 * Math.max(0.9, s?.info.z ?? 1);
+    const t = this.time.now / 1000;
+    const color = this.c.state.combat.attacking ? 0xff4d4d : 0xffd166;
+    this.targetRing.lineStyle(5, color, 0.95);
+    for (let i = 0; i < 4; i++) {
+      const a = t * 1.5 + (i * Math.PI) / 2;
+      this.targetRing.beginPath();
+      this.targetRing.arc(p.x, p.y, r, a, a + 0.9);
+      this.targetRing.strokePath();
+    }
+  }
+
+  /** Sunucudan gelen efektleri çizer: lazer, roket, hasar sayısı, patlama. */
+  private playFx() {
+    const q = this.c.fxQueue;
+    if (q.length === 0) return;
+    const items = q.splice(0, q.length);
+    const me = this.c.myEntityId;
+    for (const f of items) {
+      if (f[0] === 'l' || f[0] === 'r') {
+        const from = this.posOf(f[1]);
+        const to = this.posOf(f[2]);
+        if (!from || !to) continue;
+        if (f[0] === 'l') {
+          const color = f[3] === 9 ? 0xff8844 : (AMMO_COLORS[AMMO_CODES[f[3]] ?? 'ammo.isk1'] ?? 0xff4d4d);
+          const g = this.add.graphics().setDepth(5).setBlendMode(Phaser.BlendModes.ADD);
+          g.lineStyle(10, color, 0.25).lineBetween(from.x, from.y, to.x, to.y);
+          g.lineStyle(4, color, 1).lineBetween(from.x, from.y, to.x, to.y);
+          this.tweens.add({ targets: g, alpha: 0, duration: 220, onComplete: () => g.destroy() });
+        } else {
+          const rocket = this.add.image(from.x, from.y, 'glow').setScale(0.35).setTint(0xffa040).setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
+          this.tweens.add({ targets: rocket, x: to.x, y: to.y, duration: 320, onComplete: () => rocket.destroy() });
+        }
+      } else if (f[0] === 'd') {
+        const p = this.posOf(f[1]);
+        if (!p || f[2] <= 0) continue;
+        const mine = f[1] === me;
+        const txt = this.add
+          // Hedefin sağ yanında çıkar: üstteki ad etiketi ve can çubuğuyla çakışmaz
+          .text(p.x + 70 + Math.random() * 40, p.y - 10 + (Math.random() - 0.5) * 30, f[2].toLocaleString('tr-TR'), {
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: '44px',
+            fontStyle: 'bold',
+            color: mine ? '#ff6b6b' : f[3] === 1 ? '#7fdcff' : '#ffd166',
+            stroke: '#050816',
+            strokeThickness: 7,
+          })
+          .setOrigin(0.5)
+          .setDepth(9);
+        this.tweens.add({ targets: txt, y: txt.y - 60, alpha: 0, duration: 900, onComplete: () => txt.destroy() });
+      } else if (f[0] === 'x') {
+        const [, id, x, y, size] = f;
+        this.burst?.explode(Math.round(24 * size), x, y);
+        const flash = this.add.circle(x, y, 40 * size, 0xffd27f, 0.8).setDepth(8).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: flash, scale: 3, alpha: 0, duration: 450, onComplete: () => flash.destroy() });
+        if (id === me) this.cameras.main.shake(400, 0.012);
       }
     }
   }

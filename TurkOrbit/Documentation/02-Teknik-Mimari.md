@@ -38,7 +38,7 @@ flowchart LR
 |---|---|---|---|
 | `apps/client` | TypeScript, React 18, Vite 7, Phaser 3.90 | Hesap ekranları, oyun, HUD. Web/PWA + Capacitor ile Android/iOS | Hesap ekranları ✅, oyun ekranı (tek oyunculu) ✅ |
 | `apps/api` | Node.js 22, Fastify 5, zod, pg, ioredis, argon2 | Hesap, profil, hangar, ekonomi, görev, klan, forum, destek, yönetim REST API'si | Kimlik, profil, hangar, dünya ✅ |
-| Oyun sunucusu (`apps/api/src/game`, ayrı süreç) | Node.js 22, `ws`, JSON protokol (ikili protokol Aşama 16) | Sunucu otoriteli gerçek zamanlı simülasyon: hareket ✅ (Aşama 8); savaş, NPC, ödül Aşama 9 | Hareket, AOI, geçit, tek oturum ✅ |
+| Oyun sunucusu (`apps/api/src/game`, ayrı süreç) | Node.js 22, `ws`, JSON protokol (ikili protokol Aşama 16) | Sunucu otoriteli gerçek zamanlı simülasyon: hareket ✅ (Aşama 8); savaş, NPC yapay zekâsı, ölüm, ödül ✅ (Aşama 9) | Hareket, AOI, geçit, tek oturum, savaş ✅ |
 | `apps/admin` | React (istemciyle ortak bileşenler) | TÜRK ORBIT YÖNETİM MERKEZİ | Aşama 14 |
 | `packages/shared` | TypeScript + zod | Ortak tipler, doğrulama şemaları, roller, parola politikası, ağ protokolü ve deterministik hareket simülasyonu | ✅ |
 | Worker | API ile aynı kod tabanında ayrı süreç | Günlük/haftalık sıfırlama, açık artırma kapanışı, sıralama, temizlik | Aşama 10-11 |
@@ -96,7 +96,9 @@ sequenceDiagram
 > - Oyun sunucusu ayrı bir süreçtir ama kodu `apps/api/src/game` altındadır (veritabanı, yapılandırma ve dünya kuralları tek kaynakta).
 > - Tek süreç tüm haritaları çalıştırır. Birden çok süreç arasında "harita → sunucu" eşlemesi ve harita devri Aşama 16-17'dedir. Tek aktif oturum kuralı şimdiden süreçler arası çalışır (Redis yayını).
 >
-> Protokolün güncel hali: [Asama-08-Multiplayer/Protokol.md](Asama-08-Multiplayer/Protokol.md).
+> - **Aşama 9:** Savaş da sunucu otoriteli olarak uygulandı. Hedef, ateş, mühimmat ve roket yalnızca niyettir; hasar, ölüm ve ödül sunucuda hesaplanır. Ödül hasar katkısına göre bölünür, tek transaction'da ve idempotent anahtarla yazılır.
+>
+> Protokolün güncel hali: [Asama-08-Multiplayer/Protokol.md](Asama-08-Multiplayer/Protokol.md) + savaş ekleri [Asama-09-NPC-Savas/Savas-Kurallari-ve-Protokol.md](Asama-09-NPC-Savas/Savas-Kurallari-ve-Protokol.md) (protokol sürümü 2).
 
 ### 4.1 İlkeler
 1. **Sunucu otoritelidir.** İstemci yalnızca *niyet* gönderir ("şu noktaya git", "şu hedefi seç", "ateş et", "3. mermiyi kullan"). Konum, hasar, ölüm ve ödül sunucuda hesaplanır.

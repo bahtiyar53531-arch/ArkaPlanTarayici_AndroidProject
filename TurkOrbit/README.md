@@ -2,7 +2,7 @@
 
 PC, web tarayıcısı, Android ve iOS'ta **aynı hesapla** oynanan, sunucu otoriteli gerçek zamanlı uzay MMO oyunu ve platformu.
 
-> **Durum (27.11.2026):** Aşama 1–8 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili**, **hangar/ekipman**, **harita/oyun motoru** ve **gerçek zamanlı çok oyunculu dünya** (WebSocket oyun sunucusu, sunucu otoriteli hareket, radar menzilinde diğer pilotlar, tek aktif oturum). Savaş ve NPC Aşama 9. Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md) · [Aşama 7](Documentation/DevelopmentNotes/Asama-07-Raporu.md) · [Aşama 8](Documentation/DevelopmentNotes/Asama-08-Raporu.md).
+> **Durum (27.11.2026):** Aşama 1–9 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili**, **hangar/ekipman**, **harita/oyun motoru**, **gerçek zamanlı çok oyunculu dünya** ve **NPC ve savaş** (sunucu tarafı hasar, 11 NPC türü, yapay zekâ, ölüm/yeniden doğma, katkıya göre bölünen ödül, kargo kutusu, PvP kuralları). Görev sistemi Aşama 10. Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md) · [Aşama 7](Documentation/DevelopmentNotes/Asama-07-Raporu.md) · [Aşama 8](Documentation/DevelopmentNotes/Asama-08-Raporu.md) · [Aşama 9](Documentation/DevelopmentNotes/Asama-09-Raporu.md).
 
 ## Hızlı başlangıç
 
@@ -28,7 +28,7 @@ Ayrıntılı kurulum ve dosya yerleştirme: [Documentation/Asama-01-Kayit-Giris/
 | `npm run typecheck` | TypeScript denetimi |
 | `npm run build` | Üretim derlemesi |
 | `npm run admin:grant-role -- --user X --role super_admin --reason "..."` | Sunucu tarafı rol atama (denetim kaydına yazılır) |
-| `npm run package:phase -- Asama-08-Multiplayer` | Aşama ZIP teslimatı |
+| `npm run package:phase -- Asama-09-NPC-Savas` | Aşama ZIP teslimatı |
 
 ## Belgeler
 

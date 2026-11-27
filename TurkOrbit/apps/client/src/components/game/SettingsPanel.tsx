@@ -6,6 +6,7 @@ const DEVICE_LABELS: Record<DeviceClass, string> = { desktop: 'bilgisayar', phon
 const KEY_LABELS: Record<keyof PlayerSettings['keys'], string> = {
   up: 'Yukarı', down: 'Aşağı', left: 'Sol', right: 'Sağ', jump: 'Geçitten atla', galaxy: 'Galaksi haritası',
   zoomIn: 'Yakınlaştır', zoomOut: 'Uzaklaştır', fullscreen: 'Tam ekran',
+  attack: 'Ateş aç / kapa', rocket: 'Roket at', nextTarget: 'En yakın hedef',
 };
 
 export function SettingsPanel({ initial, deviceClass, onSave, onClose }: {
@@ -132,7 +133,7 @@ export function SettingsPanel({ initial, deviceClass, onSave, onClose }: {
                 </button>
               </div>
             ))}
-            <p className="muted small">Ok tuşları her zaman hareket için de çalışır. Fare tekerleği yakınlaştırır.</p>
+            <p className="muted small">Ok tuşları her zaman hareket için de çalışır. 1–5 tuşları mühimmat seçer. Fare tekerleği yakınlaştırır.</p>
           </div>
         )}
         {msg && <div className={`alert ${msg.kind === 'ok' ? 'alert-success' : 'alert-error'}`}>{msg.text}</div>}

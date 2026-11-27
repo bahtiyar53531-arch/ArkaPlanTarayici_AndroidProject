@@ -2,19 +2,23 @@
  * Oyun ekranı (/oyna). Bu dosya ayrı bir parça olarak yüklenir (React.lazy): Phaser yalnızca
  * oyuna girilince indirilir, hesap sayfaları hafif kalır.
  */
-import { type DeviceClass, type PlayerSettings } from '@turkorbit/shared';
+import { AMMO_CODES, type DeviceClass, type PlayerSettings } from '@turkorbit/shared';
 import Phaser from 'phaser';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import {
+  ActionBar,
+  CombatButtons,
   ConnectionBanner,
+  DeathOverlay,
   GalaxyOverlay,
   Joystick,
   Minimap,
   NearbyPanel,
   PilotPanel,
   PortalPrompt,
+  TargetPanel,
   Toast,
   TopBar,
   toggleFullscreen,
@@ -121,8 +125,18 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
       const k = c.settings.keys;
-      if (e.code === 'Escape') setOverlay('none');
-      else if (overlay !== 'none') return;
+      if (e.code === 'Escape') {
+        if (overlay === 'none' && c.state.combat.target !== null) c.selectTarget(null);
+        setOverlay('none');
+      } else if (overlay !== 'none') return;
+      else if (e.code === k.attack) {
+        e.preventDefault();
+        if (!e.repeat) c.toggleAttack();
+      } else if (e.code === k.rocket) c.fireRocket();
+      else if (e.code === k.nextTarget) {
+        e.preventDefault();
+        c.targetNearest(c.state.position);
+      } else if (/^Digit[1-5]$/.test(e.code)) c.selectAmmo(AMMO_CODES[Number(e.code.slice(5)) - 1]!);
       else if (e.code === k.jump) c.jump();
       else if (e.code === k.galaxy) setOverlay('galaxy');
       else if (e.code === k.zoomIn) c.zoomDelta = 0.15;
@@ -148,23 +162,31 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
     <div className={`game-root device-${deviceClass}`} style={{ ['--hud-scale' as string]: s.hud.scale }}>
       <div ref={host} className="game-canvas" data-testid="game-canvas" />
       <div className="hud-layer">
-        <div className="hud-corner tl"><PilotPanel c={c} /></div>
+        <div className="hud-corner tl">
+          <PilotPanel c={c} />
+          {!touch && overlay === 'none' && (
+            <div className="hud-help muted small">WASD: hareket · Tıkla: hedef seç / git · Boşluk: ateş · 1–5: mühimmat · R: roket · Tab: en yakın hedef · {s.keys.jump.replace(/^Key/, '')}: geçit · {s.keys.galaxy.replace(/^Key/, '')}: galaksi</div>
+          )}
+        </div>
         <div className="hud-corner tr">
           <TopBar c={c} touch={touch} onGalaxy={() => setOverlay('galaxy')} onSettings={() => setOverlay('settings')} />
           <Minimap c={c} />
           <NearbyPanel c={c} max={deviceClass === 'phone' ? 3 : 5} />
         </div>
-        <div className="hud-corner bc"><PortalPrompt c={c} /></div>
+        <div className="hud-corner tc"><TargetPanel c={c} /></div>
+        <div className="hud-corner bc">
+          <PortalPrompt c={c} />
+          <ActionBar c={c} touch={touch} />
+        </div>
         <Toast c={c} />
         <ConnectionBanner c={c} />
+        <DeathOverlay c={c} />
         {touch && s.controls.mode === 'joystick' && <Joystick c={c} settings={s} />}
+        {touch && <CombatButtons c={c} touch side={s.controls.mode === 'joystick' && s.controls.joystickSide === 'right' ? 'left' : 'right'} />}
         {portraitHint && (
           <button type="button" className="hud-portrait-hint" onClick={() => setPortraitHint(false)}>
             Daha geniş görüş için telefonu yan çevir · Kapat
           </button>
-        )}
-        {!touch && overlay === 'none' && (
-          <div className="hud-help muted small">WASD / oklar: hareket · Tıkla: hedefe git · {s.keys.jump.replace(/^Key/, '')}: geçitten atla · {s.keys.galaxy.replace(/^Key/, '')}: galaksi · Tekerlek: yakınlaştır</div>
         )}
       </div>
       {overlay === 'galaxy' && <GalaxyOverlay onClose={() => setOverlay('none')} />}

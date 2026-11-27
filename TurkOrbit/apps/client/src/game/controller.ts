@@ -8,6 +8,7 @@
  *  - Bağlantı koparsa yeni biletle otomatik yeniden bağlanır; başka cihazdan girilirse durur.
  */
 import {
+  AMMO_LABELS,
   arrived,
   CLOSE_CODES,
   IDLE_INPUT,
@@ -15,8 +16,13 @@ import {
   PROTOCOL_VERSION,
   stepShip,
   TICK_MS,
+  type AmmoCode,
+  type CombatState,
   type EntityInfo,
+  type Fx,
   type MapResponse,
+  type RewardMessage,
+  type RocketCode,
   type MoveInput,
   type PlayerSettings,
   type PortalInfo,
@@ -59,6 +65,13 @@ export interface HudState {
   reconnectAttempt: number;
   ping: number | null;
   nearby: NearbyPilot[];
+  // --- Aşama 9: savaş
+  hp: number;
+  maxHp: number;
+  shield: number;
+  maxShield: number;
+  combat: CombatState;
+  dead: { by: string | null; kind: 'npc' | 'player' | 'other' } | null;
 }
 
 export interface RemoteShip {
@@ -67,7 +80,12 @@ export interface RemoteShip {
   x: number;
   y: number;
   h: number;
+  /** can ve kalkan yüzdesi (0–100) */
+  hp: number;
+  sh: number;
 }
+
+const fmtN = (n: number) => n.toLocaleString('tr-TR');
 
 type Listener = () => void;
 
@@ -118,6 +136,10 @@ export class GameController {
   private firstWelcome: { resolve: () => void; reject: (e: unknown) => void } | null = null;
   private jumpTimer: ReturnType<typeof setTimeout> | null = null;
   private lastNearbyAt = 0;
+  /** Sunucunun bildirdiği anlık hız (yavaşlatma etkisi dahil); tahmin bunu kullanır */
+  private speedNow = 0;
+  /** Sahnenin her karede boşalttığı görsel efekt kuyruğu */
+  readonly fxQueue: Fx[] = [];
 
   constructor(settings: PlayerSettings) {
     this.settings = settings;
@@ -135,6 +157,12 @@ export class GameController {
       reconnectAttempt: 0,
       ping: null,
       nearby: [],
+      hp: 0,
+      maxHp: 1,
+      shield: 0,
+      maxShield: 0,
+      combat: { target: null, attacking: false, ammo: 'ammo.isk1', rocket: 'rocket.yildirim', counts: {}, rocketCooldownMs: 0, laserRange: 0 },
+      dead: null,
     };
   }
 
@@ -272,13 +300,32 @@ export class GameController {
         if (this.jumpTimer) clearTimeout(this.jumpTimer);
         this.mapSeq++;
         if (m.reason === 'portal') this.toast('success', `${m.map.map.code} ${m.map.map.name} bölgesine geçtin.`);
+        if (m.reason === 'respawn') {
+          this.state.dead = null;
+          this.toast('info', `${m.map.map.code} istasyonunda acil onarımla yeniden doğdun. Tam onarım hangarda.`);
+        }
+        this.emit();
+        break;
+      case 'cs': {
+        const { t: _t, ...cs } = m;
+        this.state.combat = cs;
+        this.emit();
+        break;
+      }
+      case 'reward':
+        this.onReward(m);
+        break;
+      case 'dead':
+        this.state.dead = { by: m.by, kind: m.kind };
+        this.state.combat = { ...this.state.combat, target: null, attacking: false };
+        this.target = null;
         this.emit();
         break;
       case 'snap':
         this.onSnapshot(m);
         break;
       case 'enter':
-        for (const info of m.e) if (info.id !== this.myEntityId) this.ships.set(info.id, { info, buf: [], x: NaN, y: NaN, h: 0 });
+        for (const info of m.e) if (info.id !== this.myEntityId) this.ships.set(info.id, { info, buf: [], x: NaN, y: NaN, h: 0, hp: 100, sh: 0 });
         break;
       case 'leave':
         for (const id of m.e) this.ships.delete(id);
@@ -310,6 +357,10 @@ export class GameController {
 
   private resetWorld(map: MapResponse, you: [number, number, number, number, number]) {
     this.map = map;
+    this.speedNow = map.pilot.ship.speed;
+    this.state.hp = map.pilot.ship.hitpoints;
+    this.state.maxHp = map.pilot.ship.maxHitpoints;
+    this.fxQueue.length = 0;
     this.self = { x: you[0], y: you[1], vx: you[2], vy: you[3], h: you[4] };
     this.prev = { ...this.self };
     this.pending = [];
@@ -332,11 +383,19 @@ export class GameController {
     this.serverOffset =
       this.serverOffset === null ? sample : sample > this.serverOffset ? sample : this.serverOffset + (sample - this.serverOffset) * 0.05;
     // --- uzlaştırma: sunucu durumu + onaylanmamış girdilerin yeniden oynatılması
+    const [hp, maxHp, sh, maxSh, speed] = m.st;
+    this.state.hp = hp;
+    this.state.maxHp = maxHp;
+    this.state.shield = sh;
+    this.state.maxShield = maxSh;
+    this.speedNow = speed;
+    if (m.fx) for (const f of m.fx) this.fxQueue.push(f);
+    if (this.fxQueue.length > 200) this.fxQueue.splice(0, this.fxQueue.length - 200);
     this.pending = this.pending.filter((p) => p.seq > m.a);
     const before = { x: this.self.x, y: this.self.y };
     const s: ShipState = { x: m.y[0], y: m.y[1], vx: m.y[2], vy: m.y[3], h: m.y[4] };
     const { width, height } = this.map.map;
-    for (const p of this.pending) stepShip(s, p.input, TICK_MS / 1000, this.map.pilot.ship.speed, width, height);
+    for (const p of this.pending) stepShip(s, p.input, TICK_MS / 1000, this.speedNow, width, height);
     const ex = before.x - s.x;
     const ey = before.y - s.y;
     if (Math.hypot(ex, ey) > SNAP_CORRECTION) this.offset = { x: 0, y: 0 };
@@ -348,9 +407,11 @@ export class GameController {
     this.self = s;
     // --- diğer pilotlar: enterpolasyon tamponu
     const t = m.k * TICK_MS;
-    for (const [id, x, y, h] of m.e) {
+    for (const [id, x, y, h, , , hpPct, shPct] of m.e) {
       const ship = this.ships.get(id);
       if (!ship) continue;
+      ship.hp = hpPct;
+      ship.sh = shPct;
       ship.buf.push({ t, x, y, h });
       if (ship.buf.length > 20) ship.buf.shift();
     }
@@ -366,7 +427,7 @@ export class GameController {
       this.target = this.pendingTarget;
       this.pendingTarget = null;
     }
-    const online = this.state.conn === 'online';
+    const online = this.state.conn === 'online' && !this.state.dead;
     let frameMs = this.lastFrame ? now - this.lastFrame : 0;
     this.lastFrame = now;
     // Sekme arka plandaydı/duraklatıldı: kaçırılan adımlar simüle edilmez, sunucu görüntüsü gerçeği getirir.
@@ -374,7 +435,7 @@ export class GameController {
     if (online) this.acc += frameMs;
     const batch: Array<[number, number, number, number]> = [];
     const { width, height } = this.map.map;
-    const speed = this.map.pilot.ship.speed;
+    const speed = this.speedNow;
     while (this.acc >= TICK_MS) {
       this.acc -= TICK_MS;
       const input = this.currentInput(dir);
@@ -399,7 +460,7 @@ export class GameController {
     if (now - this.lastNearbyAt > 250) {
       this.lastNearbyAt = now;
       this.state.nearby = [...this.ships.values()]
-        .filter((s) => Number.isFinite(s.x))
+        .filter((s) => s.info.k === 'p' && Number.isFinite(s.x))
         .map((s) => ({
           id: s.info.id,
           name: s.info.n,
@@ -454,6 +515,75 @@ export class GameController {
         s.h = lerpAngle(p0.h, p1.h, t);
       }
     }
+  }
+
+  // ================================================================== savaş komutları (niyet; karar sunucuda)
+  private onReward(m: RewardMessage) {
+    const parts: string[] = [];
+    if (m.xp) parts.push(`+${fmtN(m.xp)} deneyim`);
+    if (m.honor) parts.push(`+${fmtN(m.honor)} şeref`);
+    for (const c of m.currencies) parts.push(`+${fmtN(c.amount)} ${c.code === 'KREDI' ? 'Kredi' : c.code === 'AKCE' ? 'Akçe' : c.code}`);
+    for (const it of m.items) parts.push(`${fmtN(it.amount)} × ${it.name}`);
+    this.toast('success', `${m.source}: ${parts.join(' · ') || 'ödül yok'}`);
+    if (m.levelUp) {
+      this.map = { ...this.map, pilot: { ...this.map.pilot, level: m.level } };
+      setTimeout(() => this.toast('success', `Seviye atladın! Artık seviye ${m.level}.`), 1500);
+    }
+  }
+
+  selectTarget(id: number | null) {
+    if (this.state.dead) return;
+    this.send({ t: 'target', id });
+    this.state.combat = { ...this.state.combat, target: id, attacking: false };
+    this.emit();
+  }
+
+  setAttack(on: boolean) {
+    if (on && this.state.combat.target === null) {
+      this.toast('error', 'Önce bir hedef seç (tıkla/dokun veya Tab).');
+      return;
+    }
+    this.send({ t: 'attack', on });
+  }
+
+  toggleAttack() {
+    this.setAttack(!this.state.combat.attacking);
+  }
+
+  selectAmmo(code: AmmoCode) {
+    this.send({ t: 'ammo', c: code });
+    if ((this.state.combat.counts[code] ?? 0) === 0) this.toast('error', `${AMMO_LABELS[code]} yok. Mağazadan alabilirsin.`);
+  }
+
+  selectRocket(code: RocketCode) {
+    this.send({ t: 'rtype', c: code });
+  }
+
+  fireRocket() {
+    if (this.state.combat.target === null) {
+      this.toast('error', 'Önce bir hedef seç.');
+      return;
+    }
+    this.send({ t: 'rocket' });
+  }
+
+  respawn() {
+    this.send({ t: 'respawn' });
+  }
+
+  /** En yakın NPC veya düşman pilotu hedefler; tekrar basılırsa bir sonrakine geçer. */
+  targetNearest(from: Vec) {
+    const mine = this.map.pilot.company.code;
+    const list = [...this.ships.values()]
+      .filter((s) => Number.isFinite(s.x) && (s.info.k === 'n' || (s.info.k === 'p' && s.info.cc !== mine)))
+      .map((s) => ({ id: s.info.id, d: Math.hypot(s.x - from.x, s.y - from.y) }))
+      .sort((a, b) => a.d - b.d);
+    if (list.length === 0) {
+      this.toast('info', 'Radar menzilinde hedef yok.');
+      return;
+    }
+    const cur = list.findIndex((e) => e.id === this.state.combat.target);
+    this.selectTarget(list[(cur + 1) % list.length]!.id);
   }
 
   // ================================================================== geçit ve ayarlar

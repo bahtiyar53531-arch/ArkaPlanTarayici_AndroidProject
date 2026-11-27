@@ -29,7 +29,8 @@
 .hud-corner { position: absolute; zoom: var(--hud-scale, 1); pointer-events: none; display: flex; flex-direction: column; gap: 8px; }
 .hud-corner.tl { top: calc(env(safe-area-inset-top) + 10px); left: calc(env(safe-area-inset-left) + 10px); }
 .hud-corner.tr { top: calc(env(safe-area-inset-top) + 10px); right: calc(env(safe-area-inset-right) + 10px); align-items: flex-end; }
-.hud-corner.bc { bottom: calc(env(safe-area-inset-bottom) + 52px); left: 50%; transform: translateX(-50%); align-items: center; }
+.hud-corner.bc { bottom: calc(env(safe-area-inset-bottom) + 10px); left: 50%; transform: translateX(-50%); align-items: center; }
+.hud-corner.tc { top: calc(env(safe-area-inset-top) + 10px); left: 50%; transform: translateX(-50%); align-items: center; }
 
 .hud-panel {
   background: rgba(8, 12, 32, 0.74);
@@ -123,9 +124,7 @@
 .hud-joystick-knob { border-radius: 50%; background: rgba(41, 197, 255, 0.55); border: 2px solid rgba(220, 245, 255, 0.8); pointer-events: none; }
 
 .hud-help {
-  position: absolute;
-  left: calc(env(safe-area-inset-left) + 10px);
-  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  max-width: 230px;
   padding: 4px 10px;
   border-radius: 8px;
   background: rgba(8, 12, 32, 0.55);
@@ -241,3 +240,75 @@
 .conn-actions .btn { width: auto; }
 .device-phone .hud-nearby { min-width: 140px; max-width: 160px; }
 @media (max-width: 520px) { .hud-conn { white-space: normal; max-width: calc(100vw - 32px); } }
+
+/* Aşama 9: savaş arayüzü */
+.hud-tag.warn { background: #78350f88; color: #fde68a; }
+.hud-bar.small { height: 11px; }
+.hud-bar.small em { font-size: 9px; line-height: 10px; }
+.hud-target { min-width: 220px; display: flex; flex-direction: column; gap: 4px; border-color: #b8860b; }
+.hud-target.enemy { border-color: #b91c1c; box-shadow: 0 0 14px rgba(239, 68, 68, 0.25); }
+.hud-target-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.hud-target-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+.hud-x { margin-left: 4px; width: 26px; height: 26px; border-radius: 6px; border: 1px solid #23305e; background: transparent; color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; }
+.hud-actions { display: flex; align-items: flex-end; gap: 10px; }
+.hud-ammo, .hud-combat-buttons { display: flex; gap: 6px; }
+.hud-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  min-height: 52px;
+  padding: 12px 6px 4px;
+  border-radius: 10px;
+  border: 1px solid #23305e;
+  background: rgba(8, 12, 32, 0.82);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.hud-slot.active { border-color: var(--cyan); box-shadow: 0 0 12px rgba(41, 197, 255, 0.35); }
+.hud-slot.empty { opacity: 0.45; }
+.hud-slot i { width: 22px; height: 4px; border-radius: 2px; margin-bottom: 2px; }
+.hud-slot kbd { position: absolute; top: 2px; left: 4px; font-size: 9px; color: var(--muted); font-family: inherit; }
+.hud-slot-name { font-size: 11px; font-weight: 700; }
+.hud-slot-count { font-size: 11px; color: #cfd7f5; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.hud-cooldown { position: absolute; inset: 0; border-radius: 10px; background: rgba(5, 8, 22, 0.6); animation: hud-cd 2s linear forwards; }
+@keyframes hud-cd { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(100% 0 0 0); } }
+.hud-attack {
+  position: relative;
+  min-width: 96px;
+  min-height: 52px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  border: 2px solid #b91c1c;
+  background: rgba(127, 29, 29, 0.55);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+}
+.hud-attack.on { background: #dc2626; border-color: #fecaca; box-shadow: 0 0 18px rgba(239, 68, 68, 0.6); animation: hud-pulse 1s ease-in-out infinite; }
+.hud-attack kbd { position: absolute; top: 2px; right: 6px; font-size: 9px; color: #fecaca; font-family: inherit; }
+@keyframes hud-pulse { 50% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.3); } }
+.hud-portal { margin-bottom: 6px; }
+/* dokunmatik: mühimmat satırı küçük, savaş butonları büyük ve joystick'in karşı tarafında */
+.hud-actions.touch .hud-slot { min-width: 50px; min-height: 44px; padding: 2px 4px; }
+.hud-actions.touch .hud-slot-name { font-size: 10px; }
+.hud-combat-buttons.touch {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom) + 70px);
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 10px;
+  zoom: var(--hud-scale, 1);
+}
+.hud-combat-buttons.touch.right { right: calc(env(safe-area-inset-right) + 14px); }
+.hud-combat-buttons.touch.left { left: calc(env(safe-area-inset-left) + 14px); }
+.hud-combat-buttons.touch .hud-attack { width: 84px; height: 84px; min-width: 0; border-radius: 50%; font-size: 14px; }
+.hud-combat-buttons.touch .hud-slot { width: 60px; height: 60px; min-width: 0; border-radius: 50%; }
+.hud-overlay.death { background: rgba(60, 4, 10, 0.55); }
+.device-phone .hud-target { min-width: 170px; }
+.device-phone .hud-ammo { gap: 4px; }

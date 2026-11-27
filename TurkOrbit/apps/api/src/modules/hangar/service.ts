@@ -26,7 +26,7 @@ import {
   type ShopResponse,
   type SlotType,
 } from '@turkorbit/shared';
-import type { GameBridge } from '../game/bridge.js';
+import type { GameBridge, PlayerUpdateReason } from '../game/bridge.js';
 import { withTransaction, type Db, type DbClient, type Queryable } from '../../db/pool.js';
 import { AppError } from '../../lib/errors.js';
 import { getSetting } from '../auth/repository.js';
@@ -108,7 +108,7 @@ export class HangarService {
     owner: Owner,
     serverCode: string,
     fn: (c: DbClient, pilot: LockedPilot) => Promise<T>,
-    opts: { station?: boolean; notify?: boolean } = {},
+    opts: { station?: boolean; notify?: PlayerUpdateReason | false } = {},
   ): Promise<{ result: T; hangar: HangarResponse }> {
     let playerId = '';
     const result = await withTransaction(this.db, async (c) => {
@@ -117,7 +117,7 @@ export class HangarService {
       if (opts.station) await this.bridge?.assertCanChangeEquipment(pilot.id);
       return fn(c, pilot);
     });
-    if (opts.notify !== false) await this.bridge?.notifyPlayerUpdated(playerId);
+    if (opts.notify !== false) await this.bridge?.notifyPlayerUpdated(playerId, opts.notify ?? 'stats');
     return { result, hangar: await this.hangar(owner, serverCode) };
   }
 
@@ -463,7 +463,7 @@ export class HangarService {
     return this.mutate(owner, d.serverCode, async (c, pilot) => {
       const ship = await this.ownedShip(c, pilot.id, uuidOr404(shipId));
       await c.query('UPDATE players SET active_ship_id = $2 WHERE id = $1', [pilot.id, ship.id]);
-    }, { station: true });
+    }, { station: true, notify: 'ship' });
   }
 
   async setDesign(owner: Owner, shipId: string, input: unknown) {
@@ -506,7 +506,8 @@ export class HangarService {
       });
       if (r.applied) await c.query('UPDATE player_ships SET hitpoints = $2 WHERE id = $1', [ship.id, ship.max_hp]);
       return { repaired: r.applied ? missing : 0, cost };
-    });
+      // Oyundayken tamir yalnızca istasyonda (savaş sırasında web hangarından tamir hilesi engellenir).
+    }, { station: true, notify: 'repair' });
   }
 
   // ================================================================== satış
@@ -543,7 +544,7 @@ export class HangarService {
         { reason: 'item_sell', idempotencyKey: key },
       );
       return { sold: qty, earned, replay: false };
-    }, { notify: false });
+    }, { notify: 'inventory' });
   }
 
   // ================================================================== yükseltme
@@ -680,8 +681,10 @@ export class HangarService {
 
   async purchase(owner: Owner, input: unknown) {
     const d = purchaseSchema.parse(input);
+    let buyerId = '';
     const result = await withTransaction(this.db, async (c) => {
       const pilot = await this.lockPilot(c, owner, d.serverCode);
+      buyerId = pilot.id;
       const key = `shop:${pilot.id}:${d.requestId}`;
       const prev = await c.query<{ offer_id: number; packs: number; total_price: string; currency_code: string }>(
         'SELECT offer_id, packs, total_price, currency_code FROM shop_purchases WHERE idempotency_key = $1',
@@ -772,6 +775,8 @@ export class HangarService {
       this.log.info({ playerId: pilot.id, offer: o.id, packs: d.packs, total }, 'mağaza satın alma');
       return { offerId: o.id, packs: d.packs, total, currency: o.currency_code, replay: false };
     });
+    // Oyundaysa mühimmat/roket sayıları canlı güncellenir.
+    if (!result.replay) await this.bridge?.notifyPlayerUpdated(buyerId, 'inventory');
     const currencies = (await this.hangar(owner, d.serverCode)).currencies;
     return { purchase: result, currencies };
   }
