@@ -1,18 +1,48 @@
 /**
- * Oyun kontrolcüsü: Phaser sahnesi ile React HUD arasındaki köprü + sunucu senkronizasyonu.
+ * Oyun kontrolcüsü (Aşama 8): WebSocket istemcisi + tahmin/uzlaştırma/enterpolasyon + HUD köprüsü.
  *
- * Aşama 7 (tek oyunculu): hareket istemcide simüle edilir, konum ~1 sn'de bir sunucuya bildirilir.
- * Sunucu hız denetiminden geçmeyen konumu reddeder → istemci sunucu konumuna geri çekilir (uzlaştırma).
- * Aşama 8'de bu sınıf WebSocket istemcisine dönüşecek; sahne arayüzü aynı kalacak.
+ *  - Kendi gemin: 50 ms'lik sabit adımlarla ortak `stepShip` ile anında tahmin edilir; her adımın girdisi
+ *    sıra numarasıyla sunucuya gider. Anlık görüntü `ack` ile gelince sunucu durumuna dönülür ve
+ *    onaylanmamış girdiler yeniden uygulanır. Küçük fark görsel olarak yumuşatılır, büyük farkta atlanır.
+ *  - Diğer pilotlar: anlık görüntüler tamponlanır, ~150 ms geriden iki görüntü arasında çizilir.
+ *  - Bağlantı koparsa yeni biletle otomatik yeniden bağlanır; başka cihazdan girilirse durur.
  */
-import type { MapResponse, PlayerSettings, PortalInfo } from '@turkorbit/shared';
+import {
+  arrived,
+  CLOSE_CODES,
+  IDLE_INPUT,
+  NO_RECONNECT_CODES,
+  PROTOCOL_VERSION,
+  stepShip,
+  TICK_MS,
+  type EntityInfo,
+  type MapResponse,
+  type MoveInput,
+  type PlayerSettings,
+  type PortalInfo,
+  type ServerMessage,
+  type ShipState,
+} from '@turkorbit/shared';
 import { api, ApiError } from '../api/client';
 
 export const SERVER = 'TR1';
+const INTERP_DELAY = 150;
+const SNAP_CORRECTION = 300;
 
 export interface Vec {
   x: number;
   y: number;
+}
+
+export type ConnState = 'connecting' | 'online' | 'reconnecting' | 'replaced' | 'ended';
+
+export interface NearbyPilot {
+  id: number;
+  name: string;
+  color: string;
+  company: string;
+  level: number;
+  distance: number;
 }
 
 export interface HudState {
@@ -24,45 +54,91 @@ export interface HudState {
   fps: number;
   jumping: boolean;
   toast: { kind: 'info' | 'error' | 'success'; text: string; id: number } | null;
+  conn: ConnState;
+  connMessage: string | null;
+  reconnectAttempt: number;
+  ping: number | null;
+  nearby: NearbyPilot[];
+}
+
+export interface RemoteShip {
+  info: EntityInfo;
+  buf: Array<{ t: number; x: number; y: number; h: number }>;
+  x: number;
+  y: number;
+  h: number;
 }
 
 type Listener = () => void;
 
+const wsUrl = (): string =>
+  (import.meta.env.VITE_GAME_URL as string | undefined) ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/game`;
+
+const lerpAngle = (a: number, b: number, t: number) => {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+};
+
 export class GameController {
-  map: MapResponse;
+  map!: MapResponse;
   settings: PlayerSettings;
   readonly state: HudState;
-  /** Joystick yönü (-1..1); React bileşeni yazar, sahne okur. */
+  /** Joystick yönü (-1..1); React bileşeni yazar. */
   joystick: Vec = { x: 0, y: 0 };
-  /** Sahnenin tıklama/mini harita hedefini alması için. */
+  /** Sahnenin/mini haritanın seçtiği hedef nokta (tıkla-git). */
   pendingTarget: Vec | null = null;
   zoomDelta = 0;
-  /** Sahne konumunu sunucu konumuna çekmesi gerektiğinde artar. */
-  correctionSeq = 0;
+  /** Harita değişince (veya yeniden bağlanınca) artar: sahne yeniden kurulur. */
   mapSeq = 0;
+  /** Görünen diğer pilotlar (radar menzili) */
+  readonly ships = new Map<number, RemoteShip>();
+  myEntityId = 0;
 
+  // --- tahmin
+  private self: ShipState = { x: 0, y: 0, vx: 0, vy: 0, h: -Math.PI / 2 };
+  private prev: ShipState = { ...this.self };
+  private pending: Array<{ seq: number; input: MoveInput }> = [];
+  private seq = 0;
+  private target: Vec | null = null;
+  private acc = 0;
+  private lastFrame = 0;
+  /** Uzlaştırma farkının görsel olarak yumuşatılması */
+  private offset: Vec = { x: 0, y: 0 };
+  private serverOffset: number | null = null;
+
+  // --- bağlantı
+  private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
-  private lastSent: Vec;
-  private inFlight: Promise<void> | null = null;
-  private syncTimer: ReturnType<typeof setInterval> | null = null;
   private toastId = 0;
+  private timers: Array<ReturnType<typeof setInterval>> = [];
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
+  private firstWelcome: { resolve: () => void; reject: (e: unknown) => void } | null = null;
+  private jumpTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastNearbyAt = 0;
 
-  constructor(map: MapResponse, settings: PlayerSettings) {
-    this.map = map;
+  constructor(settings: PlayerSettings) {
     this.settings = settings;
-    this.lastSent = { ...map.position };
     this.state = {
-      position: { ...map.position },
+      position: { x: 0, y: 0 },
       heading: -Math.PI / 2,
       moving: false,
       target: null,
       nearPortal: null,
       fps: 0,
       jumping: false,
-      toast: map.notice ? { kind: 'info', text: map.notice, id: ++this.toastId } : null,
+      toast: null,
+      conn: 'connecting',
+      connMessage: null,
+      reconnectAttempt: 0,
+      ping: null,
+      nearby: [],
     };
   }
 
+  // ================================================================== olaylar (HUD)
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -77,98 +153,328 @@ export class GameController {
     this.emit();
   }
 
-  start() {
-    this.syncTimer = setInterval(() => void this.syncPosition(), 1000);
+  // ================================================================== bağlantı
+  /** İlk bağlantı: karşılama mesajı gelince çözülür (bilet hatası, ör. PILOT_NOT_FOUND, reddedilir). */
+  connect(): Promise<void> {
+    const p = new Promise<void>((resolve, reject) => (this.firstWelcome = { resolve, reject }));
+    void this.open();
+    this.timers.push(setInterval(() => this.send({ t: 'ping', c: performance.now() }), 2000));
+    window.addEventListener('online', this.onOnline);
+    return p;
   }
 
-  stop() {
-    if (this.syncTimer) clearInterval(this.syncTimer);
-    this.syncTimer = null;
+  private onOnline = () => {
+    if (this.state.conn === 'reconnecting') {
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      void this.open();
+    }
+  };
+
+  private async open() {
+    if (this.disposed) return;
+    let ticket: string;
+    try {
+      ticket = (await api<{ ticket: string }>('POST', '/game/ticket', { serverCode: SERVER })).ticket;
+    } catch (e) {
+      if (this.firstWelcome && e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'RATE_LIMITED') {
+        this.firstWelcome.reject(e);
+        this.firstWelcome = null;
+        return;
+      }
+      if (e instanceof ApiError && (e.code === 'UNAUTHENTICATED' || e.code === 'EMAIL_NOT_VERIFIED')) {
+        return this.end('ended', 'Oturumun sona erdi. Tekrar giriş yap.');
+      }
+      return this.scheduleReconnect();
+    }
+    if (this.disposed) return;
+    const ws = new WebSocket(wsUrl());
+    this.ws = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, ticket }));
+    ws.onmessage = (ev) => this.onMessage(JSON.parse(String(ev.data)) as ServerMessage);
+    ws.onclose = (ev) => this.onClose(ws, ev.code, ev.reason);
+  }
+
+  private onClose(ws: WebSocket, code: number, reason: string) {
+    if (this.ws !== ws || this.disposed) return;
+    this.ws = null;
+    if (code === CLOSE_CODES.REPLACED) return this.end('replaced', 'Hesabınla başka bir cihazdan oyuna girildi.');
+    if (code === CLOSE_CODES.SESSION_ENDED) return this.end('ended', 'Oturumun sonlandırıldı. Tekrar giriş yap.');
+    if (code === CLOSE_CODES.VERSION) return this.end('ended', 'Oyun güncellendi. Devam etmek için sayfayı yenile.');
+    if (NO_RECONNECT_CODES.includes(code) && this.state.reconnectAttempt >= 3) return this.end('ended', reason || 'Oyun sunucusuna bağlanılamadı.');
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect() {
+    if (this.disposed) return;
+    const n = ++this.state.reconnectAttempt;
+    this.state.conn = 'reconnecting';
+    this.state.connMessage = 'Bağlantı koptu, yeniden bağlanılıyor…';
+    this.emit();
+    const delay = Math.min(10_000, 1000 * 2 ** Math.min(n - 1, 4));
+    this.reconnectTimer = setTimeout(() => void this.open(), delay);
+  }
+
+  private end(conn: 'replaced' | 'ended', message: string) {
+    this.state.conn = conn;
+    this.state.connMessage = message;
+    this.ws?.close(1000);
+    this.ws = null;
+    this.emit();
+  }
+
+  /** "Bu cihazda devam et": diğer cihazdaki bağlantıyı kapatarak yeniden bağlanır. */
+  resume() {
+    this.state.conn = 'connecting';
+    this.state.connMessage = null;
+    this.state.reconnectAttempt = 0;
+    this.emit();
+    void this.open();
+  }
+
+  dispose() {
+    this.disposed = true;
+    for (const t of this.timers) clearInterval(t);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.jumpTimer) clearTimeout(this.jumpTimer);
+    window.removeEventListener('online', this.onOnline);
+    this.ws?.close(1000);
+    this.ws = null;
     this.listeners.clear();
   }
 
-  setTarget(p: Vec | null) {
-    this.pendingTarget = p;
+  private send(msg: unknown) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.state.conn === 'online') this.ws.send(JSON.stringify(msg));
   }
 
+  // ================================================================== sunucu mesajları
+  private onMessage(m: ServerMessage) {
+    // Savunma: harita (welcome) gelmeden dünya mesajları işlenmez.
+    if (!this.map && m.t !== 'welcome' && m.t !== 'kick' && m.t !== 'pong') return;
+    switch (m.t) {
+      case 'welcome': {
+        this.myEntityId = m.id;
+        this.resetWorld(m.map, m.you);
+        const wasReconnect = this.state.reconnectAttempt > 0;
+        this.state.conn = 'online';
+        this.state.connMessage = null;
+        this.state.reconnectAttempt = 0;
+        this.mapSeq++;
+        if (this.firstWelcome) {
+          this.firstWelcome.resolve();
+          this.firstWelcome = null;
+        } else if (wasReconnect) this.toast('success', 'Yeniden bağlandın.');
+        this.emit();
+        break;
+      }
+      case 'map':
+        this.resetWorld(m.map, m.you);
+        this.state.jumping = false;
+        if (this.jumpTimer) clearTimeout(this.jumpTimer);
+        this.mapSeq++;
+        if (m.reason === 'portal') this.toast('success', `${m.map.map.code} ${m.map.map.name} bölgesine geçtin.`);
+        this.emit();
+        break;
+      case 'snap':
+        this.onSnapshot(m);
+        break;
+      case 'enter':
+        for (const info of m.e) if (info.id !== this.myEntityId) this.ships.set(info.id, { info, buf: [], x: NaN, y: NaN, h: 0 });
+        break;
+      case 'leave':
+        for (const id of m.e) this.ships.delete(id);
+        break;
+      case 'pilot':
+        this.map = {
+          ...this.map,
+          pilot: { ...this.map.pilot, ship: m.ship },
+          rules: { ...this.map.rules, detection: { ...this.map.rules.detection, radar: m.radar } },
+        };
+        this.toast('info', `Gemi değerleri güncellendi (hız ${m.ship.speed}).`);
+        break;
+      case 'notice':
+        this.toast(m.kind, m.text);
+        break;
+      case 'error':
+        this.state.jumping = false;
+        if (this.jumpTimer) clearTimeout(this.jumpTimer);
+        this.toast('error', m.message);
+        break;
+      case 'kick':
+        this.state.connMessage = m.message;
+        break;
+      case 'pong':
+        this.state.ping = Math.round(performance.now() - m.c);
+        break;
+    }
+  }
+
+  private resetWorld(map: MapResponse, you: [number, number, number, number, number]) {
+    this.map = map;
+    this.self = { x: you[0], y: you[1], vx: you[2], vy: you[3], h: you[4] };
+    this.prev = { ...this.self };
+    this.pending = [];
+    this.target = null;
+    this.offset = { x: 0, y: 0 };
+    this.acc = 0;
+    this.lastFrame = 0;
+    this.ships.clear();
+    this.state.position = { x: you[0], y: you[1] };
+    this.state.heading = you[4];
+    this.state.target = null;
+    this.state.nearPortal = null;
+    this.state.nearby = [];
+  }
+
+  private onSnapshot(m: Extract<ServerMessage, { t: 'snap' }>) {
+    const now = performance.now();
+    const sample = m.k * TICK_MS - now;
+    // Sunucu saati tahmini: erken gelen görüntü saati hemen ileri alır, geç gelenler yavaşça geri çeker.
+    this.serverOffset =
+      this.serverOffset === null ? sample : sample > this.serverOffset ? sample : this.serverOffset + (sample - this.serverOffset) * 0.05;
+    // --- uzlaştırma: sunucu durumu + onaylanmamış girdilerin yeniden oynatılması
+    this.pending = this.pending.filter((p) => p.seq > m.a);
+    const before = { x: this.self.x, y: this.self.y };
+    const s: ShipState = { x: m.y[0], y: m.y[1], vx: m.y[2], vy: m.y[3], h: m.y[4] };
+    const { width, height } = this.map.map;
+    for (const p of this.pending) stepShip(s, p.input, TICK_MS / 1000, this.map.pilot.ship.speed, width, height);
+    const ex = before.x - s.x;
+    const ey = before.y - s.y;
+    if (Math.hypot(ex, ey) > SNAP_CORRECTION) this.offset = { x: 0, y: 0 };
+    else {
+      this.offset.x += ex;
+      this.offset.y += ey;
+    }
+    this.prev = { ...this.prev, x: this.prev.x - ex, y: this.prev.y - ey };
+    this.self = s;
+    // --- diğer pilotlar: enterpolasyon tamponu
+    const t = m.k * TICK_MS;
+    for (const [id, x, y, h] of m.e) {
+      const ship = this.ships.get(id);
+      if (!ship) continue;
+      ship.buf.push({ t, x, y, h });
+      if (ship.buf.length > 20) ship.buf.shift();
+    }
+  }
+
+  // ================================================================== kare güncellemesi (sahne çağırır)
   /**
-   * Konumu sunucuya bildirir; reddedilirse sunucu konumuna geri çeker.
-   * force: 5 birim eşiğini atlar (sayfadan çıkarken), ama konum hiç değişmediyse yine göndermez.
+   * dir: klavye/joystick yönü (-1..1). Sabit 50 ms adımlarla tahmin yapar, girdileri gönderir,
+   * çizim için yumuşatılmış konumu ve diğer pilotların enterpolasyonlu konumunu hesaplar.
    */
-  async syncPosition(force = false, keepalive = false) {
-    if (this.inFlight || this.state.jumping) return;
-    const p = this.state.position;
-    const moved = Math.hypot(p.x - this.lastSent.x, p.y - this.lastSent.y);
-    if (moved < (force ? 0.5 : 5)) return;
-    this.inFlight = this.sendPosition({ x: Math.round(p.x), y: Math.round(p.y) }, keepalive);
-    try {
-      await this.inFlight;
-    } finally {
-      this.inFlight = null;
+  update(now: number, dir: Vec): { x: number; y: number; h: number; moving: boolean } {
+    if (this.pendingTarget) {
+      this.target = this.pendingTarget;
+      this.pendingTarget = null;
+    }
+    const online = this.state.conn === 'online';
+    let frameMs = this.lastFrame ? now - this.lastFrame : 0;
+    this.lastFrame = now;
+    // Sekme arka plandaydı/duraklatıldı: kaçırılan adımlar simüle edilmez, sunucu görüntüsü gerçeği getirir.
+    if (frameMs > 250) frameMs = 0;
+    if (online) this.acc += frameMs;
+    const batch: Array<[number, number, number, number]> = [];
+    const { width, height } = this.map.map;
+    const speed = this.map.pilot.ship.speed;
+    while (this.acc >= TICK_MS) {
+      this.acc -= TICK_MS;
+      const input = this.currentInput(dir);
+      const seq = ++this.seq;
+      this.prev = { ...this.self };
+      stepShip(this.self, input, TICK_MS / 1000, speed, width, height);
+      this.pending.push({ seq, input });
+      if (this.pending.length > 100) this.pending.shift();
+      batch.push([seq, input.m, input.x, input.y]);
+    }
+    if (batch.length) this.send({ t: 'in', i: batch.slice(-10) });
+
+    // Görsel düzeltme farkı ~10/sn hızla sönümlenir.
+    const k = Math.exp(-frameMs / 100);
+    this.offset.x *= k;
+    this.offset.y *= k;
+    const a = Math.min(1, this.acc / TICK_MS);
+    const x = this.prev.x + (this.self.x - this.prev.x) * a + this.offset.x;
+    const y = this.prev.y + (this.self.y - this.prev.y) * a + this.offset.y;
+    const h = lerpAngle(this.prev.h, this.self.h, a);
+    this.interpolate(now);
+    if (now - this.lastNearbyAt > 250) {
+      this.lastNearbyAt = now;
+      this.state.nearby = [...this.ships.values()]
+        .filter((s) => Number.isFinite(s.x))
+        .map((s) => ({
+          id: s.info.id,
+          name: s.info.n,
+          color: s.info.c,
+          company: s.info.cc,
+          level: s.info.l,
+          distance: Math.round(Math.hypot(s.x - x, s.y - y)),
+        }))
+        .sort((p, q) => p.distance - q.distance);
+    }
+    this.state.target = this.target;
+    return { x, y, h, moving: Math.hypot(this.self.vx, this.self.vy) > 6 };
+  }
+
+  private currentInput(dir: Vec): MoveInput {
+    if (Math.hypot(dir.x, dir.y) > 0.15) {
+      this.target = null;
+      return { m: 1, x: Math.round(dir.x * 100) / 100, y: Math.round(dir.y * 100) / 100 };
+    }
+    if (this.target) {
+      const input: MoveInput = { m: 2, x: Math.round(this.target.x), y: Math.round(this.target.y) };
+      if (arrived(this.self, input)) {
+        this.target = null;
+        return IDLE_INPUT;
+      }
+      return input;
+    }
+    return IDLE_INPUT;
+  }
+
+  private interpolate(now: number) {
+    if (this.serverOffset === null) return;
+    const rt = now + this.serverOffset - INTERP_DELAY;
+    for (const s of this.ships.values()) {
+      const b = s.buf;
+      if (b.length === 0) continue;
+      let i = b.length - 1;
+      while (i > 0 && b[i - 1]!.t > rt) i--;
+      const p1 = b[i]!;
+      const p0 = i > 0 ? b[i - 1]! : p1;
+      if (rt >= p1.t || p0 === p1) {
+        // Görüntü gecikti: en fazla 100 ms son yönde devam et, sonra bekle.
+        const span = p1.t - p0.t || TICK_MS;
+        const over = p0 === p1 ? 0 : Math.min(100, Math.max(0, rt - p1.t));
+        s.x = p1.x + ((p1.x - p0.x) / span) * over;
+        s.y = p1.y + ((p1.y - p0.y) / span) * over;
+        s.h = p1.h;
+      } else {
+        const t = (rt - p0.t) / (p1.t - p0.t);
+        s.x = p0.x + (p1.x - p0.x) * t;
+        s.y = p0.y + (p1.y - p0.y) * t;
+        s.h = lerpAngle(p0.h, p1.h, t);
+      }
     }
   }
 
-  private async sendPosition(sent: Vec, keepalive: boolean) {
-    const seq = this.mapSeq;
-    try {
-      const r = await api<{ accepted: boolean; x: number; y: number; reason: string | null }>(
-        'POST',
-        '/world/position',
-        { serverCode: SERVER, ...sent },
-        { keepalive },
-      );
-      if (seq !== this.mapSeq) return; // istek sürerken haritadan geçildi: eski haritanın yanıtı yok sayılır
-      this.lastSent = { x: r.x, y: r.y };
-      if (!r.accepted) {
-        this.state.position = { x: r.x, y: r.y };
-        this.state.target = null;
-        this.correctionSeq++;
-        this.toast('error', 'Konumun sunucu tarafından doğrulanamadı ve düzeltildi.');
-      }
-    } catch (e) {
-      if (!(e instanceof ApiError && e.code === 'RATE_LIMITED')) {
-        this.toast('error', e instanceof ApiError ? e.message : 'Sunucuyla bağlantı kurulamadı.');
-      }
-    }
-  }
-
-  async jump() {
+  // ================================================================== geçit ve ayarlar
+  jump() {
     const portal = this.state.nearPortal;
-    if (!portal || this.state.jumping) return;
+    if (!portal || this.state.jumping || this.state.conn !== 'online') return;
     if (!portal.access.ok) {
       this.toast('error', portal.access.reason);
       return;
     }
     this.state.jumping = true;
     this.emit();
-    try {
-      // Süren konum bildirimi önce bitsin: aksi halde sunucu eski haritanın konumunu geçişten sonra alıp reddeder.
-      if (this.inFlight) await this.inFlight;
-      const p = this.state.position;
-      const r = await api<{ map: MapResponse }>('POST', '/world/jump', {
-        serverCode: SERVER,
-        portalId: portal.id,
-        x: Math.round(p.x),
-        y: Math.round(p.y),
-      });
-      this.applyMap(r.map);
-      this.toast('success', `${r.map.map.code} ${r.map.map.name} bölgesine geçtin.`);
-    } catch (e) {
-      this.toast('error', e instanceof ApiError ? e.message : 'Geçiş başarısız.');
-    } finally {
+    this.send({ t: 'jump', p: portal.id });
+    this.jumpTimer = setTimeout(() => {
       this.state.jumping = false;
       this.emit();
-    }
+    }, 6000);
   }
 
-  applyMap(map: MapResponse) {
-    this.map = map;
-    this.state.position = { ...map.position };
-    this.lastSent = { ...map.position };
-    this.state.target = null;
-    this.state.nearPortal = null;
-    this.mapSeq++;
-    this.emit();
+  setTarget(p: Vec | null) {
+    this.pendingTarget = p;
   }
 
   async saveSettings(settings: PlayerSettings, deviceClass: string) {

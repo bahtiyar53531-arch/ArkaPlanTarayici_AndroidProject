@@ -38,15 +38,16 @@ export class SpaceScene extends Phaser.Scene {
   private touch = false;
   private ship!: Phaser.GameObjects.Image;
   private pos: Vec = { x: 0, y: 0 };
-  private vel: Vec = { x: 0, y: 0 };
   private heading = -Math.PI / 2;
-  private target: Vec | null = null;
+  /** Diğer pilotların gemileri ve ad etiketleri */
+  private remotes = new Map<number, { img: Phaser.GameObjects.Image; label: Phaser.GameObjects.Text; key: string }>();
+  private loadingKeys = new Set<string>();
+  private nameLabel!: Phaser.GameObjects.Text;
   private targetMarker!: Phaser.GameObjects.Arc;
   private stars: Array<{ sprite: Phaser.GameObjects.TileSprite; factor: number }> = [];
   private emitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private portalRings: Phaser.GameObjects.Arc[] = [];
   private pressed = new Set<string>();
-  private seenCorrection = 0;
   private seenMap = 0;
   private lastEmit = 0;
   private zoomFactor = 1;
@@ -55,8 +56,6 @@ export class SpaceScene extends Phaser.Scene {
   private shipKey = '';
   /** Harita değişti, sahne kararıp yeniden başlıyor: eski haritanın konumu artık yazılmamalı. */
   private leaving = false;
-  /** Hareket simülasyonu için gerçek zaman (Phaser'ın yumuşatılmış delta'sı düşük FPS'te zamanı kısar). */
-  private lastNow = 0;
 
   constructor() {
     super('space');
@@ -65,15 +64,12 @@ export class SpaceScene extends Phaser.Scene {
   init(data: SceneData) {
     this.c = data.controller;
     this.touch = data.touch;
-    this.seenCorrection = this.c.correctionSeq;
     this.seenMap = this.c.mapSeq;
-    this.target = null;
-    this.vel = { x: 0, y: 0 };
+    this.remotes = new Map();
     this.stars = [];
     this.portalRings = [];
     this.emitter = null;
     this.leaving = false;
-    this.lastNow = 0;
   }
 
   preload() {
@@ -189,6 +185,11 @@ export class SpaceScene extends Phaser.Scene {
     }
     this.ship = this.add.image(this.pos.x, this.pos.y, this.shipKey).setDepth(5).setScale(1.1);
     this.ship.rotation = this.heading + Math.PI / 2;
+    this.nameLabel = this.add
+      .text(this.pos.x, this.pos.y - 95, m.pilot.pilotName, { fontFamily: 'system-ui, sans-serif', fontSize: '40px', color: '#ffffff', stroke: '#050816', strokeThickness: 6 })
+      .setOrigin(0.5)
+      .setDepth(6)
+      .setAlpha(0.9);
     this.targetMarker = this.add.circle(0, 0, 28, 0x29c5ff, 0.15).setStrokeStyle(4, 0x29c5ff, 0.9).setVisible(false).setDepth(3);
     cam.startFollow(this.ship, true, 0.12, 0.12);
     cam.centerOn(this.pos.x, this.pos.y);
@@ -199,7 +200,7 @@ export class SpaceScene extends Phaser.Scene {
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (this.input.pointer1.isDown && this.input.pointer2.isDown) return;
       if (this.touch && this.c.settings.controls.mode !== 'tap') return;
-      this.target = { x: Phaser.Math.Clamp(p.worldX, 0, w), y: Phaser.Math.Clamp(p.worldY, 0, h) };
+      this.c.setTarget({ x: Phaser.Math.Clamp(p.worldX, 0, w), y: Phaser.Math.Clamp(p.worldY, 0, h) });
     });
     this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => this.changeZoom(dy > 0 ? -0.1 : 0.1));
     const down = (e: KeyboardEvent) => {
@@ -239,40 +240,7 @@ export class SpaceScene extends Phaser.Scene {
     }
   }
 
-  /** Tek simülasyon adımı; sunucunun doğruladığı gemi hızını asla aşmaz. Hız büyüklüğünü döner. */
-  private integrate(dt: number, dx: number, dy: number, speed: number, w: number, h: number): number {
-    let desired = { x: 0, y: 0 };
-    const mag = Math.hypot(dx, dy);
-    if (mag > 0) {
-      const m = Math.min(1, mag);
-      desired = { x: (dx / mag) * speed * m, y: (dy / mag) * speed * m };
-      this.target = null;
-    } else if (this.target) {
-      const tx = this.target.x - this.pos.x;
-      const ty = this.target.y - this.pos.y;
-      const d = Math.hypot(tx, ty);
-      if (d < 8) this.target = null;
-      else {
-        const s = speed * Math.min(1, d / 160);
-        desired = { x: (tx / d) * s, y: (ty / d) * s };
-      }
-    }
-    const a = 1 - Math.exp(-dt * 6);
-    this.vel.x += (desired.x - this.vel.x) * a;
-    this.vel.y += (desired.y - this.vel.y) * a;
-    let v = Math.hypot(this.vel.x, this.vel.y);
-    if (v > speed) {
-      this.vel.x *= speed / v;
-      this.vel.y *= speed / v;
-      v = speed;
-    }
-    this.pos.x = Phaser.Math.Clamp(this.pos.x + this.vel.x * dt, 0, w);
-    this.pos.y = Phaser.Math.Clamp(this.pos.y + this.vel.y * dt, 0, h);
-    if (v > 6) this.heading = Phaser.Math.Angle.RotateTo(this.heading, Math.atan2(this.vel.y, this.vel.x), 6 * dt);
-    return v;
-  }
-
-  update(_time: number, delta: number) {
+  update(time: number) {
     const c = this.c;
     if (this.leaving) return;
     if (c.mapSeq !== this.seenMap) {
@@ -281,17 +249,6 @@ export class SpaceScene extends Phaser.Scene {
       this.cameras.main.fadeOut(250, 5, 8, 22);
       this.cameras.main.once('camerafadeoutcomplete', () => this.scene.restart({ controller: c, touch: this.touch }));
       return;
-    }
-    const { width: w, height: h } = c.map.map;
-    if (c.correctionSeq !== this.seenCorrection) {
-      this.seenCorrection = c.correctionSeq;
-      this.pos = { ...c.state.position };
-      this.vel = { x: 0, y: 0 };
-      this.target = null;
-    }
-    if (c.pendingTarget) {
-      this.target = c.pendingTarget;
-      c.pendingTarget = null;
     }
     if (c.zoomDelta) {
       this.changeZoom(c.zoomDelta);
@@ -326,34 +283,27 @@ export class SpaceScene extends Phaser.Scene {
       dy = joy.y;
     }
 
-    // --- hareket: düşük FPS'te de gerçek süreye göre ilerlesin diye ≤50 ms'lik alt adımlarla
-    // (1 sn'den uzun boşluk sekme değişimi/duraklatma sayılır ve atlanır)
-    const speed = c.map.pilot.ship.speed;
-    const now = performance.now();
-    const realMs = this.lastNow ? now - this.lastNow : delta;
-    this.lastNow = now;
-    let remaining = realMs > 1000 ? 0 : realMs / 1000;
-    let v = Math.hypot(this.vel.x, this.vel.y);
-    while (remaining > 0) {
-      const dt = Math.min(remaining, 0.05);
-      remaining -= dt;
-      v = this.integrate(dt, dx, dy, speed, w, h);
-    }
-    const moving = v > 6;
-    this.ship.setPosition(this.pos.x, this.pos.y);
-    this.ship.rotation = this.heading + Math.PI / 2;
+    // --- hareket: kontrolcü sunucuyla aynı simülasyonu sabit adımlarla tahmin eder (gerçek zamana göre)
+    const r = c.update(performance.now(), { x: dx, y: dy });
+    this.pos = { x: r.x, y: r.y };
+    this.heading = r.h;
+    this.ship.setPosition(r.x, r.y);
+    this.ship.rotation = r.h + Math.PI / 2;
+    this.nameLabel.setPosition(r.x, r.y - 95);
     if (this.emitter) {
-      this.emitter.emitting = moving;
-      this.emitter.setPosition(this.pos.x - Math.cos(this.heading) * 52, this.pos.y - Math.sin(this.heading) * 52);
+      this.emitter.emitting = r.moving;
+      this.emitter.setPosition(r.x - Math.cos(r.h) * 52, r.y - Math.sin(r.h) * 52);
     }
-    this.targetMarker.setVisible(!!this.target);
-    if (this.target) this.targetMarker.setPosition(this.target.x, this.target.y);
+    const target = c.state.target;
+    this.targetMarker.setVisible(!!target);
+    if (target) this.targetMarker.setPosition(target.x, target.y);
+    this.syncRemotes();
 
     // --- yakın geçit
     let near = null;
     let nearD = Infinity;
     c.map.portals.forEach((p, i) => {
-      const d = Math.hypot(p.x - this.pos.x, p.y - this.pos.y);
+      const d = Math.hypot(p.x - r.x, p.y - r.y);
       const inside = d <= c.map.rules.jumpRadius;
       this.portalRings[i]?.setStrokeStyle(4, p.access.ok ? 0x29c5ff : 0xff6b6b, inside ? 0.7 : d < 2000 ? 0.25 : 0);
       if (inside && d < nearD) {
@@ -371,16 +321,53 @@ export class SpaceScene extends Phaser.Scene {
 
     // --- HUD durumu (10 Hz)
     const st = c.state;
-    st.position = { x: this.pos.x, y: this.pos.y };
-    st.heading = this.heading;
-    st.moving = moving;
-    st.target = this.target;
+    st.position = { x: r.x, y: r.y };
+    st.heading = r.h;
+    st.moving = r.moving;
     const nearChanged = st.nearPortal?.id !== (near as { id: number } | null)?.id;
     st.nearPortal = near;
-    if (nearChanged || _time - this.lastEmit > 100) {
+    if (nearChanged || time - this.lastEmit > 100) {
       st.fps = Math.round(this.game.loop.actualFps);
-      this.lastEmit = _time;
+      this.lastEmit = time;
       c.emit();
     }
+  }
+
+  /** Diğer pilotların gemilerini kontrolcünün enterpolasyonlu konumlarıyla eşler. */
+  private syncRemotes() {
+    for (const [id, s] of this.c.ships) {
+      if (!Number.isFinite(s.x)) continue;
+      let r = this.remotes.get(id);
+      if (!r) {
+        const key = `ship:${s.info.s}:${s.info.c}`;
+        if (!this.textures.exists(key)) this.loadShipTexture(key, s.info.s, s.info.c);
+        const img = this.add.image(s.x, s.y, this.textures.exists(key) ? key : this.shipKey).setDepth(4).setScale(1.1);
+        const label = this.add
+          .text(s.x, s.y - 95, `${s.info.n} · Sv ${s.info.l}`, { fontFamily: 'system-ui, sans-serif', fontSize: '40px', color: s.info.c, stroke: '#050816', strokeThickness: 6 })
+          .setOrigin(0.5)
+          .setDepth(6);
+        r = { img, label, key };
+        this.remotes.set(id, r);
+      }
+      if (r.img.texture.key !== r.key && this.textures.exists(r.key)) r.img.setTexture(r.key);
+      r.img.setPosition(s.x, s.y);
+      r.img.rotation = s.h + Math.PI / 2;
+      r.label.setPosition(s.x, s.y - 95);
+    }
+    for (const [id, r] of this.remotes) {
+      if (!this.c.ships.has(id)) {
+        r.img.destroy();
+        r.label.destroy();
+        this.remotes.delete(id);
+      }
+    }
+  }
+
+  private loadShipTexture(key: string, spriteKey: string, color: string) {
+    if (this.loadingKeys.has(key)) return;
+    this.loadingKeys.add(key);
+    this.load.svg(key, shipSvgDataUrl(spriteKey, color, 128), { width: 128, height: 128 });
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => this.loadingKeys.delete(key));
+    if (!this.load.isLoading()) this.load.start();
   }
 }

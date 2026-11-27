@@ -4,6 +4,8 @@
 
 > **Aşama 7'nin sınırı:** Hareket istemcide simüle edilir; istemci konumunu yaklaşık **saniyede bir** bildirir. Sunucu her bildirimi aktif geminin **gerçek hızına** göre denetler. Denetimden geçmeyen konum kaydedilmez, istemci sunucu konumuna geri çekilir. Aşama 8'de hareket tamamen WebSocket oyun sunucusunda hesaplanacak. Bu uç noktalar o zaman da yeniden bağlanma ve ilk yükleme için kullanılacak.
 
+> **Aşama 8 güncellemesi:** `POST /world/position` ve `POST /world/jump` **kaldırıldı**. Hareket ve geçitler artık yalnızca WebSocket oyun sunucusunda: [Aşama 8 protokolü](../Asama-08-Multiplayer/Protokol.md). Aşağıdaki geçit kuralları aynen geçerlidir; konum, istemciden değil oyun sunucusunun hesapladığı konumdan alınır.
+
 ## Dünya
 
 | Yöntem | Yol | Gövde | Yanıt |

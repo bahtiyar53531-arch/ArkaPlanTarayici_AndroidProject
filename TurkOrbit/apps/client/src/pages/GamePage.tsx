@@ -2,15 +2,17 @@
  * Oyun ekranı (/oyna). Bu dosya ayrı bir parça olarak yüklenir (React.lazy): Phaser yalnızca
  * oyuna girilince indirilir, hesap sayfaları hafif kalır.
  */
-import { type DeviceClass, type MapResponse, type PlayerSettings } from '@turkorbit/shared';
+import { type DeviceClass, type PlayerSettings } from '@turkorbit/shared';
 import Phaser from 'phaser';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import {
+  ConnectionBanner,
   GalaxyOverlay,
   Joystick,
   Minimap,
+  NearbyPanel,
   PilotPanel,
   PortalPrompt,
   Toast,
@@ -45,18 +47,13 @@ export function GamePage() {
   useEffect(() => {
     let cancelled = false;
     let controller: GameController | null = null;
-    // Sekme/uygulama kapanırken son konum gönderilir (keepalive ile tarayıcı isteği tamamlar).
-    const onHide = () => void controller?.syncPosition(true, true);
-    Promise.all([
-      api<{ settings: PlayerSettings }>('GET', `/settings?deviceClass=${deviceClass}`),
-      api<{ map: MapResponse }>('GET', `/world/map?server=${SERVER}`),
-    ])
-      .then(([s, m]) => {
+    api<{ settings: PlayerSettings }>('GET', `/settings?deviceClass=${deviceClass}`)
+      .then(async (s) => {
         if (cancelled) return;
-        controller = new GameController(m.map, s.settings);
-        controller.start();
-        window.addEventListener('pagehide', onHide);
-        setSt({ kind: 'ready', controller });
+        controller = new GameController(s.settings);
+        // Oyun bileti alınır, WebSocket açılır; ilk "welcome" mesajında harita ve konum gelir.
+        await controller.connect();
+        if (!cancelled) setSt({ kind: 'ready', controller });
       })
       .catch((e) => {
         if (cancelled) return;
@@ -65,11 +62,7 @@ export function GamePage() {
       });
     return () => {
       cancelled = true;
-      window.removeEventListener('pagehide', onHide);
-      if (controller) {
-        void controller.syncPosition(true);
-        controller.stop();
-      }
+      controller?.dispose();
     };
   }, [deviceClass]);
 
@@ -130,7 +123,7 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
       const k = c.settings.keys;
       if (e.code === 'Escape') setOverlay('none');
       else if (overlay !== 'none') return;
-      else if (e.code === k.jump) void c.jump();
+      else if (e.code === k.jump) c.jump();
       else if (e.code === k.galaxy) setOverlay('galaxy');
       else if (e.code === k.zoomIn) c.zoomDelta = 0.15;
       else if (e.code === k.zoomOut) c.zoomDelta = -0.15;
@@ -159,9 +152,11 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
         <div className="hud-corner tr">
           <TopBar c={c} touch={touch} onGalaxy={() => setOverlay('galaxy')} onSettings={() => setOverlay('settings')} />
           <Minimap c={c} />
+          <NearbyPanel c={c} max={deviceClass === 'phone' ? 3 : 5} />
         </div>
         <div className="hud-corner bc"><PortalPrompt c={c} /></div>
         <Toast c={c} />
+        <ConnectionBanner c={c} />
         {touch && s.controls.mode === 'joystick' && <Joystick c={c} settings={s} />}
         {portraitHint && (
           <button type="button" className="hud-portrait-hint" onClick={() => setPortraitHint(false)}>

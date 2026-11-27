@@ -1,13 +1,10 @@
 import {
   canEnterMap,
-  checkMove,
   DEFAULT_MOVEMENT_RULES,
   defaultSettings,
   DETECTION,
   DEVICE_CLASSES,
-  jumpSchema,
   levelForXp,
-  positionSchema,
   settingsSchema,
   updateSettingsSchema,
   type DeviceClass,
@@ -26,8 +23,9 @@ interface Owner {
   id: string;
 }
 
-interface PilotWorldRow {
+export interface PilotWorldRow {
   id: string;
+  server_code: string;
   pilot_name: string;
   experience: string;
   company_id: number;
@@ -74,16 +72,25 @@ export class WorldService {
     private readonly log: Logger,
   ) {}
 
+  private static readonly PILOT_SELECT = `SELECT p.id, s.code AS server_code, p.pilot_name::text AS pilot_name, p.experience,
+      p.company_id, co.code AS company_code, co.name AS company_name, co.color_hex AS company_color, co.home_map_id,
+      p.map_id, p.pos_x, p.pos_y, p.pos_updated_at
+    FROM players p JOIN game_servers s ON s.id = p.server_id JOIN companies co ON co.id = p.company_id`;
+
   private async pilot(c: Queryable, owner: Owner, serverCode: string, lock = false): Promise<PilotWorldRow> {
     const r = await c.query<PilotWorldRow>(
-      `SELECT p.id, p.pilot_name::text AS pilot_name, p.experience, p.company_id, co.code AS company_code,
-              co.name AS company_name, co.color_hex AS company_color, co.home_map_id, p.map_id, p.pos_x, p.pos_y, p.pos_updated_at
-       FROM players p JOIN game_servers s ON s.id = p.server_id JOIN companies co ON co.id = p.company_id
-       WHERE p.user_id = $1 AND s.code = $2 ${lock ? 'FOR UPDATE OF p' : ''}`,
+      `${WorldService.PILOT_SELECT} WHERE p.user_id = $1 AND s.code = $2 ${lock ? 'FOR UPDATE OF p' : ''}`,
       [owner.id, serverCode],
     );
     const p = r.rows[0];
     if (!p) throw err('PILOT_NOT_FOUND', 404, 'Bu sunucuda henüz bir pilotun yok.');
+    return p;
+  }
+
+  private async pilotById(c: Queryable, playerId: string, lock = false): Promise<PilotWorldRow> {
+    const r = await c.query<PilotWorldRow>(`${WorldService.PILOT_SELECT} WHERE p.id = $1 ${lock ? 'FOR UPDATE OF p' : ''}`, [playerId]);
+    const p = r.rows[0];
+    if (!p) throw err('PILOT_NOT_FOUND', 404, 'Pilot bulunamadı.');
     return p;
   }
 
@@ -140,33 +147,48 @@ export class WorldService {
   // ================================================================== bulunulan harita
   async currentMap(owner: Owner, serverCodeRaw: string): Promise<MapResponse> {
     const serverCode = serverCodeRaw.toUpperCase();
-    let notice: string | null = null;
-    const pilot = await withTransaction(this.db, async (c) => {
-      const p = await this.pilot(c, owner, serverCode, true);
-      const m = await this.mapById(c, p.map_id);
-      if (m.is_closed && m.id !== p.home_map_id) {
-        // Yönetim Merkezi haritayı bakıma aldıysa pilot şirketinin başlangıç haritasına taşınır (madde 15.6).
-        const home = await this.mapById(c, p.home_map_id);
-        await c.query('UPDATE players SET map_id = $2, pos_x = $3, pos_y = $4, pos_updated_at = now() WHERE id = $1', [
-          p.id,
-          home.id,
-          home.spawn_x,
-          home.spawn_y,
-        ]);
-        await c.query(`INSERT INTO map_transitions (player_id, from_map_id, to_map_id, reason) VALUES ($1, $2, $3, 'map_closed')`, [
-          p.id,
-          m.id,
-          home.id,
-        ]);
-        notice = `${m.code} ${m.name} bakım nedeniyle kapatıldı. ${home.code} ${home.name} bölgesine taşındın.`;
-        return { ...p, map_id: home.id, pos_x: home.spawn_x, pos_y: home.spawn_y };
-      }
-      return p;
-    });
-    return this.buildMap(serverCode, pilot, notice);
+    const { pilot, notice } = await withTransaction(this.db, async (c) => this.relocateIfClosed(c, await this.pilot(c, owner, serverCode, true)));
+    return this.buildMap(pilot, notice);
   }
 
-  private async buildMap(serverCode: string, p: PilotWorldRow, notice: string | null): Promise<MapResponse> {
+  /**
+   * Oyun sunucusu: pilotu dünyaya sokar. Bulunduğu harita bakıma alınmışsa şirketinin başlangıç
+   * haritasına taşınır (madde 15.6) ve bildirim döner.
+   */
+  async enterWorld(playerId: string): Promise<{ map: MapResponse; relocated: boolean }> {
+    const { pilot, notice } = await withTransaction(this.db, async (c) => this.relocateIfClosed(c, await this.pilotById(c, playerId, true)));
+    return { map: await this.buildMap(pilot, notice), relocated: notice !== null };
+  }
+
+  private async relocateIfClosed(c: Queryable, p: PilotWorldRow): Promise<{ pilot: PilotWorldRow; notice: string | null }> {
+    const m = await this.mapById(c, p.map_id);
+    if (!m.is_closed || m.id === p.home_map_id) return { pilot: p, notice: null };
+    const home = await this.mapById(c, p.home_map_id);
+    await c.query('UPDATE players SET map_id = $2, pos_x = $3, pos_y = $4, pos_updated_at = now() WHERE id = $1', [
+      p.id,
+      home.id,
+      home.spawn_x,
+      home.spawn_y,
+    ]);
+    await c.query(`INSERT INTO map_transitions (player_id, from_map_id, to_map_id, reason) VALUES ($1, $2, $3, 'map_closed')`, [
+      p.id,
+      m.id,
+      home.id,
+    ]);
+    return {
+      pilot: { ...p, map_id: home.id, pos_x: home.spawn_x, pos_y: home.spawn_y },
+      notice: `${m.code} ${m.name} bakım nedeniyle kapatıldı. ${home.code} ${home.name} bölgesine taşındın.`,
+    };
+  }
+
+  /** Oyun sunucusu: açık haritalar listesi (bakım denetimi için). */
+  async closedMapIds(ids: number[]): Promise<Set<number>> {
+    if (ids.length === 0) return new Set();
+    const r = await this.db.query<{ id: number }>('SELECT id FROM maps WHERE id = ANY($1::int[]) AND is_closed', [ids]);
+    return new Set(r.rows.map((x) => x.id));
+  }
+
+  private async buildMap(p: PilotWorldRow, notice: string | null): Promise<MapResponse> {
     const [m, portals, zones, ship, rules] = await Promise.all([
       this.mapById(this.db, p.map_id),
       this.db.query<{ id: number; x: number; y: number; requirements: { min_level?: number }; target_id: number }>(
@@ -184,7 +206,7 @@ export class WorldService {
     const targets = new Map<number, MapRow>();
     for (const t of portals.rows) if (!targets.has(t.target_id)) targets.set(t.target_id, await this.mapById(this.db, t.target_id));
     return {
-      serverCode,
+      serverCode: p.server_code,
       pilot: {
         pilotName: p.pilot_name,
         level: levelForXp(Number(p.experience)),
@@ -239,58 +261,23 @@ export class WorldService {
     };
   }
 
-  // ================================================================== konum güncellemesi (hız doğrulaması)
+  // ================================================================== portal geçişi (oyun sunucusu)
   /**
-   * Aşama 7: istemci tek oyunculu hareketi simüle eder ve konumunu ~1 sn'de bir bildirir.
-   * Sunucu, aktif geminin gerçek hızına göre mesafeyi denetler; aşan güncelleme reddedilir ve
-   * istemci sunucu konumuna geri çekilir. Aşama 8'de hareket tamamen oyun sunucusunda hesaplanacak.
+   * Aşama 8: konum oyun sunucusunun bellekteki otoriter konumudur (istemciden gelmez).
+   * Sırasıyla: geçit bu haritada ve açık mı → atlama yarıçapında mı → hedef haritaya giriş koşulları.
    */
-  async updatePosition(owner: Owner, input: unknown) {
-    const d = positionSchema.parse(input);
-    return withTransaction(this.db, async (c) => {
-      const p = await this.pilot(c, owner, d.serverCode, true);
-      const elapsedMs = Date.now() - p.pos_updated_at.getTime();
-      if (elapsedMs < 250) throw err('RATE_LIMITED', 429, 'Konum güncellemeleri çok sık.');
-      const verdict = await this.verifyMove(c, p, { x: d.x, y: d.y }, elapsedMs);
-      if (!verdict.ok) return { accepted: false, x: Math.round(p.pos_x), y: Math.round(p.pos_y), reason: verdict.reason };
-      await c.query('UPDATE players SET pos_x = $2, pos_y = $3, pos_updated_at = now() WHERE id = $1', [p.id, d.x, d.y]);
-      return { accepted: true, x: Math.round(d.x), y: Math.round(d.y), reason: null };
-    });
-  }
-
-  private async verifyMove(c: Queryable, p: PilotWorldRow, to: { x: number; y: number }, elapsedMs: number) {
-    const m = await this.mapById(c, p.map_id);
-    const ship = await activeShipStats(c, p.id);
-    const rules = await this.rules(c);
-    const speed = ship?.stats.speed ?? 0;
-    const check = checkMove({ x: p.pos_x, y: p.pos_y }, to, speed, elapsedMs, { width: m.width, height: m.height }, rules.movement);
-    if (!check.ok) {
-      await c.query(
-        `INSERT INTO position_rejections (player_id, map_id, from_x, from_y, to_x, to_y, distance, allowed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [p.id, m.id, p.pos_x, p.pos_y, to.x, to.y, Number.isFinite(check.distance) ? check.distance : -1, check.allowed],
-      );
-      this.log.warn({ playerId: p.id, ...check }, 'konum güncellemesi reddedildi');
-    }
-    return check;
-  }
-
-  // ================================================================== portal geçişi
-  async jump(owner: Owner, input: unknown): Promise<MapResponse> {
-    const d = jumpSchema.parse(input);
+  async jumpForGame(playerId: string, portalId: number, pos: { x: number; y: number }): Promise<MapResponse> {
     const pilot = await withTransaction(this.db, async (c) => {
-      const p = await this.pilot(c, owner, d.serverCode, true);
+      const p = await this.pilotById(c, playerId, true);
       const portal = (
         await c.query<{ id: number; x: number; y: number; target_map_id: number; target_x: number; target_y: number; requirements: { min_level?: number } }>(
           'SELECT id, x, y, target_map_id, target_x, target_y, requirements FROM map_portals WHERE id = $1 AND map_id = $2 AND is_enabled',
-          [d.portalId, p.map_id],
+          [portalId, p.map_id],
         )
       ).rows[0];
       if (!portal) throw err('PORTAL_NOT_FOUND', 404, 'Bu haritada böyle bir geçit yok.');
-      const verdict = await this.verifyMove(c, p, { x: d.x, y: d.y }, Date.now() - p.pos_updated_at.getTime());
-      if (!verdict.ok) throw err('TOO_FAR_FROM_PORTAL', 400, 'Konumun doğrulanamadı. Geçide yaklaşıp tekrar dene.');
       const { jumpRadius } = await this.rules(c);
-      if (Math.hypot(d.x - portal.x, d.y - portal.y) > jumpRadius) {
+      if (Math.hypot(pos.x - portal.x, pos.y - portal.y) > jumpRadius) {
         throw err('TOO_FAR_FROM_PORTAL', 400, 'Geçide atlamak için daha yakına gelmelisin.');
       }
       const target = await this.mapById(c, portal.target_map_id);
@@ -311,7 +298,7 @@ export class WorldService {
       this.log.info({ playerId: p.id, from: p.map_id, to: target.code }, 'harita geçişi');
       return { ...p, map_id: target.id, pos_x: portal.target_x, pos_y: portal.target_y };
     });
-    return this.buildMap(d.serverCode, pilot, null);
+    return this.buildMap(pilot, null);
   }
 
   // ================================================================== oyuncu ayarları

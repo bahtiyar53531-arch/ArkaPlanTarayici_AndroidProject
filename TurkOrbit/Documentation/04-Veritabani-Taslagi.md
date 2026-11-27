@@ -65,6 +65,18 @@
 | `player_settings` | Oyuncu ayarları | Birincil anahtar (kullanıcı, cihaz sınıfı); zod şemasıyla doğrulanır |
 | `maps.galaxy_x/galaxy_y`, `players.pos_updated_at` | Eklenen sütunlar | Galaksi haritası düzeni; hız denetimi için son konum zamanı |
 
+## 1e. Aşama 8 (yeni tablo yok)
+
+Aşama 8'de veritabanı şeması değişmedi. Anlık oyun durumu bellekte (oyun sunucusu) ve Redis'te tutulur; kalıcı sonuçlar toplu yazılır.
+
+| Redis anahtarı / kanalı | Amaç | Süre |
+|---|---|---|
+| `game:ticket:<sha256>` | Tek kullanımlık oyun bileti (kullanıcı, oturum, pilot, sunucu) | 60 sn, `GETDEL` ile tüketilir |
+| `game:session:<oyuncu>` | Pilotun güncel oyun bağlantısı | 24 sa |
+| `game:presence:<oyuncu>` | Çevrimiçi durum: harita, istasyonda mı, süreç | 30 sn (5 sn'de bir yenilenir) |
+| kanal `game:kick` | Tek aktif oturum: eski bağlantıyı (hangi süreçte olursa) kapat | — |
+| kanal `game:player-updated` | Hangar değişikliği → oyun sunucusu istatistikleri yeniden yükler | — |
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |

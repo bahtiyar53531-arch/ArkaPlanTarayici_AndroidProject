@@ -34,6 +34,11 @@ const EnvSchema = z.object({
   MAIL_TRANSPORT: z.enum(['smtp', 'console', 'memory']).optional(),
   SMTP_URL: z.string().optional(),
   MAIL_FROM: z.string().default('"Türk Orbit" <no-reply@turkorbit.com>'),
+
+  /** Gerçek zamanlı oyun sunucusu (ayrı süreç: npm run dev:game) */
+  GAME_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
+  /** Bağlantısı kopan geminin haritada kalma süresi (sn). Savaştan kaçmak için bağlantı kesmeyi önler. */
+  GAME_LINGER_SECONDS: z.coerce.number().int().min(0).max(300).default(30),
 });
 
 export interface AppConfig {
@@ -58,6 +63,7 @@ export interface AppConfig {
   csrfSecret: string;
   argon2: { memoryCost: number; timeCost: number; parallelism: number };
   mail: { transport: 'smtp' | 'console' | 'memory'; smtpUrl: string | undefined; from: string };
+  game: { port: number; lingerSeconds: number };
 }
 
 const DEV_CSRF_SECRET = 'turkorbit-dev-only-csrf-secret-change-me-0000';
@@ -127,5 +133,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       smtpUrl: e.SMTP_URL,
       from: e.MAIL_FROM,
     },
+    game: { port: e.GAME_PORT, lingerSeconds: e.GAME_LINGER_SECONDS },
   };
 }

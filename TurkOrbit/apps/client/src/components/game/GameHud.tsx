@@ -46,7 +46,12 @@ export function PilotPanel({ c }: { c: GameController }) {
           {Math.round(s.position.x)} / {Math.round(s.position.y)}
         </div>
       )}
-      {c.settings.graphics.showFps && <div className="hud-fps" data-testid="hud-fps">{s.fps} FPS</div>}
+      {(c.settings.graphics.showFps || s.ping !== null) && (
+        <div className="hud-fps">
+          {c.settings.graphics.showFps && <span data-testid="hud-fps">{s.fps} FPS</span>}
+          {s.ping !== null && <span data-testid="hud-ping" className={s.ping > 250 ? 'bad' : s.ping > 120 ? 'warn' : ''}>Ping {s.ping} ms</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -108,6 +113,24 @@ export function Minimap({ c }: { c: GameController }) {
         ctx.stroke();
       }
       const s = c.state;
+      // Radar menzili ve menzildeki diğer pilotlar (sunucu yalnızca bunları gönderir)
+      ctx.strokeStyle = 'rgba(41,197,255,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(s.position.x * sx, s.position.y * sy, c.map.rules.detection.radar * sx, c.map.rules.detection.radar * sy, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      for (const o of c.ships.values()) {
+        if (!Number.isFinite(o.x)) continue;
+        ctx.beginPath();
+        ctx.arc(o.x * sx, o.y * sy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = o.info.c;
+        ctx.fill();
+        if (o.info.cc !== c.map.pilot.company.code) {
+          ctx.strokeStyle = '#ff4d6d';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
       if (s.target) {
         ctx.strokeStyle = 'rgba(41,197,255,0.7)';
         ctx.setLineDash([3, 3]);
@@ -164,7 +187,7 @@ export function PortalPrompt({ c }: { c: GameController }) {
         Geçit: <b>{p.target.code}</b> {p.target.name}
         {!p.access.ok && <div className="hud-portal-reason">{p.access.reason}</div>}
       </div>
-      <button type="button" className="btn btn-primary btn-small" disabled={!p.access.ok || c.state.jumping} onClick={() => void c.jump()}>
+      <button type="button" className="btn btn-primary btn-small" disabled={!p.access.ok || c.state.jumping} onClick={() => c.jump()}>
         {c.state.jumping ? 'Geçiliyor…' : `Atla (${keyLabel})`}
       </button>
     </div>
@@ -235,6 +258,57 @@ export function Joystick({ c, settings }: { c: GameController; settings: PlayerS
       onPointerCancel={end}
     >
       <div className="hud-joystick-knob" style={{ transform: `translate(${knob.x}px, ${knob.y}px)`, width: size * 0.42, height: size * 0.42 }} />
+    </div>
+  );
+}
+
+// ====================================================================== radar: yakındaki pilotlar
+export function NearbyPanel({ c, max = 5 }: { c: GameController; max?: number }) {
+  useController(c);
+  const list = c.state.nearby;
+  const mine = c.map.pilot.company.code;
+  return (
+    <div className="hud-panel hud-nearby" data-testid="nearby">
+      <div className="hud-nearby-title">Radar · {list.length === 0 ? 'menzilde pilot yok' : `${list.length} pilot`}</div>
+      {list.slice(0, max).map((p) => (
+        <div key={p.id} className="hud-nearby-row">
+          <span className="hud-dot" style={{ background: p.color }} />
+          <span className={`hud-nearby-name${p.company !== mine ? ' enemy' : ''}`}>{p.name}</span>
+          <span className="hud-nearby-dist">{fmt(p.distance)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ====================================================================== bağlantı durumu
+export function ConnectionBanner({ c }: { c: GameController }) {
+  useController(c);
+  const { conn, connMessage, reconnectAttempt } = c.state;
+  if (conn === 'online') return null;
+  if (conn === 'connecting' || conn === 'reconnecting') {
+    return (
+      <div className="hud-conn" role="status" data-testid="conn-banner">
+        <span className="hud-spinner" aria-hidden="true" />
+        {conn === 'connecting' ? 'Oyun sunucusuna bağlanılıyor…' : `${connMessage ?? 'Yeniden bağlanılıyor…'}${reconnectAttempt > 1 ? ` (${reconnectAttempt}. deneme)` : ''}`}
+      </div>
+    );
+  }
+  return (
+    <div className="hud-overlay" role="alertdialog" aria-label="Bağlantı sonlandı" data-testid="conn-ended">
+      <div className="hud-overlay-card conn">
+        <h2>{conn === 'replaced' ? 'Başka bir cihazda oyundasın' : 'Bağlantı sonlandı'}</h2>
+        <p>{connMessage}</p>
+        <div className="conn-actions">
+          {conn === 'replaced' && (
+            <button type="button" className="btn btn-primary" onClick={() => c.resume()}>Bu cihazda devam et</button>
+          )}
+          {conn === 'ended' && (
+            <button type="button" className="btn btn-primary" onClick={() => location.reload()}>Sayfayı yenile</button>
+          )}
+          <Link className="btn btn-secondary" to="/hangar">Hangara dön</Link>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1, 5, 6 ve 7 arayüz (tarayıcı) uçtan uca testi
+ * TÜRK ORBIT — Aşama 1, 5, 6, 7 ve 8 arayüz (tarayıcı) uçtan uca testi
  *
  * Gerçek API + Vite istemcisi + SMTP alıcısı başlatır, Chromium ile masaüstü ve iPhone görünümünde
  * kayıt → e-posta bağlantısı → giriş → hesap güvenliği → cihazlar arası oturum kapatma akışını dener
@@ -32,16 +32,19 @@ const SHOTS = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/
 const SHOTS5 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-05');
 const SHOTS6 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-06');
 const SHOTS7 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-07');
+const SHOTS8 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-08');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
 const WEB_PORT = 5174;
 const SMTP_PORT = 2526;
+const GAME_PORT = 4102;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
 mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SHOTS5, { recursive: true });
 mkdirSync(SHOTS6, { recursive: true });
 mkdirSync(SHOTS7, { recursive: true });
+mkdirSync(SHOTS8, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -80,6 +83,10 @@ const env = {
   MAIL_TRANSPORT: 'smtp',
   SMTP_URL: `smtp://127.0.0.1:${SMTP_PORT}?ignoreTLS=true`,
   VITE_API_PROXY: `http://127.0.0.1:${API_PORT}`,
+  GAME_PORT: String(GAME_PORT),
+  // Testte bağlantısı kopan gemi hemen kaldırılır (veritabanından konum yerleştirme adımları için)
+  GAME_LINGER_SECONDS: '0',
+  VITE_GAME_PROXY: `ws://127.0.0.1:${GAME_PORT}`,
 };
 
 const results = [];
@@ -106,11 +113,13 @@ async function waitHttp(url) {
 }
 
 const procs = [];
+let gameProc = null;
+let startGame = async () => {};
 let browser;
 let db;
 const fpsReadings = {};
 try {
-  console.log('TÜRK ORBIT — Aşama 1 arayüz testi\n');
+  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8)\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   const c = new pg.Client({ connectionString: DB_URL });
   await c.connect();
@@ -128,6 +137,12 @@ try {
       stdio: ['ignore', 'ignore', 'inherit'],
     }),
   );
+  startGame = async () => {
+    gameProc = spawn(tsx, ['apps/api/src/game/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'ignore', 'inherit'] });
+    procs.push(gameProc);
+    await waitHttp(`http://127.0.0.1:${GAME_PORT}/health`);
+  };
+  await startGame();
   await waitHttp(`http://127.0.0.1:${API_PORT}/api/v1/health`);
   await waitHttp(WEB);
 
@@ -137,12 +152,7 @@ try {
   const pc = await desktop.newPage();
   const phone = await iphone.newPage();
   const pageErrors = [];
-  const worldNet = { pc: [], phone: [] };
-  for (const [name, pg_] of [['pc', pc], ['phone', phone]]) {
-    pg_.on('pageerror', (e) => pageErrors.push(`${name}: ${e.message}`));
-    // Hata durumunda teşhis için dünya isteklerinin durum kodları
-    pg_.on('response', (r) => r.url().includes('/api/v1/world/') && worldNet[name].push(`${r.status()} ${new URL(r.url()).pathname.replace('/api/v1', '')}`));
-  }
+  for (const [name, pg_] of [['pc', pc], ['phone', phone]]) pg_.on('pageerror', (e) => pageErrors.push(`${name}: ${e.message}`));
   db = new pg.Client({ connectionString: DB_URL });
   await db.connect();
   const coords = async (page) => {
@@ -150,8 +160,47 @@ try {
     const [x, y] = t.split('/').map((v) => Number(v.trim()));
     return { x, y };
   };
-  const dbPos = async () => (await db.query(`SELECT p.pos_x, p.pos_y, m.code FROM players p JOIN maps m ON m.id = p.map_id`)).rows[0];
+  const dbPos = async (username = 'AnadoluKartali') =>
+    (await db.query(`SELECT p.id, p.pos_x, p.pos_y, m.code FROM players p JOIN maps m ON m.id = p.map_id JOIN users u ON u.id = p.user_id WHERE u.username = $1`, [username])).rows[0];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** Oyun sunucusu konumu toplu (5 sn) kaydeder: veritabanı HUD'a yaklaşana kadar bekler. */
+  const waitDbX = async (username, x, tol = 60, ms = 9000) => {
+    const end = Date.now() + ms;
+    let d;
+    while (Date.now() < end) {
+      d = await dbPos(username);
+      if (Math.abs(d.pos_x - x) <= tol) return d;
+      await sleep(300);
+    }
+    throw new Error(`sunucu konumu HUD ile eşleşmedi: db ${d?.pos_x}, hud ${x}`);
+  };
+  /** Pilot oyundan çıkınca (sunucu kaydı bitince) çevrimiçi kaydı silinir. */
+  const waitOffline = async (username) => {
+    const { id } = await dbPos(username);
+    for (let i = 0; i < 50; i++) {
+      if (spawnSync('redis-cli', ['-u', REDIS_URL, 'EXISTS', `game:presence:${id}`], { encoding: 'utf8' }).stdout.trim() === '0') return;
+      await sleep(100);
+    }
+    throw new Error('pilot oyundan çıkmadı');
+  };
+  /** Sunucu otoriter olduğu için konum yalnızca pilot oyun dışındayken veritabanından yerleştirilir. */
+  const teleport = async (page, username, x, y, mapCode) => {
+    await page.goto(`${WEB}/hangar`);
+    await page.getByRole('heading', { name: 'Hangar' }).waitFor();
+    await waitOffline(username);
+    await db.query(
+      `UPDATE players SET pos_x = $2, pos_y = $3 ${mapCode ? `, map_id = (SELECT id FROM maps WHERE code = '${mapCode}')` : ''}
+       FROM users u WHERE u.id = players.user_id AND u.username = $1`,
+      [username, x, y],
+    );
+    await page.goto(`${WEB}/oyna`);
+    await page.locator('.hud-minimap-title').waitFor();
+  };
+  const nearbyDistance = async (page, name) => {
+    const row = page.getByTestId('nearby').locator('.hud-nearby-row').filter({ hasText: name });
+    if ((await row.count()) === 0) return null;
+    return Number((await row.locator('.hud-nearby-dist').innerText()).replace(/\./g, ''));
+  };
   // Tek tuval: geliştirme modundaki React StrictMode ilk oyunu kurup hemen kapatır; kapanan tuval DOM'dan kalkmalı.
   const singleCanvas = async (page) => {
     const canvases = page.locator('[data-testid="game-canvas"] canvas');
@@ -277,28 +326,28 @@ try {
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '04-envanter-yukseltme.jpg'), fullPage: true });
   });
 
-  console.log('Aşama 7 — harita ve oyun motoru (masaüstü)');
-  await step('Oyna: tuval ve HUD açılır (pilot, can/kalkan, G-1 mini harita, güvenli bölge)', async () => {
+  console.log('Aşama 7 — harita ve oyun motoru (masaüstü, sunucu otoriteli hareket)');
+  await step('Oyna: oyun sunucusuna bağlanır; tuval ve HUD açılır (pilot, can/kalkan, G-1 mini harita, güvenli bölge, ping)', async () => {
     await pc.getByRole('link', { name: 'Oyna', exact: true }).click();
     await pc.waitForURL(/\/oyna$/);
     await singleCanvas(pc);
     await pc.locator('.hud-pilot').getByText(A.username).waitFor();
     await pc.locator('.hud-minimap-title').getByText('G-1 · Gökbörü Üssü').waitFor();
     await pc.locator('.hud-pilot').getByText('Güvenli').waitFor();
+    await pc.getByTestId('hud-ping').waitFor({ timeout: 6000 });
     await sleep(900); // kamera açılış geçişi
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '01-oyun-g1-istasyon.jpg') });
   });
-  await step('Klavye: D basılı tutulunca gemi sağa gider ve konum sunucuya kaydedilir', async () => {
+  await step('Klavye: D basılı tutulunca gemi sağa gider; konumu sunucu hesaplar ve kaydeder', async () => {
     const a = await coords(pc);
     await pc.keyboard.down('KeyD');
     await sleep(2200);
     await pc.keyboard.up('KeyD');
-    await sleep(1600); // en az bir senkron turu
+    await sleep(800);
     const b = await coords(pc);
     if (!(b.x > a.x + 150)) throw new Error(`x artmadı: ${a.x} → ${b.x}`);
     if (Math.abs(b.y - a.y) > 30) throw new Error(`y değişmemeliydi: ${a.y} → ${b.y}`);
-    const d = await dbPos();
-    if (Math.abs(d.pos_x - b.x) > 60) throw new Error(`sunucu konumu farklı: db ${d.pos_x}, hud ${b.x}; istekler: ${worldNet.pc.slice(-8).join(', ')}`);
+    await waitDbX(A.username, b.x);
   });
   await step('Tıkla-git: ekranın üst tarafına tıklanınca gemi yukarı yönelir', async () => {
     const a = await coords(pc);
@@ -307,26 +356,8 @@ try {
     const b = await coords(pc);
     if (!(b.y < a.y - 100)) throw new Error(`y azalmadı: ${a.y} → ${b.y}`);
   });
-  await step('Sunucu doğrulaması: sunucudaki konum ile uyuşmayan hareket reddedilir, istemci düzeltilir', async () => {
-    await sleep(1200);
-    const d = await dbPos();
-    const fx = Math.round(d.pos_x) - 4000;
-    const fy = Math.round(d.pos_y);
-    // Sunucu tarafında konumu değiştir (ör. başka cihazdan hareket); istemcinin eski konumdan gönderdiği adım hız sınırını aşar.
-    await db.query(`UPDATE players SET pos_x = $1, pos_y = $2, pos_updated_at = now()`, [fx, fy]);
-    await pc.keyboard.down('KeyS');
-    await sleep(700);
-    await pc.keyboard.up('KeyS');
-    await pc.getByText('Konumun sunucu tarafından doğrulanamadı ve düzeltildi.').waitFor({ timeout: 5000 });
-    await sleep(300);
-    const b = await coords(pc);
-    if (Math.abs(b.x - fx) > 40) throw new Error(`istemci sunucu konumuna çekilmedi: ${b.x} (beklenen ${fx})`);
-    const r = await db.query(`SELECT count(*)::int AS n FROM position_rejections`);
-    if (r.rows[0].n < 1) throw new Error('reddedilen konum kaydı yok');
-  });
   await step('Kilitli geçit: seviye 5 isteyen G-4 geçidinde "Atla" pasif ve sebep Türkçe yazılı', async () => {
-    await db.query(`UPDATE players SET pos_x = 10000, pos_y = 10950, pos_updated_at = now()`);
-    await pc.reload();
+    await teleport(pc, A.username, 10000, 10950);
     const prompt = pc.locator('.hud-portal');
     await prompt.getByText('G-4').waitFor();
     await prompt.getByText(/seviye 5/i).waitFor();
@@ -335,8 +366,7 @@ try {
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '02-kilitli-gecit.jpg') });
   });
   await step('Geçit: G-2 geçidinin yanında J tuşu ile atlanır → G-2 yüklenir, geçiş sunucuda kayıtlı', async () => {
-    await db.query(`UPDATE players SET pos_x = 18250, pos_y = 6250, pos_updated_at = now()`);
-    await pc.reload();
+    await teleport(pc, A.username, 18250, 6250);
     await pc.locator('.hud-portal').getByText('G-2').waitFor();
     await sleep(800);
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '03-gecit-yaninda.jpg') });
@@ -347,11 +377,7 @@ try {
     if (d.code !== 'G-2') throw new Error(`sunucuda harita ${d.code}`);
     const t = await db.query(`SELECT count(*)::int AS n FROM map_transitions WHERE reason = 'portal'`);
     if (t.rows[0].n !== 1) throw new Error('geçiş kaydı yok');
-    await sleep(2500);
-    // Geçişten sonra eski haritanın konumu gönderilip reddedilmemeli (yalnızca önceki adımdaki 1 bilinçli ret)
-    const rj = await db.query(`SELECT count(*)::int AS n FROM position_rejections`);
-    if (rj.rows[0].n !== 1) throw new Error(`geçişten sonra yanlış konum reddi: ${rj.rows[0].n - 1}`);
-    if (await pc.getByText('Konumun sunucu tarafından doğrulanamadı').isVisible()) throw new Error('geçişten sonra düzeltme uyarısı çıktı');
+    await sleep(900);
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '04-g2-varis.jpg') });
   });
   await step('Galaksi haritası: M ile açılır, bulunulan harita ve kilit sebepleri görünür; Esc kapatır', async () => {
@@ -384,6 +410,76 @@ try {
     fpsReadings.desktop = await pc.getByTestId('hud-fps').innerText();
   });
 
+  console.log('Aşama 8 — çok oyunculu (iki pilot, iki tarayıcı)');
+  const B = { username: 'BozkirKurdu', email: 'bozkir.kurdu@ornek.com', password: 'Ergenekon_Destani_552' };
+  const desktop2 = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
+  const pc2 = await desktop2.newPage();
+  pc2.on('pageerror', (e) => pageErrors.push(`pc2: ${e.message}`));
+  await step('İkinci oyuncu (B) kayıt olur, e-postasını doğrular ve Gökbörü pilotu oluşturur', async () => {
+    await pc2.goto(`${WEB}/kayit`);
+    await pc2.getByLabel('Kullanıcı adı (pilot adı)').fill(B.username);
+    await pc2.getByLabel('E-posta').fill(B.email);
+    await pc2.getByLabel('Parola', { exact: true }).fill(B.password);
+    await pc2.getByLabel('Parola (tekrar)').fill(B.password);
+    await pc2.getByRole('checkbox').check();
+    await pc2.getByRole('button', { name: 'Kayıt ol' }).click();
+    await pc2.getByRole('heading', { name: 'E-postanı kontrol et' }).waitFor();
+    await pc2.goto(await linkFor(B.email, 'doğrula'));
+    await pc2.getByText('E-posta adresin doğrulandı').waitFor();
+    await pc2.goto(`${WEB}/giris`);
+    await pc2.getByLabel('Kullanıcı adı veya e-posta').fill(B.username);
+    await pc2.getByLabel('Parola', { exact: true }).fill(B.password);
+    await pc2.getByRole('button', { name: 'Giriş yap' }).click();
+    await pc2.getByRole('heading', { name: 'Pilotunu oluştur' }).waitFor();
+    await pc2.getByText('Gökbörü Filosu', { exact: true }).click();
+    await pc2.getByRole('button', { name: 'Pilotu oluştur' }).click();
+    await pc2.getByRole('heading', { name: B.username }).waitFor();
+  });
+  await step('A ve B aynı haritada birbirini görür: gemi, ad etiketi ve radar listesi (sunucu AOI)', async () => {
+    const a = await coords(pc);
+    await db.query(
+      `UPDATE players SET pos_x = $2, pos_y = $3, map_id = (SELECT id FROM maps WHERE code = 'G-2')
+       FROM users u WHERE u.id = players.user_id AND u.username = $1`,
+      [B.username, a.x + 500, a.y],
+    );
+    await pc2.goto(`${WEB}/oyna`);
+    await singleCanvas(pc2);
+    await pc2.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
+    await pc.getByTestId('nearby').getByText(B.username).waitFor({ timeout: 8000 });
+    await pc2.getByTestId('nearby').getByText(A.username).waitFor({ timeout: 8000 });
+    const d = await nearbyDistance(pc, B.username);
+    if (!(d > 400 && d < 600)) throw new Error(`A-B mesafesi ~500 bekleniyordu: ${d}`);
+    await sleep(800);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '01-a-b-pilotunu-goruyor.jpg') });
+    await pc2.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '02-b-a-pilotunu-goruyor.jpg') });
+  });
+  await step('B hareket eder → A\'nın ekranında anlık güncellenir (10 Hz anlık görüntü + enterpolasyon)', async () => {
+    const d0 = await nearbyDistance(pc, B.username);
+    await pc2.keyboard.down('KeyD');
+    await sleep(2000);
+    const d1 = await nearbyDistance(pc, B.username);
+    if (!(d1 > d0 + 300)) throw new Error(`A'nın gördüğü mesafe artmadı: ${d0} → ${d1}`);
+  });
+  await step('B radar menzilinden çıkınca A\'nın listesinden ve haritasından düşer (sunucu artık göndermez)', async () => {
+    await pc.getByTestId('nearby').getByText('menzilde pilot yok').waitFor({ timeout: 8000 });
+    await pc2.keyboard.up('KeyD');
+    const b = await coords(pc2);
+    const a = await coords(pc);
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 1500) throw new Error('B hâlâ radar menzilinde');
+  });
+  await step('Oyun sunucusu yeniden başlatılır → iki istemci de "yeniden bağlanılıyor" gösterir ve kendiliğinden bağlanır', async () => {
+    gameProc.kill('SIGTERM');
+    await pc.getByTestId('conn-banner').waitFor({ timeout: 8000 });
+    await pc2.getByTestId('conn-banner').waitFor({ timeout: 8000 });
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '03-yeniden-baglaniyor.jpg') });
+    await startGame();
+    await pc.getByTestId('conn-banner').waitFor({ state: 'detached', timeout: 25000 });
+    await pc2.getByTestId('conn-banner').waitFor({ state: 'detached', timeout: 25000 });
+    await pc.getByText('Yeniden bağlandın.').waitFor();
+    await pc.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
+  });
+  await desktop2.close();
+
   console.log('iPhone 13 görünümü');
   await step('Aynı hesapla telefondan giriş', async () => {
     await phone.goto(`${WEB}/giris`);
@@ -404,16 +500,20 @@ try {
     await phone.locator('.level-badge', { hasText: '+1' }).first().waitFor();
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '05-mobil-hangar.jpg'), fullPage: true });
   });
-  await step('Telefonda oyun: PC\'de geçilen G-2 haritası açılır (senkron), sanal joystick görünür', async () => {
+  await step('Telefonda oyun: G-2 açılır, joystick görünür; PC\'deki oyun "başka cihaz" uyarısıyla durur (tek aktif oturum)', async () => {
     await phone.goto(`${WEB}/oyna`);
     await singleCanvas(phone);
     await phone.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
     await phone.getByTestId('joystick').waitFor();
     await phone.getByText('Daha geniş görüş için telefonu yan çevir').waitFor();
+    const ended = pc.getByTestId('conn-ended');
+    await ended.getByText('Başka bir cihazda oyundasın').waitFor({ timeout: 8000 });
+    await ended.getByText('Hesabınla başka bir cihazdan oyuna girildi.').waitFor();
     await sleep(900);
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '07-mobil-dikey-joystick.jpg') });
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '04-pc-baska-cihazda-oyundasin.jpg') });
   });
-  await step('Telefonda joystick sağa çekilince gemi sağa gider ve sunucuya kaydedilir', async () => {
+  await step('Telefonda joystick sağa çekilince gemi sağa gider; konumu sunucu kaydeder', async () => {
     const a = await coords(phone);
     const box = await phone.getByTestId('joystick').boundingBox();
     const cx = box.x + box.width / 2;
@@ -423,11 +523,19 @@ try {
     await phone.mouse.move(cx + box.width / 2, cy, { steps: 5 });
     await sleep(2000);
     await phone.mouse.up();
-    await sleep(1600);
+    await sleep(800);
     const b = await coords(phone);
     if (!(b.x > a.x + 150)) throw new Error(`x artmadı: ${a.x} → ${b.x}`);
-    const d = await dbPos();
-    if (Math.abs(d.pos_x - b.x) > 60) throw new Error(`sunucu konumu farklı: db ${d.pos_x}, hud ${b.x}; istekler: ${worldNet.phone.slice(-8).join(', ')}`);
+    await waitDbX(A.username, b.x);
+  });
+  await step('Telefon uzaydayken PC hangarında ekipman değişikliği engellenir ("yalnızca istasyonda")', async () => {
+    await pc.goto(`${WEB}/hangar`);
+    await pc.getByRole('heading', { name: 'Hangar' }).waitFor();
+    await pc.getByRole('button', { name: /Lazer 1: OK-1/ }).click();
+    await pc.getByRole('button', { name: 'Çıkar' }).click();
+    await pc.getByText('Oyundayken ekipman yalnızca istasyonda değiştirilebilir').first().waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '05-pc-hangar-istasyon-kurali.jpg') });
+    await pc.keyboard.press('Escape');
   });
   await step('Telefon yatay: oyun ekranı yatay düzende açılır (aynı oturum)', async () => {
     const land = await browser.newContext({ ...playwright.devices['iPhone 13 landscape'], locale: 'tr-TR', storageState: await iphone.storageState() });
@@ -440,8 +548,11 @@ try {
     await lp.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '08-mobil-yatay.jpg') });
     await land.close();
   });
-  await step('Telefonda ayarlar: dokunmatik sekmeleri ve joystick ayarları (telefon sınıfı ayrı saklanır)', async () => {
-    await phone.goto(`${WEB}/oyna`);
+  await step('Telefon "Bu cihazda devam et" ile oyunu geri alır; ayarlar (joystick sağda, telefon sınıfı ayrı saklanır)', async () => {
+    const ended = phone.getByTestId('conn-ended');
+    await ended.waitFor({ timeout: 8000 });
+    await ended.getByRole('button', { name: 'Bu cihazda devam et' }).click();
+    await ended.waitFor({ state: 'detached', timeout: 8000 });
     await phone.getByTestId('joystick').waitFor();
     await phone.getByRole('button', { name: 'Ayarlar', exact: true }).click();
     const dlg = phone.getByRole('dialog', { name: 'Oyun ayarları' });
@@ -452,7 +563,7 @@ try {
     await dlg.getByRole('button', { name: 'Kaydet' }).click();
     await dlg.getByText('Kaydedildi.', { exact: false }).waitFor();
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '09-mobil-ayarlar.jpg') });
-    const r = await db.query(`SELECT device_class, settings->'controls'->>'joystickSide' AS side FROM player_settings ORDER BY device_class`);
+    const r = await db.query(`SELECT device_class, settings->'controls'->>'joystickSide' AS side FROM player_settings WHERE user_id = (SELECT id FROM users WHERE username = $1) ORDER BY device_class`, [A.username]);
     const rows = Object.fromEntries(r.rows.map((x) => [x.device_class, x.side]));
     if (rows.phone !== 'right' || rows.desktop !== 'left') throw new Error(`cihaz sınıfı ayarları karıştı: ${JSON.stringify(rows)}`);
     await dlg.getByRole('button', { name: 'Kapat' }).click();
@@ -460,6 +571,11 @@ try {
     if (box.x < 390 / 2) throw new Error('joystick sağa geçmedi');
     await sleep(2500);
     fpsReadings.phone = await phone.getByTestId('hud-fps').innerText();
+  });
+  await step('PC oyuna dönünce telefon "başka cihaz" uyarısı alır (iki yönde de tek oturum)', async () => {
+    await pc.goto(`${WEB}/oyna`);
+    await pc.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
+    await phone.getByTestId('conn-ended').getByText('Başka bir cihazda oyundasın').waitFor({ timeout: 8000 });
   });
   await step('Oyun ekranlarında JavaScript hatası oluşmadı', async () => {
     if (pageErrors.length) throw new Error(pageErrors.join(' | '));
@@ -510,7 +626,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

@@ -11,8 +11,7 @@ export function worldRoutes(app: FastifyInstance, opts: { service: WorldService;
 
   app.get<Q>('/world/galaxy', pre, async (r) => ({ galaxy: await service.galaxy(owner(r.auth!), r.query.server ?? 'TR1') }));
   app.get<Q>('/world/map', pre, async (r) => ({ map: await service.currentMap(owner(r.auth!), r.query.server ?? 'TR1') }));
-  app.post('/world/position', pre, async (r) => service.updatePosition(owner(r.auth!), r.body));
-  app.post('/world/jump', pre, async (r) => ({ map: await service.jump(owner(r.auth!), r.body) }));
+  // Aşama 8: konum ve geçit REST uç noktaları kaldırıldı; hareket ve geçiş yalnızca oyun sunucusunda (WebSocket).
 
   app.get<{ Querystring: { deviceClass?: string } }>('/settings', pre, async (r) => service.getSettings(owner(r.auth!), r.query.deviceClass));
   app.put('/settings', pre, async (r) => service.saveSettings(owner(r.auth!), r.body));

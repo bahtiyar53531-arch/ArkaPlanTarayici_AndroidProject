@@ -10,6 +10,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: process.env.VITE_API_PROXY ?? 'http://127.0.0.1:4000', changeOrigin: false },
+      // Gerçek zamanlı oyun sunucusu (WebSocket). Üretimde nginx /game yolunu oyun sunucusuna yönlendirir.
+      '/game': { target: process.env.VITE_GAME_PROXY ?? 'ws://127.0.0.1:4001', ws: true, changeOrigin: false },
     },
   },
   build: {

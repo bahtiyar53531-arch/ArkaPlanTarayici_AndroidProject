@@ -37,7 +37,10 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   │   ├── player/           pilot oluşturma, profil, şirket değişimi, açık profil (Aşama 5)
     │   │   │   │   ├── economy/          cüzdan ve envanter çekirdeği: kilit + defter + idempotency (Aşama 5-6)
     │   │   │   │   ├── hangar/           hangar, ekipman, yükseltme, tamir, PET, mağaza (Aşama 6)
+    │   │   │   │   ├── world/            galaksi, harita, geçit kuralları, oyuncu ayarları (Aşama 7)
+    │   │   │   │   ├── game/             oyun bileti + Redis köprüsü: çevrimiçi durum, tek oturum, canlı değişiklik (Aşama 8)
     │   │   │   │   └── health/           sağlık uç noktası
+    │   │   │   ├── game/                 gerçek zamanlı oyun sunucusu — AYRI SÜREÇ (npm run dev:game): WebSocket, 20 Hz simülasyon, AOI (Aşama 8)
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
     │   │   └── test/                     entegrasyon testleri (gerçek PostgreSQL + Redis)
     │   │
@@ -48,14 +51,15 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │       ├── api/client.ts         API istemcisi (CSRF, hata yönetimi)
     │   │       ├── auth/AuthContext.tsx  oturum durumu
     │   │       ├── components/           Layout, form bileşenleri, parola gücü göstergesi
-    │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot, hangar, mağaza
-    │   │       └── styles/global.css     koyu uzay teması
+    │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot, hangar, mağaza, oyun
+    │   │       ├── game/                 Phaser sahnesi, ağ kontrolcüsü (tahmin/uzlaştırma/enterpolasyon), dokular (Aşama 7-8)
+    │   │       ├── components/game/      HUD: pilot paneli, mini harita, radar listesi, galaksi, joystick, ayarlar, bağlantı durumu
+    │   │       └── styles/               global.css (koyu uzay teması), game.css (oyun ekranı)
     │   │
-    │   ├── game-server/                  (Aşama 8) gerçek zamanlı oyun sunucusu — şimdilik README
     │   └── admin/                        (Aşama 14) TÜRK ORBIT YÖNETİM MERKEZİ — şimdilik README
     │
     ├── database/
-    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar (numaralı, değiştirilmez)
+    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world (numaralı, değiştirilmez)
     │   └── schema-draft.sql              tüm oyunun doğrulanmış taslak şeması
     │
     ├── infra/
@@ -71,6 +75,8 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   ├── Asama-01-Kayit-Giris/         API referansı, kurulum ve dosya yerleştirme rehberi
     │   ├── Asama-05-Oyuncu-Profili/      API referansı, güncelleme rehberi
     │   ├── Asama-06-Hangar-Ekipman/      API referansı, güncelleme rehberi
+    │   ├── Asama-07-Harita-Oyun-Motoru/  API referansı, güncelleme rehberi
+    │   ├── Asama-08-Multiplayer/         ağ protokolü, güncelleme ve sunucu kurulum rehberi
     │   └── DevelopmentNotes/             aşama raporları, karar günlüğü, ekran görüntüleri
     │
     └── Deliveries/                       aşama ZIP paketleri

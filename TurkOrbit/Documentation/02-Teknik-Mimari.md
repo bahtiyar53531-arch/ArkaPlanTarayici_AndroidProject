@@ -12,7 +12,7 @@ flowchart LR
   ADM[Yönetim Merkezi<br/>apps/admin]
   NG[nginx<br/>TLS · statik dosya · yönlendirme]
   API[REST API<br/>apps/api · Fastify]
-  GS[Oyun sunucusu<br/>apps/game-server · WebSocket]
+  GS[Oyun sunucusu<br/>apps/api/src/game · ayrı süreç · WebSocket]
   WK[Zamanlanmış işler<br/>worker]
   PG[(PostgreSQL 16)]
   RD[(Redis 7)]
@@ -20,7 +20,7 @@ flowchart LR
   SMTP[SMTP<br/>e-posta]
 
   W & A & I -->|HTTPS /api| NG
-  W & A & I -->|WSS /ws| NG
+  W & A & I -->|WSS /game| NG
   ADM -->|HTTPS /api/admin| NG
   NG --> API
   NG --> GS
@@ -37,13 +37,13 @@ flowchart LR
 | Bileşen | Teknoloji | Görev | Durum |
 |---|---|---|---|
 | `apps/client` | TypeScript, React 18, Vite 7, Phaser 3.90 | Hesap ekranları, oyun, HUD. Web/PWA + Capacitor ile Android/iOS | Hesap ekranları ✅, oyun ekranı (tek oyunculu) ✅ |
-| `apps/api` | Node.js 22, Fastify 5, zod, pg, ioredis, argon2 | Hesap, profil, hangar, ekonomi, görev, klan, forum, destek, yönetim REST API'si | Kimlik doğrulama ✅ |
-| `apps/game-server` | Node.js 22, `ws` (gerekirse uWebSockets.js), ikili protokol | Sunucu otoriteli gerçek zamanlı simülasyon (hareket, savaş, NPC, ödül) | Aşama 8 |
+| `apps/api` | Node.js 22, Fastify 5, zod, pg, ioredis, argon2 | Hesap, profil, hangar, ekonomi, görev, klan, forum, destek, yönetim REST API'si | Kimlik, profil, hangar, dünya ✅ |
+| Oyun sunucusu (`apps/api/src/game`, ayrı süreç) | Node.js 22, `ws`, JSON protokol (ikili protokol Aşama 16) | Sunucu otoriteli gerçek zamanlı simülasyon: hareket ✅ (Aşama 8); savaş, NPC, ödül Aşama 9 | Hareket, AOI, geçit, tek oturum ✅ |
 | `apps/admin` | React (istemciyle ortak bileşenler) | TÜRK ORBIT YÖNETİM MERKEZİ | Aşama 14 |
-| `packages/shared` | TypeScript + zod | Ortak tipler, doğrulama şemaları, roller, parola politikası, (Aşama 8) ağ protokolü | ✅ |
+| `packages/shared` | TypeScript + zod | Ortak tipler, doğrulama şemaları, roller, parola politikası, ağ protokolü ve deterministik hareket simülasyonu | ✅ |
 | Worker | API ile aynı kod tabanında ayrı süreç | Günlük/haftalık sıfırlama, açık artırma kapanışı, sıralama, temizlik | Aşama 10-11 |
 | PostgreSQL 16 | — | Kalıcı veri (tek doğruluk kaynağı) | ✅ |
-| Redis 7 | — | Hız sınırı, oturum önbelleği, pub/sub, canlı sıralama, grup durumu, harita devri | ✅ (hız sınırı + önbellek) |
+| Redis 7 | — | Hız sınırı, oturum önbelleği, oyun bileti, çevrimiçi durum, pub/sub, canlı sıralama, grup durumu, harita devri | ✅ (hız sınırı, önbellek, bilet, çevrimiçi durum, tek oturum ve canlı değişiklik yayınları) |
 
 **Neden mikroservis değil?** Başlangıçta iki çalıştırılabilir süreç (API + oyun sunucusu) ve tek veritabanı yeterli. Modüller (`modules/auth`, `modules/economy`…) klasör sınırlarıyla ayrılır. Ölçeklenme gerektiğinde yatay olarak çoğaltılan bileşen **oyun sunucusudur**, çünkü harita başına yük oradadır.
 
@@ -89,7 +89,14 @@ sequenceDiagram
 - **CSRF:** Yalnızca `application/json` kabul edilir (form gönderimiyle saldırı yapılamaz). İzinli Origin denetimi yapılır. Çerez oturumunda durum değiştiren her istek, oturuma bağlı HMAC `X-CSRF-Token` başlığı ister.
 - **Hesap varlığı gizliliği:** Kayıtlı e-posta ile kayıt ve şifremi unuttum aynı yanıtı döner. E-posta gönderimi arka planda yapılır, böylece yanıt süresi bilgi sızdırmaz. Olmayan hesaba girişte de Argon2 doğrulaması yapılır.
 
-## 4. Gerçek zamanlı multiplayer mimarisi (Aşama 8 — tasarım)
+## 4. Gerçek zamanlı multiplayer mimarisi (Aşama 8 — uygulandı)
+
+> **Uygulama durumu (Aşama 8):** Aşağıdaki tasarımın hareket, bilet, AOI, uzlaştırma, enterpolasyon, tek oturum ve yeniden bağlanma kısımları uygulandı ve test edildi. Uygulamadaki farklar:
+> - Mesajlar şimdilik **JSON** (kısa alan adlarıyla). Ölçülen bant genişliği hedefin çok altında olduğu için ikili protokol Aşama 16'ya bırakıldı.
+> - Oyun sunucusu ayrı bir süreçtir ama kodu `apps/api/src/game` altındadır (veritabanı, yapılandırma ve dünya kuralları tek kaynakta).
+> - Tek süreç tüm haritaları çalıştırır. Birden çok süreç arasında "harita → sunucu" eşlemesi ve harita devri Aşama 16-17'dedir. Tek aktif oturum kuralı şimdiden süreçler arası çalışır (Redis yayını).
+>
+> Protokolün güncel hali: [Asama-08-Multiplayer/Protokol.md](Asama-08-Multiplayer/Protokol.md).
 
 ### 4.1 İlkeler
 1. **Sunucu otoritelidir.** İstemci yalnızca *niyet* gönderir ("şu noktaya git", "şu hedefi seç", "ateş et", "3. mermiyi kullan"). Konum, hasar, ölüm ve ödül sunucuda hesaplanır.

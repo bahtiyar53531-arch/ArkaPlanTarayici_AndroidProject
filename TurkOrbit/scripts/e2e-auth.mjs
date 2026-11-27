@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 uçtan uca (E2E) test
+ * TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 uçtan uca (E2E) test
  *
  * Gerçek API sürecini başlatır, e-postaları GERÇEK SMTP üzerinden yakalar ve iki ayrı hesapla
  * (PC web oturumu + Android uygulama oturumu) tüm kayıt/giriş akışlarını HTTP üzerinden dener.
@@ -15,12 +15,14 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { SMTPServer } from 'smtp-server';
 import { simpleParser } from 'mailparser';
+import { WebSocket } from 'ws';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/14';
 const API_PORT = Number(process.env.E2E_API_PORT ?? 4100);
 const SMTP_PORT = Number(process.env.E2E_SMTP_PORT ?? 2525);
+const GAME_PORT = Number(process.env.E2E_GAME_PORT ?? 4103);
 const API = `http://127.0.0.1:${API_PORT}/api/v1`;
 const WEB = 'http://localhost:5173';
 const PASSWORD = 'Nebula-Kartal-77';
@@ -106,6 +108,45 @@ function expect(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+// ------------------------------------------------------------------ oyun sunucusu (WebSocket) istemcisi
+class GameConn {
+  constructor(ws) {
+    this.ws = ws;
+    this.msgs = [];
+    this.closed = new Promise((r) => ws.on('close', (code) => r(code)));
+    ws.on('message', (d) => this.msgs.push(JSON.parse(d.toString())));
+  }
+  static async open(client) {
+    const t = await client.req('POST', '/game/ticket', { serverCode: 'TR1' });
+    if (t.status !== 200) throw new Error(`bilet alınamadı: ${JSON.stringify(t.json)}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${GAME_PORT}/game`, { headers: { origin: WEB } });
+    await new Promise((res, rej) => (ws.once('open', res), ws.once('error', rej)));
+    const c = new GameConn(ws);
+    c.send({ t: 'hello', v: 1, ticket: t.json.ticket });
+    c.welcome = await c.wait('welcome');
+    return c;
+  }
+  send(m) {
+    this.ws.send(JSON.stringify(m));
+  }
+  async wait(t, pred = () => true, ms = 6000) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const m = this.msgs.find((x) => x.t === t && pred(x));
+      if (m) return m;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`"${t}" gelmedi (gelenler: ${[...new Set(this.msgs.map((x) => x.t))].join(',')})`);
+  }
+  last(t) {
+    return [...this.msgs].reverse().find((x) => x.t === t);
+  }
+  async close() {
+    this.ws.close();
+    await this.closed;
+  }
+}
+
 // ------------------------------------------------------------------ hazırlık
 async function resetDb() {
   const c = new pg.Client({ connectionString: DB_URL });
@@ -128,11 +169,14 @@ const env = {
   CSRF_SECRET: 'e2e-csrf-secret-at-least-32-characters-long',
   MAIL_TRANSPORT: 'smtp',
   SMTP_URL: `smtp://127.0.0.1:${SMTP_PORT}?ignoreTLS=true`,
+  GAME_PORT: String(GAME_PORT),
+  GAME_LINGER_SECONDS: '0',
 };
 
 let server;
+let game;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -143,6 +187,7 @@ async function main() {
   if (redisFlush.status !== 0) console.warn('Uyarı: redis-cli bulunamadı, Redis db temizlenemedi.');
 
   server = spawn(tsx, ['apps/api/src/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'inherit', 'inherit'] });
+  game = spawn(tsx, ['apps/api/src/game/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'ignore', 'inherit'] });
   for (let i = 0; i < 100; i++) {
     try {
       const r = await fetch(`${API}/health`);
@@ -342,11 +387,37 @@ async function main() {
     expect(lb[0].reason === 'item_sell' && lb[0].delta === -500, JSON.stringify(lb.slice(0, 3)));
   });
 
-  console.log('\nAşama 7 — harita, konum doğrulama ve geçitler (iki hesap)');
+  console.log('\nAşama 7-8 — harita ve gerçek zamanlı oyun sunucusu (iki hesap, iki platform)');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const db = new pg.Client({ connectionString: DB_URL });
   await db.connect();
+  for (let i = 0; i < 100; i++) {
+    try {
+      if ((await fetch(`http://127.0.0.1:${GAME_PORT}/health`)).ok) break;
+    } catch {
+      /* oyun sunucusu açılıyor */
+    }
+    await sleep(150);
+  }
+  const playerOf = async (username) =>
+    (await db.query(`SELECT p.id, p.pos_x, p.pos_y, m.code FROM players p JOIN users u ON u.id = p.user_id JOIN maps m ON m.id = p.map_id WHERE u.username = $1`, [username])).rows[0];
+  const waitOffline = async (username) => {
+    const { id } = await playerOf(username);
+    for (let i = 0; i < 60; i++) {
+      if (spawnSync('redis-cli', ['-u', REDIS_URL, 'EXISTS', `game:presence:${id}`], { encoding: 'utf8' }).stdout.trim() === '0') return;
+      await sleep(100);
+    }
+    throw new Error('pilot oyundan çıkmadı');
+  };
+  const place = (username, x, y, mapCode) =>
+    db.query(
+      `UPDATE players SET pos_x = $2, pos_y = $3 ${mapCode ? `, map_id = (SELECT id FROM maps WHERE code = '${mapCode}')` : ''}
+       FROM users u WHERE u.id = players.user_id AND u.username = $1`,
+      [username, x, y],
+    );
   let aMap = null;
+  let ga = null;
+  let gb = null;
   await step('Pilot A (web) K-1, Pilot B (Android) G-1 haritasında; düşman şirket haritası seviye 15 ister', async () => {
     aMap = (await pc.req('GET', '/world/map?server=TR1')).json.map;
     const bMap = (await app.req('GET', '/world/map?server=TR1')).json.map;
@@ -355,42 +426,87 @@ async function main() {
     const g = (await pc.req('GET', '/world/galaxy?server=TR1')).json.galaxy;
     const enemy = g.maps.find((m) => m.code === 'G-1');
     expect(g.currentMap === 'K-1' && enemy.access.ok === false && enemy.access.requiredLevel === 15, JSON.stringify(enemy.access));
+    expect((await pc.req('POST', '/world/position', { serverCode: 'TR1', x: 1, y: 1 })).status === 404, 'REST konum uç noktası kalkmış olmalı');
   });
-  await step('Konum: geçerli hareket kabul edilir; ışınlanma (hız sınırı aşımı) reddedilir ve sunucu konumu döner', async () => {
-    await sleep(1100);
-    const p0 = aMap.position;
-    const ok = await pc.req('POST', '/world/position', { serverCode: 'TR1', x: p0.x + 200, y: p0.y });
-    expect(ok.status === 200 && ok.json.accepted === true, JSON.stringify(ok.json));
-    const fast = await pc.req('POST', '/world/position', { serverCode: 'TR1', x: p0.x + 201, y: p0.y });
-    expect(fast.status === 429, `çok sık güncelleme 429 bekleniyordu: ${fast.status}`);
+  await step('Oyun bileti: A web oturumuyla (çerez+CSRF), B Android oturumuyla (Bearer) bilet alır ve WebSocket ile bağlanır', async () => {
+    ga = await GameConn.open(pc);
+    gb = await GameConn.open(app);
+    expect(ga.welcome.map.map.code === 'K-1' && gb.welcome.map.map.code === 'G-1', 'karşılama haritaları');
+    const noCsrf = await fetch(`${API}/game/ticket`, { method: 'POST', headers: { cookie: pc.cookie, origin: WEB, 'content-type': 'application/json' }, body: '{"serverCode":"TR1"}' });
+    expect(noCsrf.status === 403, `CSRF olmadan bilet verilmemeli: ${noCsrf.status}`);
+  });
+  await step('Sunucu otoriteli hareket: A 1 sn sağa gider, hız sınırını aşmaz; konum yazma girişimi yok sayılır', async () => {
+    const x0 = ga.welcome.you[0];
+    let seq = 0;
+    for (let i = 0; i < 20; i++) {
+      ga.send({ t: 'in', i: [[++seq, 1, 1, 0]] });
+      await sleep(50);
+    }
+    ga.send({ t: 'pos', x: 19000, y: 1800 });
+    await ga.wait('snap', (m) => m.a === 20, 3000);
     await sleep(300);
-    const bad = await pc.req('POST', '/world/position', { serverCode: 'TR1', x: p0.x + 9000, y: p0.y });
-    expect(bad.status === 200 && bad.json.accepted === false && bad.json.reason === 'too_fast' && bad.json.x === p0.x + 200, JSON.stringify(bad.json));
-    const r = await db.query(`SELECT distance, allowed FROM position_rejections`);
-    expect(r.rows.length === 1 && r.rows[0].distance > r.rows[0].allowed, JSON.stringify(r.rows));
+    const x1 = ga.last('snap').y[0];
+    expect(x1 - x0 > 150 && x1 - x0 <= 320 * 1.6, `1 sn'de ${x1 - x0} birim`);
   });
-  await step('Pilot B, başka haritanın geçidini kullanamaz; uzaktan atlayamaz', async () => {
+  await step('Farklı haritadaki pilotlar birbirini görmez; B, A\'nın yanına gelince ikisi de birbirini görür', async () => {
+    expect(!ga.msgs.some((m) => m.t === 'enter'), 'A, başka haritadaki B\'yi görmemeli');
+    await gb.close();
+    await waitOffline('GokBoru');
+    const a = ga.last('snap').y;
+    await place('GokBoru', a[0] + 600, a[1], 'K-1');
+    gb = await GameConn.open(app);
+    const enterA = await ga.wait('enter', (m) => m.e.some((x) => x.n === 'GokBoru'));
+    const enterB = await gb.wait('enter', (m) => m.e.some((x) => x.n === 'AnadoluKartali'));
+    expect(enterA.e[0].cc === 'GKB' && enterB.e[0].cc === 'KZL', 'şirket bilgisi');
+  });
+  await step('Pilot B başka haritanın geçidini kullanamaz; uzaktan atlayamaz (WebSocket hata mesajı)', async () => {
+    const g1 = (await db.query(`SELECT id FROM map_portals WHERE map_id = (SELECT id FROM maps WHERE code = 'G-1') LIMIT 1`)).rows[0].id;
+    gb.send({ t: 'jump', p: g1 });
+    expect((await gb.wait('error')).code === 'PORTAL_NOT_FOUND', 'başka haritanın geçidi');
     const k2 = aMap.portals.find((p) => p.target.code === 'K-2');
-    const bMap = (await app.req('GET', '/world/map?server=TR1')).json.map;
-    const foreign = await app.req('POST', '/world/jump', { serverCode: 'TR1', portalId: k2.id, x: bMap.position.x, y: bMap.position.y });
-    expect(foreign.status === 404 && foreign.json.error.code === 'PORTAL_NOT_FOUND', JSON.stringify(foreign.json));
-    const g2 = bMap.portals.find((p) => p.target.code === 'G-2');
-    const far = await app.req('POST', '/world/jump', { serverCode: 'TR1', portalId: g2.id, x: bMap.position.x, y: bMap.position.y });
-    expect(far.status === 400 && far.json.error.code === 'TOO_FAR_FROM_PORTAL', JSON.stringify(far.json));
+    gb.msgs.length = 0;
+    gb.send({ t: 'jump', p: k2.id });
+    expect((await gb.wait('error')).code === 'TOO_FAR_FROM_PORTAL', 'uzak geçit');
   });
-  await step('Pilot A K-2 geçidinin yanından atlar → K-2; seviye 5 isteyen K-3 geçidi kilitli (403)', async () => {
+  await step('Pilot A K-2 geçidinin yanından atlar → K-2; B "leave" alır; seviye 5 isteyen K-3 kilitli', async () => {
     const k2 = aMap.portals.find((p) => p.target.code === 'K-2');
     const k3 = aMap.portals.find((p) => p.target.code === 'K-3');
-    await db.query(`UPDATE players SET pos_x = $1, pos_y = $2, pos_updated_at = now() - interval '2 seconds' FROM users u WHERE u.id = players.user_id AND u.username = 'AnadoluKartali'`, [k3.x, k3.y - 200]);
-    const locked = await pc.req('POST', '/world/jump', { serverCode: 'TR1', portalId: k3.id, x: k3.x, y: k3.y - 200 });
-    expect(locked.status === 403 && locked.json.error.code === 'MAP_LOCKED', JSON.stringify(locked.json));
-    await db.query(`UPDATE players SET pos_x = $1, pos_y = $2, pos_updated_at = now() - interval '2 seconds' FROM users u WHERE u.id = players.user_id AND u.username = 'AnadoluKartali'`, [k2.x - 250, k2.y]);
-    const j = await pc.req('POST', '/world/jump', { serverCode: 'TR1', portalId: k2.id, x: k2.x - 250, y: k2.y });
-    expect(j.status === 200 && j.json.map.map.code === 'K-2' && j.json.map.portals.some((p) => p.target.code === 'K-1'), JSON.stringify(j.json).slice(0, 300));
-    const again = (await pc.req('GET', '/world/map?server=TR1')).json.map;
-    expect(again.map.code === 'K-2', 'harita kalıcı değil');
+    await ga.close();
+    await waitOffline('AnadoluKartali');
+    await place('AnadoluKartali', k3.x, k3.y - 200);
+    ga = await GameConn.open(pc);
+    ga.send({ t: 'jump', p: k3.id });
+    const locked = await ga.wait('error');
+    expect(locked.code === 'MAP_LOCKED', JSON.stringify(locked));
+    await ga.close();
+    await waitOffline('AnadoluKartali');
+    await place('AnadoluKartali', k2.x - 250, k2.y);
+    await gb.close();
+    await waitOffline('GokBoru');
+    await place('GokBoru', k2.x - 900, k2.y, 'K-1');
+    ga = await GameConn.open(pc);
+    gb = await GameConn.open(app);
+    await gb.wait('enter');
+    ga.send({ t: 'jump', p: k2.id });
+    const m = await ga.wait('map');
+    expect(m.reason === 'portal' && m.map.map.code === 'K-2', JSON.stringify(m).slice(0, 200));
+    expect((await gb.wait('leave')).e.includes(ga.welcome.id), 'B, A\'nın ayrıldığını görmeli');
+    expect((await playerOf('AnadoluKartali')).code === 'K-2', 'geçiş kalıcı olmalı');
     const t = await db.query(`SELECT reason FROM map_transitions`);
     expect(t.rows.length === 1 && t.rows[0].reason === 'portal', JSON.stringify(t.rows));
+  });
+  await step('Tek aktif oyun oturumu: A ikinci cihazdan (Android) oyuna girince web bağlantısı "başka cihaz" ile kapanır', async () => {
+    const aApp = new Client('Pilot A (Android 2)', { ua: UA.android, ip: '85.105.10.99', platform: 'android' });
+    const login = await aApp.req('POST', '/auth/login', { identifier: 'AnadoluKartali', password: 'Kizilelma_Seferi_1071', transport: 'token', device: { platform: 'android' } });
+    expect(login.status === 200, JSON.stringify(login.json));
+    aApp.bearer = login.json.sessionToken;
+    const second = await GameConn.open(aApp);
+    const kick = await ga.wait('kick');
+    expect(kick.code === 4002 && (await ga.closed) === 4002, `kapanış kodu ${kick.code}`);
+    expect(second.welcome.map.map.code === 'K-2', 'gemi aynı yerden devam etmeli');
+    await second.close();
+    await gb.close();
+    await waitOffline('AnadoluKartali');
   });
   await step('Harita bakıma alınınca Pilot A ana haritasına (K-1) taşınır ve Türkçe bildirim alır', async () => {
     await db.query(`UPDATE maps SET is_closed = true WHERE code = 'K-2'`);
@@ -445,6 +561,7 @@ try {
   console.error(err);
 } finally {
   server?.kill('SIGTERM');
+  game?.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok);
   console.log(`\nSonuç: ${results.length - failed.length}/${results.length} adım başarılı, ${inbox.length} e-posta SMTP üzerinden alındı.`);

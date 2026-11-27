@@ -9,7 +9,7 @@ apps/client  (React + Phaser + TypeScript)
    └── Capacitor iOS ........ Xcode projesi (TestFlight / App Store)
                   │
                   ▼
-        AYNI API (apps/api) + AYNI oyun sunucusu (apps/game-server)
+        AYNI API (apps/api) + AYNI oyun sunucusu (apps/api/src/game, ayrı süreç)
         AYNI PostgreSQL  →  aynı hesap, karakter, envanter, ekonomi, klan, sohbet
 ```
 

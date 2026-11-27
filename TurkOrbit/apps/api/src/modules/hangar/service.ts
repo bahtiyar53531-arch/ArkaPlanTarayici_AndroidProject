@@ -26,6 +26,7 @@ import {
   type ShopResponse,
   type SlotType,
 } from '@turkorbit/shared';
+import type { GameBridge } from '../game/bridge.js';
 import { withTransaction, type Db, type DbClient, type Queryable } from '../../db/pool.js';
 import { AppError } from '../../lib/errors.js';
 import { getSetting } from '../auth/repository.js';
@@ -81,6 +82,8 @@ export class HangarService {
     private readonly db: Db,
     private readonly log: Logger,
     private readonly rng: Rng = (max) => randomInt(max),
+    /** Aşama 8: oyun sunucusu köprüsü (istasyon kuralı + canlı istatistik bildirimi) */
+    private readonly bridge: GameBridge | null = null,
   ) {}
 
   // ================================================================== ortak yardımcılar
@@ -96,13 +99,25 @@ export class HangarService {
     return { id: p.id, experience: Number(p.experience), activeShipId: p.active_ship_id, activeLoadout: p.active_loadout };
   }
 
-  /** Oyuncu kilitli bir transaction içinde işlem yapar, ardından güncel hangarı döner. */
+  /**
+   * Oyuncu kilitli bir transaction içinde işlem yapar, ardından güncel hangarı döner.
+   * station: oyundaysa yalnızca istasyonda yapılabilir (ekipman/gemi değişimi).
+   * notify: başarılıysa oyun sunucusu canlı istatistikleri yeniden yükler.
+   */
   private async mutate<T>(
     owner: Owner,
     serverCode: string,
     fn: (c: DbClient, pilot: LockedPilot) => Promise<T>,
+    opts: { station?: boolean; notify?: boolean } = {},
   ): Promise<{ result: T; hangar: HangarResponse }> {
-    const result = await withTransaction(this.db, async (c) => fn(c, await this.lockPilot(c, owner, serverCode)));
+    let playerId = '';
+    const result = await withTransaction(this.db, async (c) => {
+      const pilot = await this.lockPilot(c, owner, serverCode);
+      playerId = pilot.id;
+      if (opts.station) await this.bridge?.assertCanChangeEquipment(pilot.id);
+      return fn(c, pilot);
+    });
+    if (opts.notify !== false) await this.bridge?.notifyPlayerUpdated(playerId);
     return { result, hangar: await this.hangar(owner, serverCode) };
   }
 
@@ -412,7 +427,7 @@ export class HangarService {
       );
       // Drone başka slota taşındıysa eski slottaki drone ekipmanı sahipsiz kalır → çıkarılır.
       await this.removeOrphanDroneGear(c, ship.id, d.loadout);
-    });
+    }, { station: true });
   }
 
   private async removeOrphanDroneGear(c: Queryable, shipId: string, loadout: number) {
@@ -433,7 +448,7 @@ export class HangarService {
         [ship.id, d.loadout, d.slotType, d.slotIndex],
       );
       await this.removeOrphanDroneGear(c, ship.id, d.loadout);
-    });
+    }, { station: true });
   }
 
   async setActiveLoadout(owner: Owner, input: unknown) {
@@ -447,9 +462,8 @@ export class HangarService {
     const d = shipActionSchema.parse(input);
     return this.mutate(owner, d.serverCode, async (c, pilot) => {
       const ship = await this.ownedShip(c, pilot.id, uuidOr404(shipId));
-      // Aşama 8: yalnızca istasyondayken / oyun dünyası dışındayken değiştirilebilecek.
       await c.query('UPDATE players SET active_ship_id = $2 WHERE id = $1', [pilot.id, ship.id]);
-    });
+    }, { station: true });
   }
 
   async setDesign(owner: Owner, shipId: string, input: unknown) {
@@ -464,7 +478,7 @@ export class HangarService {
         await c.query('UPDATE player_ships SET design_item_id = NULL WHERE design_item_id = $1', [item.id]);
       }
       await c.query('UPDATE player_ships SET design_item_id = $2 WHERE id = $1', [ship.id, d.itemId]);
-    });
+    }, { station: true });
   }
 
   // ================================================================== tamir
@@ -529,7 +543,7 @@ export class HangarService {
         { reason: 'item_sell', idempotencyKey: key },
       );
       return { sold: qty, earned, replay: false };
-    });
+    }, { notify: false });
   }
 
   // ================================================================== yükseltme
@@ -583,7 +597,7 @@ export class HangarService {
     return this.mutate(owner, d.serverCode, async (c, pilot) => {
       const r = await c.query('UPDATE player_pets SET name = $2 WHERE player_id = $1', [pilot.id, d.name]);
       if ((r.rowCount ?? 0) === 0) throw err('PET_REQUIRED', 400, 'Henüz bir PET\'in yok. Mağazadan Yoldaş PET alabilirsin.');
-    });
+    }, { notify: false });
   }
 
   async setPetModule(owner: Owner, input: unknown) {
@@ -613,7 +627,7 @@ export class HangarService {
       } else {
         await c.query('DELETE FROM player_pet_modules WHERE player_id = $1 AND slot_index = $2', [pilot.id, d.slotIndex]);
       }
-    });
+    }, { station: true });
   }
 
   async itemLedger(owner: Owner, serverCode: string) {

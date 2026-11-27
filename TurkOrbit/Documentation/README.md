@@ -17,11 +17,13 @@
 - [Asama-05-Oyuncu-Profili/](Asama-05-Oyuncu-Profili/): profil API referansı, güncelleme rehberi
 - [Asama-06-Hangar-Ekipman/](Asama-06-Hangar-Ekipman/): hangar ve mağaza API referansı, güncelleme rehberi
 - [Asama-07-Harita-Oyun-Motoru/](Asama-07-Harita-Oyun-Motoru/): dünya/geçit/ayar API referansı, güncelleme rehberi, kontroller
+- [Asama-08-Multiplayer/](Asama-08-Multiplayer/): gerçek zamanlı oyun protokolü, oyun sunucusu kurulumu (nginx, systemd)
 
 ## Geliştirme notları
 - [DevelopmentNotes/Asama-01-Raporu.md](DevelopmentNotes/Asama-01-Raporu.md): Aşama 1–4 raporu ve değişiklik raporu
 - [DevelopmentNotes/Asama-05-Raporu.md](DevelopmentNotes/Asama-05-Raporu.md): Aşama 5 (oyuncu profili) raporu
 - [DevelopmentNotes/Asama-06-Raporu.md](DevelopmentNotes/Asama-06-Raporu.md): Aşama 6 (hangar ve ekipman) raporu
 - [DevelopmentNotes/Asama-07-Raporu.md](DevelopmentNotes/Asama-07-Raporu.md): Aşama 7 (harita ve oyun motoru) raporu
+- [DevelopmentNotes/Asama-08-Raporu.md](DevelopmentNotes/Asama-08-Raporu.md): Aşama 8 (çok oyunculu) raporu
 - [DevelopmentNotes/Karar-Gunlugu.md](DevelopmentNotes/Karar-Gunlugu.md): mimari kararlar ve gerekçeleri
 - [DevelopmentNotes/ekran-goruntuleri/](DevelopmentNotes/ekran-goruntuleri/): otomatik arayüz testinin ekran görüntüleri

@@ -12,6 +12,8 @@ import { hangarRoutes } from './modules/hangar/routes.js';
 import { HangarService, type Rng } from './modules/hangar/service.js';
 import { playerRoutes } from './modules/player/routes.js';
 import { worldRoutes } from './modules/world/routes.js';
+import { GameBridge } from './modules/game/bridge.js';
+import { gameRoutes } from './modules/game/routes.js';
 import { WorldService } from './modules/world/service.js';
 import { PlayerService } from './modules/player/service.js';
 import type { Runtime } from './runtime.js';
@@ -23,6 +25,7 @@ export interface BuiltApp {
   hangar: HangarService;
   world: WorldService;
   guards: AuthGuards;
+  bridge: GameBridge;
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -127,7 +130,8 @@ export async function buildApp(
   });
   const guards = createAuthGuards(auth, config.session.cookieName);
   const players = new PlayerService(rt.db, app.log);
-  const hangar = new HangarService(rt.db, app.log, options.rng);
+  const bridge = new GameBridge(rt.redis, app.log);
+  const hangar = new HangarService(rt.db, app.log, options.rng, bridge);
   const world = new WorldService(rt.db, app.log);
 
   await app.register(
@@ -137,9 +141,10 @@ export async function buildApp(
       playerRoutes(api, { service: players, guards, limiter: rt.limiter });
       hangarRoutes(api, { service: hangar, guards });
       worldRoutes(api, { service: world, guards });
+      gameRoutes(api, { bridge, guards, limiter: rt.limiter, db: rt.db });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, guards };
+  return { app, auth, players, hangar, world, guards, bridge };
 }

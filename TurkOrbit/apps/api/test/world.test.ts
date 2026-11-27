@@ -63,55 +63,30 @@ describe('galaksi ve harita verisi', () => {
   });
 });
 
-describe('konum doğrulaması (sunucu tarafı hız denetimi)', () => {
-  it('gemi hızına uygun hareket kabul edilir', async () => {
-    const { client, playerId } = await pilot('HizliPilot');
-    await placeAt(playerId, 5000, 5000, 2);
-    const r = await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 5600, y: 5000 });
-    expect(r.json()).toEqual({ accepted: true, x: 5600, y: 5000, reason: null });
-  });
-
-  it('ışınlanma (hız hilesi) reddedilir, sunucu konumu döner ve kaydedilir', async () => {
-    const { client, playerId } = await pilot('IsinlananPilot');
-    await placeAt(playerId, 5000, 5000, 2);
-    const r = await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 15000, y: 9000 });
-    expect(r.json()).toEqual({ accepted: false, x: 5000, y: 5000, reason: 'too_fast' });
-    const { rows } = await ctx.rt.db.query('SELECT count(*)::int AS n FROM position_rejections WHERE player_id = $1', [playerId]);
-    expect(rows[0].n).toBe(1);
-  });
-
-  it('hız jeneratörü (aktif konfigürasyon) izin verilen mesafeyi artırır', async () => {
-    const { client, playerId } = await pilot('ItkiPilot');
-    // Süre 1 sn ile sınırlanır, pay ve tolerans yok → izin verilen mesafe tam olarak gemi hızıdır (istek gecikmesinden bağımsız).
-    await ctx.rt.db.query(`UPDATE game_settings SET value = '{"tolerance": 1, "slack": 0, "max_elapsed_seconds": 1}' WHERE key = 'movement'`);
-    await placeAt(playerId, 5000, 5000, 5);
-    // K1 (Siper-1): hız 320
-    expect((await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 5321, y: 5000 })).json().accepted).toBe(false);
-    // K2 (İtki-1): hız 322
-    await call(ctx.app, client, 'POST', '/hangar/loadout', { serverCode: 'TR1', loadout: 2 });
-    await placeAt(playerId, 5000, 5000, 5);
-    expect((await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 5321, y: 5000 })).json().accepted).toBe(true);
-  });
-
-  it('harita dışı konum ve çok sık güncelleme reddedilir; istemci alan ekleyemez', async () => {
-    const { client, playerId } = await pilot('SinirPilot');
-    await placeAt(playerId, 100, 100, 2);
-    expect((await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: -50, y: 100 })).json().reason).toBe('out_of_bounds');
-    await placeAt(playerId, 100, 100, 0);
-    expect((await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 110, y: 100 })).statusCode).toBe(429);
-    expect((await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 1, y: 1, speed: 99999 })).statusCode).toBe(400);
+describe('Aşama 8: konum ve geçit yalnızca oyun sunucusunda', () => {
+  it('REST ile konum yazma ve geçit kullanma uç noktaları yok', async () => {
+    const { client } = await pilot('RestPilot');
+    expect((await call(ctx.app, client, 'POST', '/world/position', { serverCode: 'TR1', x: 5600, y: 5000 })).statusCode).toBe(404);
+    expect((await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: 1, x: 1, y: 1 })).statusCode).toBe(404);
   });
 });
 
-describe('portal geçişi', () => {
+/** Oyun sunucusunun kullandığı geçit servisi: konum sunucunun otoriter konumudur. */
+const jump = async (playerId: string, portalId: number, x: number, y: number) => {
+  try {
+    return { map: await ctx.world.jumpForGame(playerId, portalId, { x, y }) };
+  } catch (e) {
+    return { error: e as { code: string; message: string; statusCode: number } };
+  }
+};
+
+describe('portal geçişi (oyun sunucusu servisi)', () => {
   it('geçide yakınken atlar; yeni haritada varış noktasında başlar ve geçiş kaydedilir', async () => {
     const { client, playerId } = await pilot('GecitPilot');
     const m = await getMap(client);
     const portal = m.portals.find((p) => p.target.code === 'K-2')!;
-    await placeAt(playerId, portal.x - 200, portal.y, 3);
-    const r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: portal.id, x: portal.x - 100, y: portal.y });
-    expect(r.statusCode).toBe(200);
-    const nm: MapResponse = r.json().map;
+    const r = await jump(playerId, portal.id, portal.x - 100, portal.y);
+    const nm = r.map!;
     expect(nm.map.code).toBe('K-2');
     const back = nm.portals.find((p) => p.target.code === 'K-1')!;
     expect(Math.hypot(nm.position.x - back.x, nm.position.y - back.y)).toBeCloseTo(700, -1); // geçidin hemen yanında
@@ -122,45 +97,33 @@ describe('portal geçişi', () => {
     expect(rows).toEqual([{ reason: 'portal' }]);
   });
 
-  it('uzaktan atlama, başka haritanın geçidi ve doğrulanamayan konum reddedilir', async () => {
+  it('uzaktan atlama ve başka haritanın geçidi reddedilir', async () => {
     const { client, playerId } = await pilot('UzakPilot');
     const m = await getMap(client);
     const portal = m.portals.find((p) => p.target.code === 'K-2')!;
-    await placeAt(playerId, portal.x - 1000, portal.y, 3);
-    let r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: portal.id, x: portal.x - 1000, y: portal.y });
-    expect(r.json().error.code).toBe('TOO_FAR_FROM_PORTAL');
-    // Konumunu geçidin yanı gibi göstermeye çalışan istemci (hız hilesi) de reddedilir
-    await placeAt(playerId, 3000, 3000, 1);
-    r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: portal.id, x: portal.x, y: portal.y });
-    expect(r.json().error.code).toBe('TOO_FAR_FROM_PORTAL');
+    expect((await jump(playerId, portal.id, portal.x - 1000, portal.y)).error?.code).toBe('TOO_FAR_FROM_PORTAL');
     const other = (await ctx.rt.db.query(`SELECT id FROM map_portals WHERE map_id = (SELECT id FROM maps WHERE code = 'G-1') LIMIT 1`)).rows[0].id;
-    r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: other, x: 1, y: 1 });
-    expect(r.json().error.code).toBe('PORTAL_NOT_FOUND');
+    expect((await jump(playerId, other, 1, 1)).error?.code).toBe('PORTAL_NOT_FOUND');
   });
 
   it('seviye ve düşman şirket kuralları sunucuda uygulanır', async () => {
     const { client, playerId } = await pilot('KuralPilot');
     let m = await getMap(client);
     const toK3 = m.portals.find((p) => p.target.code === 'K-3')!;
-    await placeAt(playerId, toK3.x, toK3.y, 3);
-    let r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toK3.id, x: toK3.x, y: toK3.y });
-    expect(r.statusCode).toBe(403);
-    expect(r.json().error).toMatchObject({ code: 'MAP_LOCKED', message: 'Bu haritaya girmek için en az seviye 5 olmalısın.' });
+    let r = await jump(playerId, toK3.id, toK3.x, toK3.y);
+    expect(r.error).toMatchObject({ code: 'MAP_LOCKED', statusCode: 403, message: 'Bu haritaya girmek için en az seviye 5 olmalısın.' });
     await setLevel(playerId, 5);
-    r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toK3.id, x: toK3.x, y: toK3.y });
-    expect(r.json().map.map.code).toBe('K-3');
+    expect((await jump(playerId, toK3.id, toK3.x, toK3.y)).map?.map.code).toBe('K-3');
 
     // Kızılelma pilotu, Gökbörü bölgesi G-4'e seviye 14'te giremez, 15'te girer
     await setLevel(playerId, 14);
     await placeAt(playerId, 10000, 6250, 3, 'S-2');
     m = await getMap(client);
     const toG4 = m.portals.find((p) => p.target.code === 'G-4')!;
-    await placeAt(playerId, toG4.x, toG4.y, 3);
-    r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toG4.id, x: toG4.x, y: toG4.y });
-    expect(r.json().error.message).toContain('Düşman şirket bölgesine');
+    r = await jump(playerId, toG4.id, toG4.x, toG4.y);
+    expect(r.error?.message).toContain('Düşman şirket bölgesine');
     await setLevel(playerId, 15);
-    r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toG4.id, x: toG4.x, y: toG4.y });
-    expect(r.json().map.map.code).toBe('G-4');
+    expect((await jump(playerId, toG4.id, toG4.x, toG4.y)).map?.map.code).toBe('G-4');
   });
 });
 
@@ -170,12 +133,10 @@ describe('Yönetim Merkezi harita ayarları canlı etkili', () => {
     const m = await getMap(client);
     const toK2 = m.portals.find((p) => p.target.code === 'K-2')!;
     await ctx.rt.db.query(`UPDATE maps SET is_closed = true WHERE code = 'K-2'`);
-    await placeAt(playerId, toK2.x, toK2.y, 3);
-    const r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toK2.id, x: toK2.x, y: toK2.y });
-    expect(r.json().error.code).toBe('MAP_CLOSED');
+    expect((await jump(playerId, toK2.id, toK2.x, toK2.y)).error?.code).toBe('MAP_CLOSED');
 
     await ctx.rt.db.query(`UPDATE maps SET is_closed = false WHERE code = 'K-2'`);
-    await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toK2.id, x: toK2.x, y: toK2.y });
+    await jump(playerId, toK2.id, toK2.x, toK2.y);
     await ctx.rt.db.query(`UPDATE maps SET is_closed = true WHERE code = 'K-2'`);
     const moved = await getMap(client);
     expect(moved.map.code).toBe('K-1');
@@ -190,9 +151,7 @@ describe('Yönetim Merkezi harita ayarları canlı etkili', () => {
     const toK2 = m.portals.find((p) => p.target.code === 'K-2')!;
     await ctx.rt.db.query('UPDATE map_portals SET is_enabled = false WHERE id = $1', [toK2.id]);
     expect((await getMap(client)).portals.find((p) => p.id === toK2.id)).toBeUndefined();
-    await placeAt(playerId, toK2.x, toK2.y, 3);
-    const r = await call(ctx.app, client, 'POST', '/world/jump', { serverCode: 'TR1', portalId: toK2.id, x: toK2.x, y: toK2.y });
-    expect(r.json().error.code).toBe('PORTAL_NOT_FOUND');
+    expect((await jump(playerId, toK2.id, toK2.x, toK2.y)).error?.code).toBe('PORTAL_NOT_FOUND');
     await ctx.rt.db.query('UPDATE map_portals SET is_enabled = true WHERE id = $1', [toK2.id]);
   });
 });

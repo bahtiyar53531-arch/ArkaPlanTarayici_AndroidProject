@@ -47,6 +47,8 @@ export const ERROR_CODES = [
   'TOO_FAR_FROM_PORTAL',
   'MAP_LOCKED',
   'MAP_CLOSED',
+  'GAME_UNAVAILABLE',
+  'NOT_IN_STATION',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
