@@ -46,7 +46,7 @@ server.listen(0, '127.0.0.1', async () => {
     }
     await page.goto(`http://127.0.0.1:${port}/oyun`);
     await page.waitForTimeout(3200);
-    if (withProbe) await page.evaluate(() => window.OrbitraNative.onmessage({ data: JSON.stringify({ cmd: 'stats', on: true, browser: true }) }));
+    if (withProbe) await page.evaluate(() => window.OrbitraNative.onmessage({ data: JSON.stringify({ cmd: 'stats', on: true }) }));
     const f0 = await page.evaluate(() => window.gameFrames); const t0 = Date.now();
     await page.waitForTimeout(3000);
     const f1 = await page.evaluate(() => window.gameFrames); const t1 = Date.now();
@@ -64,16 +64,14 @@ server.listen(0, '127.0.0.1', async () => {
   const probed = await run(true);
   const msgs = probed.msgs;
   const stats = msgs.filter(m => m.t === 'stats');
-  const statsAfterOn = stats.filter(m => m.b !== undefined);
-  const last = statsAfterOn.slice(-2);
+  const last = stats.slice(-3, -1); // son tam saniyeler
   const probeGameFps = last.length ? last.reduce((a, m) => a + m.g * 1000 / m.dt, 0) / last.length : null;
-  const probeBrowserFps = last.length ? last.reduce((a, m) => a + m.b * 1000 / m.dt, 0) / last.length : null;
   const ws = msgs.filter(m => m.t === 'ws');
   const checks = {
     'oyun davranisi degismedi (WS yanki sayisi > 0)': probed.echoes > 0 && base.echoes > 0,
     'oyun FPS (proba olmadan / ile) yakin': Math.abs(base.realGameFps - probed.realGameFps) / base.realGameFps < 0.15,
     'proba Oyun FPS dogru (±10%)': probeGameFps !== null && Math.abs(probeGameFps - probed.realGameFps) / probed.realGameFps < 0.10,
-    'Tarayici FPS raporlaniyor': probeBrowserFps !== null && probeBrowserFps > 0,
+    'FPS raporu saniyede bir geliyor (acildiktan sonra)': stats.length >= 3,
     'hello mesaji': msgs.some(m => m.t === 'hello' && m.top === true),
     'ready mesaji (canvas + kareler)': msgs.some(m => m.t === 'ready'),
     'WS create/open/close bildirildi': ['create', 'open', 'close'].every(e => ws.some(m => m.e === e)),
@@ -86,7 +84,7 @@ server.listen(0, '127.0.0.1', async () => {
     'cancelAnimationFrame calisiyor': probed.cancelFailed === false,
     'sayfa hatasi yok': probed.pageErrors.length === 0,
   };
-  console.log(JSON.stringify({ baseFps: base.realGameFps.toFixed(1), probedFps: probed.realGameFps.toFixed(1), probeGameFps: probeGameFps && probeGameFps.toFixed(1), probeBrowserFps: probeBrowserFps && probeBrowserFps.toFixed(1), echoes: [base.echoes, probed.echoes], wsEvents: ws.length, errors: probed.pageErrors }, null, 0));
+  console.log(JSON.stringify({ baseFps: base.realGameFps.toFixed(1), probedFps: probed.realGameFps.toFixed(1), probeGameFps: probeGameFps && probeGameFps.toFixed(1), echoes: [base.echoes, probed.echoes], wsEvents: ws.length, errors: probed.pageErrors }, null, 0));
   let fail = 0;
   for (const [k, v] of Object.entries(checks)) { console.log((v ? 'GECTI ' : 'KALDI ') + k); if (!v) fail++; }
   console.log(fail === 0 ? 'SONUC: TUM TESTLER GECTI' : `SONUC: ${fail} TEST KALDI`);

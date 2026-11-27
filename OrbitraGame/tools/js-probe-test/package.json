@@ -3,7 +3,8 @@
   "private": true,
   "description": "orbitra_probe.js betiginin Chromium uzerinde dogrulama testleri (olcum, PC gorunumu, oyun olcegi, render kalitesi)",
   "scripts": {
-    "test": "node test_probe.js ../../app/src/main/assets/js/orbitra_probe.js && node test_view.js ../../app/src/main/assets/js/orbitra_probe.js"
+    "test": "node test_probe.js ../../app/src/main/assets/js/orbitra_probe.js && node test_view.js ../../app/src/main/assets/js/orbitra_probe.js",
+    "perf": "node test_perf.js ../../app/src/main/assets/js/orbitra_probe.js"
   },
   "dependencies": {
     "playwright": "1.63.0",

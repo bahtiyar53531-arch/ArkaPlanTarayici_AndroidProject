@@ -16,9 +16,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import space.orbitragame.app.settings.AppSettings
-import space.orbitragame.app.ui.PerfPanelView
+import space.orbitragame.app.ui.FpsBadgeView
 import space.orbitragame.app.ui.SpaceLoadingView
-import space.orbitragame.app.ui.ViewPanelView
 import android.graphics.BitmapFactory
 import android.graphics.Rect
 import java.io.File
@@ -82,41 +81,32 @@ class UiScreenshotTest {
         }
     }
 
-    @Test
-    fun pcViewPanelRenders() {
-        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val panel = ViewPanelView(ctx, 0.8f, 0.6f, 1f, object : ViewPanelView.Listener {
-            override fun onZoomChanged(scale: Float) = Unit
-            override fun onHudChanged(top: Float, bottom: Float) = Unit
-            override fun onPanelClosed() = Unit
-        })
-        panel.setAppliedCount(7)
-        capture(panel, 1080, 1100, "10_pc_gorunumu_paneli")
-    }
 
     @Test
-    fun perfPanelRendersAllMetrics() {
+    fun fpsBadgeShowsOnlyFps() {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val p = PerfPanelView(ctx)
-        p.update(
-            PerfPanelView.Data(
-                gameFps = 58.0, gameAvg = 57.2, gameMin = 41.0, lowFps = false, browserFps = 60.0, screenFps = 59.0,
-                refreshRate = 120f, appMemMb = 182, jsHeapMb = 64, sysAvailMb = 2150, sysTotalMb = 7800, thermal = "Normal",
-                battery = 78, pingMs = 42, pingJitter = 5, pingLoss = 0, pingColor = PerfPanelView.COLOR_GOOD,
-                network = "Wi-Fi", socket = "Bağlı (1)", socketColor = PerfPanelView.COLOR_GOOD,
-            ),
-        )
-        p.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        capture(p, p.measuredWidth, p.measuredHeight, "04_performans_paneli")
-        p.update(PerfPanelView.Data(gameFps = 22.0, gameAvg = 24.0, gameMin = 18.0, lowFps = true, pingMs = 210, pingColor = PerfPanelView.COLOR_BAD, socket = "Koptu", socketColor = PerfPanelView.COLOR_BAD))
-        p.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        capture(p, p.measuredWidth, p.measuredHeight, "05_performans_paneli_dusuk_fps")
+        val parts = listOf(58.4, 41.0, 22.0, null).map { fps ->
+            val b = FpsBadgeView(ctx)
+            b.setFps(fps)
+            b.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            assertTrue("sabit boyut", b.measuredWidth > 0 && b.measuredHeight > 0)
+            capture(b, b.measuredWidth, b.measuredHeight, "fps_${fps?.toInt() ?: "yok"}")
+        }
+        // Dort durumu yan yana tek gorselde birlestir
+        val w = parts.sumOf { it.width } + 30 * parts.size
+        val h = parts.maxOf { it.height } + 20
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        c.drawColor(0xFF1B2236.toInt())
+        var x = 15f
+        for (p in parts) { c.drawBitmap(p, x, 10f, null); x += p.width + 30 }
+        File(outDir, "04_fps_rozeti.png").outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test
     fun mainActivityLifecycleAndMenu() {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        AppSettings(ctx).apply { showFps = true; showPing = true }
+        AppSettings(ctx).apply { showFps = true }
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val activity = controller.get()
         idle(500)

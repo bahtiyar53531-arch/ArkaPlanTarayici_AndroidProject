@@ -20,15 +20,15 @@
         android:background="@color/space_turquoise"
         android:visibility="gone" />
 
-    <!-- Uzerine yerlesen katmanlar (suruklenebilir panel, dugme, menu) -->
+    <!-- Uzerine yerlesen katmanlar (FPS rozeti, kontrol dugmesi) -->
     <FrameLayout
         android:id="@+id/overlayLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipChildren="false">
 
-        <space.orbitragame.app.ui.PerfPanelView
-            android:id="@+id/perfPanel"
+        <space.orbitragame.app.ui.FpsBadgeView
+            android:id="@+id/fpsBadge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:visibility="gone" />

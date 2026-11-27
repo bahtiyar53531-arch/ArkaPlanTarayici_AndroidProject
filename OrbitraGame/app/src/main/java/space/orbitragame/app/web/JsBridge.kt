@@ -24,7 +24,8 @@ import space.orbitragame.core.UrlPolicy
  *    (https://orbitragame.space) enjekte edilir; diger kaynaklar koprunun
  *    varligini bile goremez.
  *  - Gelen her mesaj boyut, kaynak ve icerik acisindan dogrulanir.
- *  - Sayfadan uygulamaya yalnizca olcum verisi gelir; sayfa uygulamaya komut veremez.
+ *  - Sayfadan uygulamaya yalnizca olcum verisi gelir (saniyede en fazla bir FPS raporu);
+ *    sayfa uygulamaya komut veremez.
  *  - Uygulamadan sayfaya yalnizca kullanicinin sectigi gorunum ayarlari gider
  *    (oyun olcegi, render kalitesi, pencere olcegi).
  */
@@ -35,11 +36,8 @@ class JsBridge {
 
     interface Listener {
         fun onGameStats(gameFrames: Int, elapsedMs: Int, isTop: Boolean)
-        fun onBrowserFrames(frames: Int, elapsedMs: Int)
-        fun onJsHeap(mb: Int)
         fun onGameReady()
         fun onSocketEvent(event: String, id: String, host: String?, port: Int?, code: Int?)
-        fun onPageVisibility(visible: Boolean)
         fun onHudApplied(count: Int)
         fun onFocusRect(topCss: Int, bottomCss: Int)
         fun onFocusCleared()
@@ -60,7 +58,6 @@ class JsBridge {
 
     private val replyProxies = LinkedHashSet<JavaScriptReplyProxy>()
     private var statsEnabled = false
-    private var browserLoop = false
     var config = PageConfig()
         private set
     private var startScript: ScriptHandler? = null
@@ -124,18 +121,14 @@ class JsBridge {
         replyProxies.clear()
     }
 
-    /**
-     * Olcum raporlarini ac/kapat. [on]: saniyelik oyun FPS raporu (panel veya
-     * otomatik kalite icin). [browser]: tarayici FPS dongusu (yalnizca panel acikken).
-     */
-    fun setStatsEnabled(on: Boolean, browser: Boolean = on) {
-        if (on == statsEnabled && browser == browserLoop) return
+    /** Saniyelik oyun FPS raporunu ac/kapat (FPS rozeti veya otomatik kalite icin). */
+    fun setStatsEnabled(on: Boolean) {
+        if (on == statsEnabled) return
         statsEnabled = on
-        browserLoop = browser && on
         broadcast(statsJson())
     }
 
-    private fun statsJson() = """{"cmd":"stats","on":$statsEnabled,"browser":$browserLoop}"""
+    private fun statsJson() = """{"cmd":"stats","on":$statsEnabled}"""
 
     /** Klavye acildiginda odaktaki alanin konumunu iste. */
     fun requestFocusRect() = broadcast("""{"cmd":"focus?"}""")
@@ -168,11 +161,7 @@ class JsBridge {
                 val dt = o.optInt("dt", 1000).coerceIn(1, 60_000)
                 val g = o.optInt("g", 0).coerceIn(0, 10_000)
                 val top = o.optBoolean("top", false)
-                val l = listener ?: return
-                l.onGameStats(g, dt, top)
-                if (top && o.has("b")) l.onBrowserFrames(o.optInt("b", 0).coerceIn(0, 10_000), dt)
-                if (top && o.has("heap")) l.onJsHeap(o.optInt("heap", 0).coerceIn(0, 100_000))
-                if (top) l.onPageVisibility(o.optString("vis") != "hidden")
+                listener?.onGameStats(g, dt, top)
             }
             "ready" -> listener?.onGameReady()
             "hud" -> listener?.onHudApplied(o.optInt("n", 0).coerceIn(0, 10_000))

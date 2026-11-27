@@ -14,23 +14,21 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │     ├─ GameConfig.kt               Oyun adresi, güvenilen alan adları
 │     ├─ UrlPolicy.kt                Alan adı beyaz listesi, http→https, hile engelleme
 │     ├─ LoadingProgressModel.kt     %0-20-40-60-80-100 gerçek yükleme aşamaları
-│     ├─ FpsStats.kt                 Anlık / ortalama / en düşük FPS, düşük FPS uyarısı
-│     ├─ PingStats.kt                Ping ortanca, sapma (jitter), kayıp, kalite
 │     ├─ ZoomModel.kt                Ölçek sınırları ve görünüm boyutu hesabı
 │     ├─ ReconnectPolicy.kt          Artan aralıklı (backoff) yeniden bağlanma
 │     ├─ RenderQuality.kt            Render kalitesi seviyeleri + otomatik (uyarlanabilir) kalite
 │     └─ ConnectionTracker.kt        Oyun soketlerinin açık/kapalı durumu
-│  └─ src/test/…                     18 birim testi
+│  └─ src/test/…                     birim testleri
 │
 ├─ app/                              ANDROID UYGULAMASI
 │  ├─ build.gradle.kts               SDK 24–36, imzalama, R8 küçültme
 │  ├─ proguard-rules.pro
 │  └─ src/main/
 │     ├─ AndroidManifest.xml         İzinler, PiP, ön plan servisi, oyun kategorisi
-│     ├─ assets/js/orbitra_probe.js  Sayfa betiği: ölçüm (FPS, soket), oyun ölçeği (viewport),
-│     │                              render kalitesi (devicePixelRatio), PC görünümü (pencere ölçeği), klavye konumu
+│     ├─ assets/js/orbitra_probe.js  Hafif sayfa betiği: FPS sayacı, soket durumu, oyun ölçeği (viewport),
+│     │                              render kalitesi (devicePixelRatio), PC görünümü, klavye konumu
 │     ├─ java/space/orbitragame/app/
-│     │  ├─ MainActivity.kt          Ana ekran: yükleme, olaylar, menü, panel, PiP, bağlantı
+│     │  ├─ MainActivity.kt          Ana ekran: yükleme, olaylar, menü, FPS, PiP, bağlantı
 │     │  ├─ OrbitraApp.kt            Bildirim kanalı
 │     │  ├─ RestartActivity.kt       "Uygulamayı yeniden başlat" (ayrı süreçte)
 │     │  ├─ web/
@@ -43,32 +41,24 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │     │  ├─ ui/
 │     │  │  ├─ SpaceLoadingView.kt   Açılış yazısı + yüzde çubuğu (video yoksa gerçekçi hareketsiz görüntü)
 │     │  │  ├─ SplashVideoView.kt    Sinematik açılış videosu (sessiz, döngülü, center-crop)
-│     │  │  ├─ ViewPanelView.kt      PC görünümü paneli (oyun ölçeği, üst pencereler, alt kontroller)
-│     │  │  ├─ PerformanceDialog.kt  Render kalitesi, ekran Hz, kararlı performans
-│     │  │  ├─ GlassPanelDrawable.kt Gerçekçi cam panel arka planı
 │     │  │  ├─ ControlButtonView.kt  Sürüklenebilir kontrol düğmesi
-│     │  │  ├─ ControlMenuView.kt    Açılır kapanır kontrol menüsü
-│     │  │  ├─ PerfPanelView.kt      FPS / Ping / sistem paneli
-│     │  │  ├─ ZoomOverlayView.kt    İki parmak yakınlaştırma modu
+│     │  │  ├─ ControlMenuView.kt    Sade kontrol menüsü (zoom satırı + 6 düğme, bir kez oluşturulur)
+│     │  │  ├─ FpsBadgeView.kt       Yalnızca "60 FPS" gösteren küçük rozet
 │     │  │  ├─ GameViewport.kt       Etkin sayfa ölçeği (zoom, PiP) ve klavye kaydırması
 │     │  │  ├─ DragHelper.kt         Sürükle-bırak + kenara yapışma
-│     │  │  └─ SettingsDialog.kt     Arka plan / bağlantı ayarları
+│     │  │  └─ SettingsDialog.kt     Sade ayarlar (3 anahtar + yeniden başlat)
 │     │  ├─ system/
-│     │  │  ├─ DisplayController.kt  Tam ekran, ekran yönü, ekranı açık tutma
+│     │  │  ├─ DisplayController.kt  Tam ekran, ekran yönü, ekranı açık tutma, 60 Hz
 │     │  │  ├─ PipController.kt      Küçük pencere (PiP) parametreleri ve eylemleri
-│     │  │  ├─ NetworkMonitor.kt     Ağ türü / bağlantı izleme
-│     │  │  ├─ PingMonitor.kt        TCP el sıkışma süresiyle ping
-│     │  │  ├─ FrameRateMonitor.kt   Ekrana çizilen kare sayısı (FrameMetrics)
-│     │  │  └─ DeviceStats.kt        Bellek, ısı, pil
+│     │  │  └─ NetworkMonitor.kt     Ağ bağlantısı izleme
 │     │  ├─ service/GameSessionService.kt  Arka planda bağlantı koruyan ön plan servisi
 │     │  └─ settings/AppSettings.kt  Kullanıcı tercihleri (şifre tutulmaz)
 │     └─ res/
 │        ├─ mipmap-*/                Uygulama simgesi (5 yoğunluk, adaptive katmanlar)
 │        ├─ mipmap-anydpi-v26/       Adaptive icon tanımı (+ Android 13 tema simgesi)
 │        ├─ drawable/                Menü simgeleri, bildirim simgesi, şekiller
-│        ├─ raw/splash_*.mp4         Açılış videoları (dikey 1080x1920, yatay 1920x1080)
+│        ├─ raw/splash_*.mp4         Açılış videoları (dikey 720x1280, yatay 1280x720)
 │        ├─ drawable-nodpi/bg_space.webp   Gerçekçi arka plan (dikey; yatay için drawable-land-nodpi)
-│        ├─ drawable-nodpi/panel_blur.webp Cam panel dokusu
 │        ├─ drawable-xxxhdpi/brand_mark.png  Uygulama içi küçük logo
 │        ├─ font/                    Orbitron (marka yazısı)
 │        ├─ layout/activity_main.xml Katman düzeni
@@ -95,10 +85,11 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
    (`orbitra_probe.js` → `ready`) %100 olur ve ekran kaybolur.
 2. **Güvenlik:** Her gezinme `UrlPolicy`'den geçer. Köprü yalnızca
    `https://orbitragame.space` kaynağına açılır.
-3. **Ölçüm:** `orbitra_probe.js` oyunun `requestAnimationFrame` ve
-   `WebSocket` çağrılarını şeffaf sarar (davranışı değiştirmez), sayıları
-   saniyede bir uygulamaya iletir. Ping, oyun soketinin sunucusuna TCP el
-   sıkışma süresiyle ölçülür (oyun trafiğine paket eklenmez).
+3. **Hafif ölçüm:** `orbitra_probe.js` oyunun `requestAnimationFrame` çağrısında
+   tek bir karşılaştırma yapar (bellek ayırmaz), `WebSocket` için yalnızca
+   açılış/kapanışı izler; FPS'i yalnızca gösterge açıkken veya otomatik kalite
+   karar verirken saniyede bir uygulamaya iletir. PC görünümünde sayfa ağacı
+   sürekli izlenmez; tarama tarayıcı boştayken yapılır.
 4. **Arka plan:** Ana ekrana dönünce PiP; PiP yoksa/kapatılmışsa
    `GameSessionService` + `GameWebView` canlı tutma + renderer önceliği.
 5. **iOS'a geçiş:** `core/` modülü Android'e bağımlı değildir; Kotlin

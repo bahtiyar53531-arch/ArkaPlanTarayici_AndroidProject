@@ -21,8 +21,4 @@ object GameConfig {
         "https://orbitragame.space",
         "https://www.orbitragame.space",
     )
-
-    /** Ping olcumu icin varsayilan sunucu (oyun WebSocket adresi bilinmiyorsa). */
-    const val DEFAULT_PING_HOST = "orbitragame.space"
-    const val DEFAULT_PING_PORT = 443
 }

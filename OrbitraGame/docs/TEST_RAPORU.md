@@ -1,5 +1,64 @@
 # Test Raporu — ORBITRAGAME.SPACE
 
+## v1.2.0 — Hafif sürüm (27 Kasım 2026)
+
+### Takılmaya yol açabilecek bulunan ve kaldırılan şeyler
+
+| Bulunan | Neden sorun | Durum |
+|---|---|---|
+| FPS paneli açıkken 6 sn'de bir `Debug.getPss()` (bellek ölçümü) | Android'de pahalı bir çağrıdır; uygulama sürecinin bellek kilidini tutup WebView'in çizim iş parçacığını kısa süre bekletebilir → periyodik mikro takılma | **Kaldırıldı** |
+| Her karede çalışan `FrameMetrics` dinleyicisi | Her karede ek geri çağrı | **Kaldırıldı** |
+| 2 sn'de bir ping (TCP bağlantısı) + sistem belleği/pil/ısı sorguları | Sürekli arka plan işi | **Kaldırıldı** (ısı artık olay tabanlı, sorgusuz) |
+| Panel her saniye tüm ekranı yeniden ölçtürüyordu (`requestLayout`) | Her saniye tam yerleşim turu | Yeni FPS rozeti **sabit boyutlu**, yalnızca kendini çizer |
+| PC görünümünde oyunun tüm sayfa ağacını izleyen gözlemci + 2 sn'de bir zorunlu yerleşim | Oyun her karede yazı güncelledikçe kayıt üretir | Yalnızca pencere kaplarının doğrudan değişimi izlenir; tarama tarayıcı **boştayken** |
+| Menü her açılışta 16 öğeyle yeniden kuruluyordu, gölge + resimli arka plan + karartma katmanı | Açılışta kısa takılma; açıkken her karede ek çizim | Bir kez kurulur, 6 öğe, düz arka plan, gölge/karartma yok |
+| Otomatik kalite her değişimde ekranda bildirim | Gereksiz ayrıntı | Sessiz, en fazla bir kademe (x2 → x1,5) |
+
+### Ölçüm: oyuna eklenen betiğin yükü (Chromium, ağır sahte oyun sayfası)
+
+Sahte oyun: tam ekran canvas + 6 pencere, **her karede ~240 yazı/sayı güncellemesi**
+(HP, kredi, görev sayaçları gibi). Chromium'un kendi sayaçlarıyla (CDP
+`Performance.getMetrics`) 6 sn ölçüldü, 3 tekrarın ortalaması. Değerler
+"saniyede ana iş parçacığında harcanan ms" (düşük = hafif):
+
+| Yapılandırma | Betik süresi | Betiksize göre ek yük |
+|---|---|---|
+| Betiksiz (Chrome'daki gibi) | 136,0 ms/sn | — |
+| Eski betik v1.1.0, FPS açık | 153,6 ms/sn | +17,6 |
+| **Yeni betik v1.2.0, FPS açık** | **140,2 ms/sn** | **+4,2** (~4 kat hafif) |
+| Eski betik v1.1.0, FPS + PC görünümü | 149,6 ms/sn | +13,6 |
+| **Yeni betik v1.2.0, FPS + PC görünümü** | **138,2 ms/sn** | **+2,2** (ölçüm gürültüsü seviyesinde) |
+
+Ek gözlem: PC görünümü açıkken yeni betik 9 saniyede yalnızca **3** tarama yaptı;
+oyunun saniyede binlerce yazı güncellemesi pencere gözlemcisini **hiç** tetiklemedi.
+Pencereleri elle CSS ile küçültmenin tarayıcıya ek maliyeti ölçülemeyecek kadar
+küçük çıktı (yani PC görünümünün kendisi oyunu yormuyor).
+
+> Bu ölçüm masaüstü işlemcide yapıldı; telefonda mutlak değerler daha büyük,
+> oranlar benzerdir. Uygulama tarafındaki kazanç (bellek ölçümü, kare ölçer,
+> ping kaldırıldı) bu ortamda ölçülemez; telefonda hissedilmesi beklenir.
+
+### Otomatik testler (hepsi geçti)
+
+| Test | Sonuç |
+|---|---|
+| `core` birim testleri (otomatik kalite alt sınırı dahil) | **21 / 21** |
+| Robolectric arayüz testleri (açılış, video açılış, FPS rozeti, yeni menü + yaşam döngüsü) | **4 / 4** |
+| Chromium: ölçüm betiği oyunu bozmuyor (FPS doğruluğu, WebSocket) | **15 / 15** |
+| Chromium: PC görünümü + zoom + render kalitesi (sonradan açılan pencere dahil) | **26 / 26** |
+| Android Lint (release) | 0 hata, kullanılmayan kaynak yok |
+
+Testte yakalanıp düzeltilen hata: yeni menü ilk sürümde gereğinden geniş
+ölçülüp ekranın sağından taşıyordu (üst satırdaki esnek boşluk) → düzeltildi.
+
+### Cihazda bakılacaklar
+
+- Oyun sırasında ara ara takılma azaldı mı? (FPS açıkken de)
+- Menü hızlı açılıp kapanıyor mu?
+- PC görünümü (Orta/Güçlü) üstteki pencereleri küçültüyor mu?
+
+---
+
 ## v1.1.0 (27 Kasım 2026)
 
 ### Gönderilen ekran görüntülerinden teşhis
@@ -14,7 +73,7 @@
 | Test | Sonuç |
 |---|---|
 | `core` birim testleri (+ otomatik kalite: düşürme, işe yaramazsa geri alma, ısınma; PiP ölçeği) | **22 / 22** |
-| Robolectric arayüz testleri (video açılış dikey/yatay, PC görünümü paneli, yeni menü, yaşam döngüsü) | **5 / 5** |
+| Robolectric arayüz testleri (video açılış dikey/yatay, PC görünümü paneli, menü, yaşam döngüsü) | **5 / 5** |
 | Chromium: PC görünümü + oyun ölçeği + render kalitesi (`tools/js-probe-test/test_view.js`, senin ekran görüntündeki yerleşime benzer sahte oyun düzeniyle) | **24 / 24** |
 | Chromium: ölçüm betiği oyunu bozmuyor (FPS, WebSocket) | **15 / 15** |
 | Android Lint (release) | 0 hata |

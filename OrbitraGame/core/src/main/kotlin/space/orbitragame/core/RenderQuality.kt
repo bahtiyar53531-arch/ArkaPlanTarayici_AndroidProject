@@ -23,6 +23,8 @@ enum class RenderQuality(val label: String, val dprCap: Float) {
  */
 class AdaptiveQualityController(
     start: RenderQuality = RenderQuality.BALANCED,
+    /** Otomatik olarak inilebilecek en dusuk seviye (goruntu fazla bulaniklasmasin). */
+    private val floor: RenderQuality = RenderQuality.ULTRA,
     private val lowFpsThreshold: Double = 40.0,
     private val windowSamples: Int = 6,
     private val cooldownMs: Long = 20_000,
@@ -44,6 +46,9 @@ class AdaptiveQualityController(
         data class Lowered(val from: RenderQuality, val to: RenderQuality, val reason: String) : Decision()
         data class Reverted(val to: RenderQuality) : Decision()
     }
+
+    /** Seviye artik degismeyecek mi (alt sinira inildi veya devre disi)? */
+    val settled: Boolean get() = pendingCheck == null && (disabled || (level.lower()?.let { it.ordinal > floor.ordinal } ?: true))
 
     fun reset(start: RenderQuality = RenderQuality.BALANCED) {
         level = start; disabled = false; samples.clear(); pendingCheck = null; lastChangeAt = Long.MIN_VALUE / 2
@@ -74,7 +79,7 @@ class AdaptiveQualityController(
             avg < lowFpsThreshold -> "FPS düşük (ort. ${avg.toInt()})"
             else -> return Decision.None
         }
-        val next = level.lower() ?: return Decision.None
+        val next = level.lower()?.takeIf { it.ordinal <= floor.ordinal } ?: return Decision.None
         val from = level
         pendingCheck = from to avg
         level = next

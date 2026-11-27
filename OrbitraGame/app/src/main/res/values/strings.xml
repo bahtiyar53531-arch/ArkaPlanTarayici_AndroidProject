@@ -6,23 +6,17 @@
     <string name="notif_text">Oyun bağlantısı arka planda korunuyor</string>
     <string name="notif_return">Oyuna dön</string>
     <string name="notif_close">Kapat</string>
-
-    <string name="menu_fullscreen">Tam ekran</string>
-    <string name="menu_portrait">Dikey</string>
-    <string name="menu_landscape">Yatay</string>
-    <string name="menu_auto_rotate">Otomatik</string>
     <string name="menu_fps">FPS</string>
-    <string name="menu_ping">Ping</string>
+    <string name="menu_pc_view">PC görünümü</string>
+    <string name="menu_orientation">Ekran yönü</string>
+    <string name="state_on">Açık</string>
+    <string name="state_off">Kapalı</string>
     <string name="menu_zoom_in">Yakınlaştır</string>
     <string name="menu_zoom_out">Uzaklaştır</string>
     <string name="menu_zoom_reset">Varsayılan</string>
-    <string name="menu_zoom_pinch">İki parmak</string>
     <string name="menu_pip">Küçük pencere</string>
     <string name="menu_reconnect">Yeniden bağlan</string>
-    <string name="menu_restart">Yeniden başlat</string>
     <string name="menu_settings">Ayarlar</string>
-    <string name="menu_pc_view">PC görünümü</string>
-    <string name="menu_performance">Performans</string>
     <string name="menu_close">Menüyü kapat</string>
     <string name="control_button">Uygulama kontrol menüsü</string>
 
@@ -49,8 +43,6 @@
     <string name="open">Aç</string>
 
     <string name="settings_title">Ayarlar</string>
-    <string name="zoom_mode_hint">İki parmakla yakınlaştır / uzaklaştır.\nBu modda oyuna dokunuş gönderilmez.</string>
-    <string name="zoom_mode_done">Bitti</string>
     <string name="pip_reconnect">Yeniden bağlan</string>
     <string name="pip_not_supported">Bu cihaz küçük pencere (PiP) modunu desteklemiyor.</string>
     <string name="pip_disabled">Küçük pencere izni kapalı. Ayarlar → Uygulamalar → ORBITRAGAME.SPACE → Pencere içinde pencere iznini açın.</string>

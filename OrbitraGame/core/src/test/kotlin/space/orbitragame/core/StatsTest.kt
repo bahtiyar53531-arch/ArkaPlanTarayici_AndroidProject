@@ -8,29 +8,7 @@ import org.junit.Test
 
 class StatsTest {
 
-    @Test fun fpsAverageMinAndLowWarning() {
-        val f = FpsStats(averageWindowSeconds = 5, lowFpsThreshold = 30, lowFpsSustainSeconds = 3)
-        assertNull(f.average)
-        listOf(60.0, 58.0, 25.0, 60.0).forEach(f::add)
-        assertEquals(60.0, f.current!!, 0.001)
-        assertEquals(25.0, f.min!!, 0.001)
-        assertFalse("tek dusus uyari vermemeli", f.isLow)
-        listOf(20.0, 22.0, 18.0).forEach(f::add)
-        assertTrue(f.isLow)
-        assertEquals(5, f.sampleCount)
-    }
 
-    @Test fun pingStats() {
-        val p = PingStats(window = 5)
-        assertEquals(PingStats.Quality.UNKNOWN, p.quality())
-        listOf(40L, 50L, 60L).forEach(p::addSuccess)
-        assertEquals(50L, p.median)
-        assertEquals(10L, p.jitter)
-        assertEquals(PingStats.Quality.GOOD, p.quality())
-        p.addFailure(); p.addFailure(); p.addFailure()
-        assertEquals(60, p.lossPercent)
-        assertEquals(PingStats.Quality.OFFLINE, p.quality())
-    }
 
     @Test fun zoomClampsAndSteps() {
         val z = ZoomModel()
@@ -87,6 +65,18 @@ class StatsTest {
         feed(55.0); feed(56.0) // iyilesti -> korunur
         assertEquals(RenderQuality.PERFORMANCE, q.level)
         assertFalse(q.disabled)
+    }
+
+    @Test fun adaptiveQualityRespectsFloor() {
+        val q = AdaptiveQualityController(start = RenderQuality.BALANCED, floor = RenderQuality.PERFORMANCE, windowSamples = 1, cooldownMs = 0)
+        q.onSample(20.0, 1) // BALANCED -> PERFORMANCE
+        assertEquals(RenderQuality.PERFORMANCE, q.level)
+        assertFalse("etkisi henuz olculmedi", q.settled)
+        q.onSample(45.0, 2) // iyilesti -> korunur, alt sinirda oldugu icin artik degismez
+        assertEquals(RenderQuality.PERFORMANCE, q.level)
+        assertTrue(q.settled)
+        q.onSample(10.0, 3)
+        assertEquals("alt sinirin altina inilmez", RenderQuality.PERFORMANCE, q.level)
     }
 
     @Test fun thermalSevereLowersQuality() {

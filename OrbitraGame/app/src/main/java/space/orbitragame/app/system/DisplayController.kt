@@ -2,16 +2,15 @@ package space.orbitragame.app.system
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
-import android.os.PowerManager
 import android.view.Display
 import android.view.WindowManager
-import androidx.core.content.getSystemService
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import space.orbitragame.app.settings.AppSettings
+import kotlin.math.abs
 
-/** Tam ekran, ekran yonu ve ekranin acik kalmasi. */
+/** Tam ekran, ekran yonu, ekranin acik kalmasi ve kararli yenileme hizi. */
 class DisplayController(private val activity: Activity) {
 
     private val window get() = activity.window
@@ -24,22 +23,10 @@ class DisplayController(private val activity: Activity) {
         controller.isAppearanceLightNavigationBars = false
     }
 
-    var isFullscreen: Boolean = false
-        private set
-
-    fun applyFullscreen(on: Boolean) {
-        isFullscreen = on
-        if (on) {
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-        } else {
-            controller.show(WindowInsetsCompat.Type.systemBars())
-        }
-    }
-
-    /** Pencere odagi geri geldiginde (bildirim paneli vb.) tam ekrani yeniden uygula. */
-    fun reapply() {
-        if (isFullscreen) applyFullscreen(true)
+    /** Oyun her zaman gercek tam ekran calisir (durum/gezinme cubugu gizli). */
+    fun applyFullscreen() {
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
     fun applyOrientation(o: AppSettings.Orientation) {
@@ -50,47 +37,30 @@ class DisplayController(private val activity: Activity) {
         }
     }
 
+    fun keepScreenOn(on: Boolean) {
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
     private fun currentDisplay(): Display? = window.decorView.display ?: run {
         @Suppress("DEPRECATION") activity.windowManager.defaultDisplay
     }
 
     /**
-     * Ekran yenileme hizi. "60 Hz kararli" oyunun 90/120 Hz'de gucunun yetmeyip
-     * dalgalanmasini (takilma) onler; "En yuksek" guclu cihazlar icin.
-     * @return uygulanan hiz (Hz) veya sistem varsayilaninda null
+     * Kararli 60 Hz: tarayici oyunlari 90/120 Hz'e cogu zaman yetisemez; o zaman
+     * kareler duzensiz gelir (takilma hissi) ve telefon isinir. 60 Hz'de kare
+     * temposu duzenli, pil ve isi daha dusuk olur.
      */
-    fun applyRefreshMode(mode: AppSettings.RefreshMode): Float? {
-        val disp = currentDisplay() ?: return null
+    fun preferStable60Hz() {
+        val disp = currentDisplay() ?: return
         val current = disp.mode
-        val sameRes = disp.supportedModes.filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-        val target = when (mode) {
-            AppSettings.RefreshMode.SYSTEM -> null
-            AppSettings.RefreshMode.STABLE_60 -> sameRes.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
-            AppSettings.RefreshMode.MAX -> sameRes.maxByOrNull { it.refreshRate }
-        }
+        val target = disp.supportedModes
+            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+            .minByOrNull { abs(it.refreshRate - 60f) } ?: return
         val lp = window.attributes
-        lp.preferredDisplayModeId = target?.modeId ?: 0
-        lp.preferredRefreshRate = target?.refreshRate ?: 0f
+        if (lp.preferredDisplayModeId == target.modeId) return
+        lp.preferredDisplayModeId = target.modeId
+        lp.preferredRefreshRate = target.refreshRate
         window.attributes = lp
-        return target?.refreshRate
-    }
-
-    /** Cihazin destekledigi en yuksek yenileme hizi (bilgi icin). */
-    fun maxRefreshRate(): Float? = currentDisplay()?.supportedModes?.maxOfOrNull { it.refreshRate }
-
-    val sustainedSupported: Boolean
-        get() = activity.getSystemService<PowerManager>()?.isSustainedPerformanceModeSupported == true
-
-    /**
-     * Kararli performans modu: islemci/GPU isinca ani dususler yerine
-     * surdurulebilir sabit bir hizda calisir (uzun oyunlarda daha az takilma).
-     */
-    fun applySustained(on: Boolean) {
-        if (sustainedSupported) runCatching { window.setSustainedPerformanceMode(on) }
-    }
-
-    fun keepScreenOn(on: Boolean) {
-        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }

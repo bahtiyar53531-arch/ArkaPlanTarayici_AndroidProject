@@ -3,27 +3,33 @@ package space.orbitragame.app.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import space.orbitragame.core.RenderQuality
 import space.orbitragame.core.ZoomModel
 
-/** Kullanici tercihleri (sifre/oturum bilgisi BURADA TUTULMAZ). */
+/**
+ * Kullanici tercihleri (sifre/oturum bilgisi BURADA TUTULMAZ).
+ * Bilerek az secenek: geri kalan her sey otomatik.
+ */
 class AppSettings(context: Context) {
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("orbitra_settings", Context.MODE_PRIVATE)
 
-    enum class Orientation { AUTO, PORTRAIT, LANDSCAPE }
+    enum class Orientation(val label: String) {
+        AUTO("Otomatik"), LANDSCAPE("Yatay"), PORTRAIT("Dikey");
 
-    /** Ekran yenileme hizi tercihi. */
-    enum class RefreshMode(val label: String) {
-        STABLE_60("60 Hz kararlı (önerilen)"),
-        SYSTEM("Sistem varsayılanı"),
-        MAX("En yüksek (90/120 Hz)"),
+        fun next(): Orientation = entries[(ordinal + 1) % entries.size]
     }
 
-    var fullscreen: Boolean
-        get() = prefs.getBoolean(K_FULLSCREEN, true)
-        set(v) = prefs.edit { putBoolean(K_FULLSCREEN, v) }
+    /** PC gorunumu seviyeleri: ust pencerelerin olcegi. */
+    enum class PcView(val label: String, val scale: Float) {
+        OFF("Kapalı", 1f), MEDIUM("Orta", 0.75f), STRONG("Güçlü", 0.6f);
+
+        fun next(): PcView = entries[(ordinal + 1) % entries.size]
+
+        companion object {
+            fun fromScale(s: Float): PcView = entries.minByOrNull { kotlin.math.abs(it.scale - s) } ?: OFF
+        }
+    }
 
     var orientation: Orientation
         get() = runCatching { Orientation.valueOf(prefs.getString(K_ORIENTATION, null) ?: "AUTO") }.getOrDefault(Orientation.AUTO)
@@ -33,69 +39,28 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(K_SHOW_FPS, false)
         set(v) = prefs.edit { putBoolean(K_SHOW_FPS, v) }
 
-    var showPing: Boolean
-        get() = prefs.getBoolean(K_SHOW_PING, false)
-        set(v) = prefs.edit { putBoolean(K_SHOW_PING, v) }
-
     var zoomScale: Float
         get() = prefs.getFloat(K_ZOOM, ZoomModel.DEFAULT)
         set(v) = prefs.edit { putFloat(K_ZOOM, v) }
 
-    /** PC gorunumu: ekranin ust yarisindaki pencerelerin olcegi (1 = kapali). */
-    var hudTopScale: Float
-        get() = prefs.getFloat(K_HUD_TOP, 1f)
-        set(v) = prefs.edit { putFloat(K_HUD_TOP, v) }
-
-    /** PC gorunumu: alt kontrollerin (hotbar, joystick, pilot) olcegi. */
-    var hudBottomScale: Float
-        get() = prefs.getFloat(K_HUD_BOTTOM, 1f)
-        set(v) = prefs.edit { putFloat(K_HUD_BOTTOM, v) }
-
-    /** null = Otomatik (uyarlanabilir). */
-    var renderQuality: RenderQuality?
-        get() = prefs.getString(K_QUALITY, null)?.let { n -> RenderQuality.entries.firstOrNull { it.name == n } }
-        set(v) = prefs.edit { putString(K_QUALITY, v?.name) }
-
-    var refreshMode: RefreshMode
-        get() = runCatching { RefreshMode.valueOf(prefs.getString(K_REFRESH, null) ?: "STABLE_60") }.getOrDefault(RefreshMode.STABLE_60)
-        set(v) = prefs.edit { putString(K_REFRESH, v.name) }
-
-    var sustainedPerformance: Boolean
-        get() = prefs.getBoolean(K_SUSTAINED, false)
-        set(v) = prefs.edit { putBoolean(K_SUSTAINED, v) }
-
-    /** Tam ekranda kamera/centik alanini da kullan. */
-    var useCutoutArea: Boolean
-        get() = prefs.getBoolean(K_CUTOUT, false)
-        set(v) = prefs.edit { putBoolean(K_CUTOUT, v) }
+    var pcView: PcView
+        get() = PcView.fromScale(prefs.getFloat(K_HUD_TOP, 1f))
+        set(v) = prefs.edit { putFloat(K_HUD_TOP, v.scale) }
 
     /** Ana ekrana donuldugunde otomatik kucuk pencere (PiP). */
     var autoPip: Boolean
         get() = prefs.getBoolean(K_AUTO_PIP, true)
         set(v) = prefs.edit { putBoolean(K_AUTO_PIP, v) }
 
-    /** Arka planda baglantiyi koru (on plan servisi + WebView canli tutma). */
+    /** Arka planda baglantiyi koru (on plan servisi, ekran kapaliyken de). */
     var keepAliveInBackground: Boolean
         get() = prefs.getBoolean(K_KEEP_ALIVE, true)
         set(v) = prefs.edit { putBoolean(K_KEEP_ALIVE, v) }
 
-    /** Ekran kapaliyken de CPU/Wi-Fi'yi uyanik tut (pil tuketir). */
-    var keepAwakeScreenOff: Boolean
-        get() = prefs.getBoolean(K_WAKE, true)
-        set(v) = prefs.edit { putBoolean(K_WAKE, v) }
-
-    var autoReconnect: Boolean
-        get() = prefs.getBoolean(K_AUTO_RECONNECT, true)
-        set(v) = prefs.edit { putBoolean(K_AUTO_RECONNECT, v) }
-
-    var keepScreenOn: Boolean
-        get() = prefs.getBoolean(K_SCREEN_ON, true)
-        set(v) = prefs.edit { putBoolean(K_SCREEN_ON, v) }
-
-    /** Wi-Fi dusuk gecikme modu (Android 10+). */
-    var lowLatencyWifi: Boolean
-        get() = prefs.getBoolean(K_LOW_LATENCY, true)
-        set(v) = prefs.edit { putBoolean(K_LOW_LATENCY, v) }
+    /** Tam ekranda kamera/centik alanini da kullan. */
+    var useCutoutArea: Boolean
+        get() = prefs.getBoolean(K_CUTOUT, false)
+        set(v) = prefs.edit { putBoolean(K_CUTOUT, v) }
 
     /** Kontrol dugmesinin konumu (ekran oranlari, 0..1). */
     var controlButtonX: Float
@@ -105,10 +70,11 @@ class AppSettings(context: Context) {
         get() = prefs.getFloat(K_BTN_Y, 0.42f)
         set(v) = prefs.edit { putFloat(K_BTN_Y, v) }
 
-    var panelX: Float
+    /** FPS rozetinin konumu. */
+    var fpsX: Float
         get() = prefs.getFloat(K_PANEL_X, 0f)
         set(v) = prefs.edit { putFloat(K_PANEL_X, v) }
-    var panelY: Float
+    var fpsY: Float
         get() = prefs.getFloat(K_PANEL_Y, 0f)
         set(v) = prefs.edit { putFloat(K_PANEL_Y, v) }
 
@@ -121,23 +87,13 @@ class AppSettings(context: Context) {
         set(v) = prefs.edit { putBoolean(K_BATTERY_ASKED, v) }
 
     private companion object {
-        const val K_FULLSCREEN = "fullscreen"
         const val K_ORIENTATION = "orientation"
         const val K_SHOW_FPS = "show_fps"
-        const val K_SHOW_PING = "show_ping"
         const val K_ZOOM = "zoom_scale"
         const val K_HUD_TOP = "hud_top"
-        const val K_HUD_BOTTOM = "hud_bottom"
-        const val K_QUALITY = "render_quality"
-        const val K_REFRESH = "refresh_mode"
-        const val K_SUSTAINED = "sustained_perf"
-        const val K_CUTOUT = "use_cutout"
         const val K_AUTO_PIP = "auto_pip"
         const val K_KEEP_ALIVE = "keep_alive"
-        const val K_WAKE = "keep_awake_screen_off"
-        const val K_AUTO_RECONNECT = "auto_reconnect"
-        const val K_SCREEN_ON = "keep_screen_on"
-        const val K_LOW_LATENCY = "low_latency_wifi"
+        const val K_CUTOUT = "use_cutout"
         const val K_BTN_X = "btn_x"
         const val K_BTN_Y = "btn_y"
         const val K_PANEL_X = "panel_x"

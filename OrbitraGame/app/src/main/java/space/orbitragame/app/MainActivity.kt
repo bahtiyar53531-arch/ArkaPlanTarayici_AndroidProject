@@ -19,19 +19,19 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.view.ViewOutlineProvider
-import android.view.WindowManager
 import android.widget.Button
-import android.widget.ImageView
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,24 +49,17 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import space.orbitragame.app.service.GameSessionService
 import space.orbitragame.app.settings.AppSettings
-import space.orbitragame.app.system.DeviceStats
 import space.orbitragame.app.system.DisplayController
-import space.orbitragame.app.system.FrameRateMonitor
 import space.orbitragame.app.system.NetworkMonitor
-import space.orbitragame.app.system.PingMonitor
 import space.orbitragame.app.system.PipController
 import space.orbitragame.app.ui.ControlButtonView
 import space.orbitragame.app.ui.ControlMenuView
 import space.orbitragame.app.ui.DragHelper
+import space.orbitragame.app.ui.FpsBadgeView
 import space.orbitragame.app.ui.GameViewport
-import space.orbitragame.app.ui.GlassPanelDrawable
-import space.orbitragame.app.ui.PerfPanelView
-import space.orbitragame.app.ui.PerformanceDialog
-import space.orbitragame.app.ui.SplashVideoView
-import space.orbitragame.app.ui.ViewPanelView
 import space.orbitragame.app.ui.SettingsDialog
 import space.orbitragame.app.ui.SpaceLoadingView
-import space.orbitragame.app.ui.ZoomOverlayView
+import space.orbitragame.app.ui.SplashVideoView
 import space.orbitragame.app.web.GameChromeClient
 import space.orbitragame.app.web.GameWebHost
 import space.orbitragame.app.web.GameWebView
@@ -75,27 +68,22 @@ import space.orbitragame.app.web.JsBridge
 import space.orbitragame.app.web.WebViewHolder
 import space.orbitragame.core.AdaptiveQualityController
 import space.orbitragame.core.ConnectionTracker
-import space.orbitragame.core.FpsStats
 import space.orbitragame.core.GameConfig
 import space.orbitragame.core.LoadingProgressModel
-import space.orbitragame.core.PingStats
 import space.orbitragame.core.ReconnectPolicy
 import space.orbitragame.core.RenderQuality
 import space.orbitragame.core.UrlPolicy
 import space.orbitragame.core.ZoomModel
-import java.util.concurrent.Executors
 import kotlin.math.max
 
 /**
- * ORBITRAGAME.SPACE ana ekrani.
+ * ORBITRAGAME.SPACE ana ekrani (hafif surum).
  *
- * Sorumluluklar:
- *  - Acilis ekrani ve GERCEK yukleme ilerlemesi
- *  - Oyun WebView'inin kurulumu ve yasam dongusu (gereksiz yenileme yok)
- *  - Tam ekran / yon / zoom / kucuk pencere (PiP)
- *  - FPS ve ping paneli
- *  - Baglanti izleme ve kontrollu yeniden baglanma
- *  - Arka planda baglanti koruma (on plan servisi)
+ * Oyun sirasinda uygulama neredeyse hic is yapmaz:
+ *  - Periyodik olcum YOK (bellek, ping, kare olcer kaldirildi).
+ *  - FPS rozeti acikken saniyede bir kucuk sayi guncellemesi; kapaliyken hicbir sey.
+ *  - Render kalitesi ve 60 Hz otomatik; ayar karmasasi yok.
+ *  - Menu bir kez olusturulur, sonra yalnizca gosterilip gizlenir.
  */
 class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
 
@@ -104,18 +92,19 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     private lateinit var gameContainer: FrameLayout
     private lateinit var overlayLayer: FrameLayout
     private lateinit var loadingView: SpaceLoadingView
-    private lateinit var perfPanel: PerfPanelView
+    private lateinit var splashVideo: SplashVideoView
+    private lateinit var fpsBadge: FpsBadgeView
     private lateinit var controlButton: ControlButtonView
     private lateinit var pageProgress: View
     private lateinit var banner: View
     private lateinit var bannerText: TextView
     private lateinit var bannerAction: Button
     private lateinit var errorOverlay: View
+    private lateinit var errorBackground: ImageView
     private lateinit var errorTitle: TextView
     private lateinit var errorMessage: TextView
-    private var menuView: ControlMenuView? = null
+    private var menu: ControlMenuView? = null
     private var menuScrim: View? = null
-    private var zoomOverlay: ZoomOverlayView? = null
 
     // ---- Bilesenler ----
     private lateinit var settings: AppSettings
@@ -123,17 +112,12 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     private lateinit var pip: PipController
     private lateinit var viewport: GameViewport
     private lateinit var network: NetworkMonitor
-    private lateinit var pingMonitor: PingMonitor
-    private lateinit var frameMonitor: FrameRateMonitor
-    private lateinit var deviceStats: DeviceStats
     private var bridge: JsBridge? = null
     private val loading = LoadingProgressModel()
     private val tracker = ConnectionTracker()
     private val reconnectPolicy = ReconnectPolicy()
-    private val gameFps = FpsStats()
+    private val adaptive = AdaptiveQualityController(start = RenderQuality.BALANCED, floor = RenderQuality.PERFORMANCE)
     private val handler = Handler(Looper.getMainLooper())
-    private val statsExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "orbitra-stats").apply { isDaemon = true } }
-
     private var webView: GameWebView? = null
 
     // ---- Durum ----
@@ -151,28 +135,15 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     private var isStarted = false
     private var serviceRequested = false
     private var lowLatencyLock: WifiManager.WifiLock? = null
-
-    // Gorunum / performans
-    private lateinit var splashVideo: SplashVideoView
-    private lateinit var errorBackground: ImageView
-    private var viewPanel: ViewPanelView? = null
-    private val adaptive = AdaptiveQualityController()
     private var lastVwCss = 0
-    private var hudCount = 0
-    private var appliedHz: Float? = null
     private var imeBottom = 0
-    private var focusTopCss: Int? = null
     private var focusBottomCss: Int? = null
-    private val pushConfig = Runnable { bridge?.updateConfig(currentPageConfig()) }
-
-    // Panel verileri
-    private var browserFps: Double? = null
-    private var screenFps: Double? = null
-    private var jsHeapMb: Int? = null
     private var pendingGameFps = -1.0
-    private var lastDevice: DeviceStats.Snapshot? = null
-    private var statsTick = 0
+    private var thermalSevere = false
+    private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
+    private var pcFeedbackPending = false
     private var batteryTipShown = false
+    private val pushConfig = Runnable { bridge?.updateConfig(currentPageConfig()) }
 
     // ---- Izin / dosya secici ----
     private var pendingPermission: PermissionRequest? = null
@@ -217,15 +188,11 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             lastVwCss = vw
             schedulePageConfig()
         }
-        deviceStats = DeviceStats(this)
         network = NetworkMonitor(this, ::onNetworkChanged)
-        pingMonitor = PingMonitor(::pingTarget) { if (!isDestroyed) renderPanel() }
-        frameMonitor = FrameRateMonitor(window) { fps -> screenFps = fps }
 
-        screen.applyFullscreen(settings.fullscreen)
+        screen.applyFullscreen()
         screen.applyOrientation(settings.orientation)
-        appliedHz = screen.applyRefreshMode(settings.refreshMode)
-        screen.applySustained(settings.sustainedPerformance)
+        screen.preferStable60Hz()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             // Android 10 ve oncesi: klavye pencereyi kucultmesin (oyun yeniden yerlesmesin), kaydirsin.
             @Suppress("DEPRECATION")
@@ -236,6 +203,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         setupOverlays()
         setupBackHandling()
         registerAppReceiver()
+        registerThermalListener()
         network.start()
 
         loadingView.setProgress(loading.percent, loading.stage.label)
@@ -261,10 +229,11 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         super.onResume()
         webView?.onResume()
         stopSessionService()
-        screen.reapply()
+        screen.applyFullscreen()
+        screen.preferStable60Hz()
         updateScreenOn()
         acquireLowLatencyWifi()
-        refreshPanel()
+        updateStats()
         updatePipParams()
     }
 
@@ -274,7 +243,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         // Android 12+ on plan servisinin arka plandan baslatilmasina izin vermez;
         // Activity hala gorunurken (onPause) baslatiyoruz.
         if (!isFinishing && isGamePage && settings.keepAliveInBackground) {
-            serviceRequested = GameSessionService.start(this, settings.keepAwakeScreenOff) || serviceRequested
+            serviceRequested = GameSessionService.start(this, keepAwake = true) || serviceRequested
         }
     }
 
@@ -282,9 +251,9 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         super.onStop()
         isStarted = false
         releaseLowLatencyWifi()
-        stopMonitors()
+        updateStats()
         if (!settings.keepAliveInBackground && !isFinishing) {
-            // Pil tasarrufu modu: oyun motoru duraklatilir (baglanti kopabilir).
+            // Arka plan baglantisi kapali: oyun motoru duraklatilir (pil dostu).
             webView?.onPause()
         }
     }
@@ -293,9 +262,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         handler.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(appReceiver) }
         network.stop()
-        pingMonitor.shutdown()
-        frameMonitor.stop()
-        statsExecutor.shutdownNow()
+        unregisterThermalListener()
         if (isFinishing) {
             stopSessionService()
             WebViewHolder.destroy()
@@ -310,7 +277,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) screen.reapply()
+        if (hasFocus) screen.applyFullscreen()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -321,6 +288,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             viewport.apply()
             placeOverlays()
             updatePipParams()
+            menu?.takeIf { it.isVisible }?.let { positionMenu(it) }
         }
     }
 
@@ -333,21 +301,20 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
-        closeMenu()
-        closeZoomOverlay()
+        hideMenu()
         overlayLayer.isVisible = !inPip
         if (inPip) banner.isVisible = false
         pageProgress.isVisible = false
         ViewCompat.requestApplyInsets(root)
         viewport.setPip(inPip)
-        if (inPip) {
-            stopMonitors()
-        } else if (lifecycle.currentState == Lifecycle.State.CREATED) {
-            // Kullanici kucuk pencereyi kapatti (X).
-            if (!settings.keepAliveInBackground) finish()
-        } else {
-            screen.reapply()
-            refreshPanel()
+        updateStats()
+        if (!inPip) {
+            if (lifecycle.currentState == Lifecycle.State.CREATED) {
+                // Kullanici kucuk pencereyi kapatti (X).
+                if (!settings.keepAliveInBackground) finish()
+            } else {
+                screen.applyFullscreen()
+            }
         }
     }
 
@@ -409,8 +376,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             setGeolocationEnabled(false)
             userAgentString = "$userAgentString OrbitraGameAndroid/${BuildConfig.VERSION_NAME}"
         }
-        // Istege bagli ozellikler: eski/uretici WebView surumlerinde desteklenmeyebilir;
-        // desteklenmezse uygulama yine de calisir.
+        // Istege bagli ozellikler: eski/uretici WebView surumlerinde desteklenmeyebilir.
         runCatching {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
                 WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, false)
@@ -432,7 +398,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         wv.setDownloadListener { url, _, _, _, _ ->
             if (url.startsWith("https://")) openExternal(url)
         }
-        // Olcum koprusu (FPS / soket durumu). Kurulamazsa oyun yine calisir, yalnizca olcum olmaz.
+        // Sayfa koprusu. Kurulamazsa oyun yine calisir, yalnizca FPS/zoom ozellikleri olmaz.
         val b = JsBridge().also { it.listener = this }
         WebViewHolder.bridge = b
         bridge = b
@@ -557,11 +523,11 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             stopSplashVideo()
             loadingView.release()
         } else {
-            splashVideo.animate().alpha(0f).setDuration(380).start()
-            loadingView.animate().alpha(0f).setDuration(380).withEndAction {
+            splashVideo.animate().alpha(0f).setDuration(320).start()
+            loadingView.animate().alpha(0f).setDuration(320).withEndAction {
                 loadingView.isVisible = false
                 stopSplashVideo()
-                loadingView.release() // buyuk bitmap'leri serbest birak (oyun icin bellek)
+                loadingView.release() // buyuk goruntuleri serbest birak (oyun icin bellek)
             }.start()
         }
         webView?.requestFocus()
@@ -569,7 +535,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun onGameScreenShown() {
-        refreshPanel()
+        updateStats()
         updatePipParams()
         maybeAskNotificationPermission()
     }
@@ -624,7 +590,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             loading.onPageLoaded()
             updateLoadingUi()
             if (isGamePage) {
-                // Oyun cizmeye baslayinca JS "hazir" sinyali gelir; gelmezse yedek sure.
+                // Oyun cizmeye baslayinca "hazir" sinyali gelir; gelmezse yedek sure.
                 handler.removeCallbacks(readyFallback)
                 handler.postDelayed(readyFallback, READY_FALLBACK_MS)
             } else {
@@ -651,7 +617,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         showError(title, msg)
         if (loadingVisible) hideLoading(immediate = true)
         // Gecici ag/sunucu hatalarinda otomatik yeniden deneme
-        if (settings.autoReconnect && (effective == GameWebHost.ErrorKind.NETWORK || effective == GameWebHost.ErrorKind.HTTP)) {
+        if (effective == GameWebHost.ErrorKind.NETWORK || effective == GameWebHost.ErrorKind.HTTP) {
             scheduleReconnect("Sunucuya ulaşılamadı")
         }
     }
@@ -722,21 +688,12 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     // =====================================================================
-    // JsBridge.Listener (olcum verileri)
+    // JsBridge.Listener
     // =====================================================================
 
     override fun onGameStats(gameFrames: Int, elapsedMs: Int, isTop: Boolean) {
-        val fps = gameFrames * 1000.0 / elapsedMs
         // Oyun bir iframe icinde olabilir: en yuksek degeri veren cerceve oyundur.
-        pendingGameFps = max(pendingGameFps, fps)
-    }
-
-    override fun onBrowserFrames(frames: Int, elapsedMs: Int) {
-        browserFps = frames * 1000.0 / elapsedMs
-    }
-
-    override fun onJsHeap(mb: Int) {
-        jsHeapMb = mb
+        pendingGameFps = max(pendingGameFps, gameFrames * 1000.0 / elapsedMs)
     }
 
     override fun onGameReady() {
@@ -745,16 +702,13 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     override fun onSocketEvent(event: String, id: String, host: String?, port: Int?, code: Int?) {
-        val before = tracker.state
         when (event) {
             "create" -> tracker.onSocketCreated(id, host, port)
             "open" -> {
                 tracker.onSocketOpen(id)
                 reconnectPolicy.onConnected()
                 handler.removeCallbacks(reconnectRunnable)
-                if (before == ConnectionTracker.State.DISCONNECTED) {
-                    showBanner("Sunucu bağlantısı yeniden kuruldu", null, null)
-                }
+                if (banner.isVisible && !bannerAction.isVisible) hideBanner()
             }
             "close" -> {
                 tracker.onSocketClosed(id, System.currentTimeMillis())
@@ -763,38 +717,33 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
                 }
             }
         }
-        refreshPanel()
     }
 
-    override fun onPageVisibility(visible: Boolean) = Unit
-
     override fun onHudApplied(count: Int) {
-        hudCount = count
-        viewPanel?.setAppliedCount(count)
+        if (!pcFeedbackPending) return
+        pcFeedbackPending = false
+        if (count == 0 && isGamePage && settings.pcView != AppSettings.PcView.OFF) {
+            showBanner("Bu ekranda küçültülecek pencere bulunamadı", null, null)
+        }
     }
 
     override fun onFocusRect(topCss: Int, bottomCss: Int) {
-        focusTopCss = topCss
         focusBottomCss = bottomCss
         updateKeyboardShift()
     }
 
     override fun onFocusCleared() {
-        focusTopCss = null
         focusBottomCss = null
         updateKeyboardShift()
     }
 
     // =====================================================================
-    // Baglanti / yeniden baglanma
+    // Baglanti / yeniden baglanma (her zaman otomatik)
     // =====================================================================
 
     private val reconnectRunnable = Runnable {
         if (tracker.state == ConnectionTracker.State.CONNECTED) return@Runnable // oyun kendi toparlandi
-        if (!network.state.connected) {
-            pendingReconnect = true; return@Runnable
-        }
-        if (!isStarted && !inPip) {
+        if (!network.state.connected || (!isStarted && !inPip)) {
             pendingReconnect = true; return@Runnable
         }
         reconnectPolicy.onAttempt()
@@ -803,19 +752,15 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
 
     private fun scheduleReconnect(reason: String) {
         handler.removeCallbacks(reconnectRunnable)
-        if (!settings.autoReconnect) {
-            showBanner(reason, getString(R.string.menu_reconnect)) { reconnect(showLoading = true) }
-            return
-        }
         val delay = reconnectPolicy.nextDelayMs()
         if (delay == null) {
-            showBanner("$reason. Otomatik deneme sınırı doldu.", getString(R.string.menu_reconnect)) {
+            showBanner(reason, getString(R.string.menu_reconnect)) {
                 reconnectPolicy.onConnected()
                 reconnect(showLoading = true)
             }
             return
         }
-        showBanner("$reason — ${delay / 1000} sn içinde yeniden bağlanılacak", "Şimdi bağlan") {
+        showBanner("$reason — ${delay / 1000} sn içinde yeniden bağlanılacak", "Şimdi") {
             reconnectPolicy.onAttempt()
             reconnect(showLoading = true)
         }
@@ -823,7 +768,6 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun onNetworkChanged(state: NetworkMonitor.State) {
-        refreshPanel()
         if (!state.connected) {
             if (!loadingVisible && !errorVisible) showBanner("İnternet bağlantısı kesildi — bekleniyor…", null, null)
             return
@@ -840,11 +784,8 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         }
     }
 
-    private fun pingTarget(): Pair<String, Int> =
-        (tracker.lastHost ?: GameConfig.DEFAULT_PING_HOST) to (tracker.lastPort ?: GameConfig.DEFAULT_PING_PORT)
-
     // =====================================================================
-    // Arayuz: menu, panel, zoom, banner, hata
+    // Arayuz
     // =====================================================================
 
     private fun bindViews() {
@@ -852,23 +793,17 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         gameContainer = findViewById(R.id.gameContainer)
         overlayLayer = findViewById(R.id.overlayLayer)
         loadingView = findViewById(R.id.loadingView)
-        perfPanel = findViewById(R.id.perfPanel)
+        splashVideo = findViewById(R.id.splashVideo)
+        fpsBadge = findViewById(R.id.fpsBadge)
         controlButton = findViewById(R.id.controlButton)
         pageProgress = findViewById(R.id.pageProgress)
         banner = findViewById(R.id.banner)
         bannerText = findViewById(R.id.bannerText)
         bannerAction = findViewById(R.id.bannerAction)
         errorOverlay = findViewById(R.id.errorOverlay)
+        errorBackground = findViewById(R.id.errorBackground)
         errorTitle = findViewById(R.id.errorTitle)
         errorMessage = findViewById(R.id.errorMessage)
-        splashVideo = findViewById(R.id.splashVideo)
-        errorBackground = findViewById(R.id.errorBackground)
-        // Hata kartina gercekci cam panel gorunumu
-        (errorTitle.parent as? View)?.apply {
-            background = GlassPanelDrawable(this@MainActivity, 18 * resources.displayMetrics.density)
-            outlineProvider = ViewOutlineProvider.BACKGROUND
-            clipToOutline = true
-        }
         findViewById<Button>(R.id.errorRetry).setOnClickListener {
             reconnectPolicy.onConnected()
             reconnect(showLoading = true)
@@ -877,17 +812,11 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
 
     private fun setupInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            val safe = when {
-                inPip -> Insets.NONE
-                screen.isFullscreen && settings.useCutoutArea -> Insets.NONE
-                screen.isFullscreen -> cutout
-                else -> Insets.max(bars, cutout)
-            }
-            // ONEMLI: Klavye acilinca oyun alani KUCULTULMEZ (oyun yeniden yerlesip ekranin
-            // bir kismi siyah kalmasin). Chrome gibi: gerekirse oyun yalnizca yukari kaydirilir.
+            val safe = if (inPip || settings.useCutoutArea) Insets.NONE else cutout
+            // Klavye acilinca oyun alani KUCULTULMEZ (oyun yeniden yerlesip ekranin bir
+            // kismi siyah kalmasin). Chrome gibi: gerekirse oyun yalnizca yukari kaydirilir.
             gameContainer.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             val gap = (6 * resources.displayMetrics.density).toInt() // kenarlara yapismasin
             overlayLayer.setPadding(safe.left + gap, safe.top + gap, safe.right + gap, safe.bottom + gap)
@@ -929,16 +858,16 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             onTouchStateChanged = { touching -> if (touching) controlButton.wake() else controlButton.scheduleFade() },
         ).attach()
         DragHelper(
-            perfPanel, snapToEdges = false,
-            onClick = { perfPanel.expanded = !perfPanel.expanded; root.post { placeOverlays() } },
-            onMoved = { fx, fy -> settings.panelX = fx; settings.panelY = fy },
+            fpsBadge, snapToEdges = false,
+            onClick = { },
+            onMoved = { fx, fy -> settings.fpsX = fx; settings.fpsY = fy },
         ).attach()
         overlayLayer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeOverlays() }
     }
 
     private fun placeOverlays() {
         DragHelper.place(controlButton, settings.controlButtonX, settings.controlButtonY)
-        if (perfPanel.isVisible) DragHelper.place(perfPanel, settings.panelX, settings.panelY)
+        if (fpsBadge.isVisible) DragHelper.place(fpsBadge, settings.fpsX, settings.fpsY)
     }
 
     private fun setupBackHandling() {
@@ -946,8 +875,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             override fun handleOnBackPressed() {
                 val wv = webView
                 when {
-                    zoomOverlay != null -> closeZoomOverlay()
-                    menuView != null -> closeMenu()
+                    menu?.isVisible == true -> hideMenu()
                     !isGamePage && wv != null && wv.canGoBack() -> wv.goBack()
                     else -> showExitDialog()
                 }
@@ -972,210 +900,159 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         finishAndRemoveTask()
     }
 
-    private fun toggleMenu() {
-        if (menuView != null) closeMenu() else openMenu()
+    // ---- Menu: bir kez olusturulur, sonra gosterilip gizlenir ----
+
+    private fun ensureMenu(): ControlMenuView {
+        menu?.let { return it }
+        val scrim = View(this).apply {
+            // Arka planı yok: hicbir sey cizmez, yalnizca disariya dokunusu yakalayip menuyu kapatir.
+            isClickable = true
+            setOnClickListener { hideMenu() }
+            visibility = View.GONE
+        }
+        val m = ControlMenuView(this, ::onMenuAction).apply { visibility = View.GONE }
+        root.addView(scrim, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(m, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        menuScrim = scrim
+        menu = m
+        return m
     }
 
-    private fun openMenu() {
+    private fun toggleMenu() {
+        if (menu?.isVisible == true) hideMenu() else showMenu()
+    }
+
+    private fun showMenu() {
         if (inPip) return
         controlButton.wake()
-        val scrim = View(this).apply {
-            setBackgroundColor(0x33000000)
-            isClickable = true
-            setOnClickListener { closeMenu() }
+        val m = ensureMenu()
+        m.bind(menuState())
+        menuScrim?.visibility = View.VISIBLE
+        m.alpha = 0f
+        m.visibility = View.VISIBLE
+        m.post {
+            positionMenu(m)
+            m.animate().alpha(1f).setDuration(110).start()
         }
-        val menu = ControlMenuView(this, ::onMenuAction)
-        bindMenu(menu)
-        root.addView(scrim, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        root.addView(menu, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        menuScrim = scrim
-        menuView = menu
-        menu.alpha = 0f
-        menu.post { positionMenu(menu); menu.animate().alpha(1f).setDuration(140).start() }
     }
 
-    private fun bindMenu(menu: ControlMenuView) {
+    private fun hideMenu() {
+        val m = menu ?: return
+        if (!m.isVisible) return
+        m.animate().cancel()
+        m.visibility = View.GONE
+        menuScrim?.visibility = View.GONE
+        controlButton.scheduleFade()
+    }
+
+    private fun menuState(): ControlMenuView.State {
         val z = viewport.zoom
-        menu.bind(
-            fullscreen = screen.isFullscreen,
-            orientation = settings.orientation.name,
-            fps = settings.showFps,
-            ping = settings.showPing,
-            zoomPercent = z.percentLabel,
+        return ControlMenuView.State(
+            zoomLabel = z.percentLabel,
             canZoomIn = z.canZoomIn,
             canZoomOut = z.canZoomOut,
+            fpsOn = settings.showFps,
+            pcLabel = settings.pcView.label,
+            pcOn = settings.pcView != AppSettings.PcView.OFF,
+            orientationLabel = settings.orientation.label,
             pipAvailable = pip.isSupported,
-            pcViewActive = settings.hudTopScale < 0.999f || settings.hudBottomScale < 0.999f,
         )
     }
 
     /** Menuyu kontrol dugmesinin yanina, ekran disina tasmayacak sekilde yerlestir. */
-    private fun positionMenu(menu: View) {
+    private fun positionMenu(m: View) {
+        if (m.width == 0 || m.height == 0) {
+            // Ilk acilista henuz yerlesim olmamis olabilir: boyutu simdi olc.
+            m.measure(
+                View.MeasureSpec.makeMeasureSpec(root.width, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(root.height, View.MeasureSpec.AT_MOST),
+            )
+        }
+        val mw = if (m.width > 0) m.width else m.measuredWidth
+        val mh = if (m.height > 0) m.height else m.measuredHeight
         val margin = 8 * resources.displayMetrics.density
         val btnX = controlButton.translationX + overlayLayer.left
         val btnY = controlButton.translationY + overlayLayer.top
         val onRight = btnX + controlButton.width / 2f > root.width / 2f
-        val x = if (onRight) btnX - menu.width - margin else btnX + controlButton.width + margin
-        val y = btnY + controlButton.height / 2f - menu.height / 2f
+        val x = if (onRight) btnX - mw - margin else btnX + controlButton.width + margin
+        val y = btnY + controlButton.height / 2f - mh / 2f
         val minX = overlayLayer.paddingLeft + margin
-        val maxX = root.width - overlayLayer.paddingRight - menu.width - margin
+        val maxX = root.width - overlayLayer.paddingRight - mw - margin
         val minY = overlayLayer.paddingTop + margin
-        val maxY = root.height - overlayLayer.paddingBottom - menu.height - margin
-        menu.translationX = x.coerceIn(minX, max(minX, maxX))
-        menu.translationY = y.coerceIn(minY, max(minY, maxY))
-    }
-
-    private fun closeMenu() {
-        menuView?.let { root.removeView(it) }
-        menuScrim?.let { root.removeView(it) }
-        menuView = null
-        menuScrim = null
-        controlButton.scheduleFade()
+        val maxY = root.height - overlayLayer.paddingBottom - mh - margin
+        m.translationX = x.coerceIn(minX, max(minX, maxX))
+        m.translationY = y.coerceIn(minY, max(minY, maxY))
     }
 
     private fun onMenuAction(action: ControlMenuView.Action) {
         when (action) {
-            ControlMenuView.Action.FULLSCREEN -> {
-                settings.fullscreen = !screen.isFullscreen
-                screen.applyFullscreen(settings.fullscreen)
-                ViewCompat.requestApplyInsets(root)
-            }
-            ControlMenuView.Action.PORTRAIT -> setOrientation(AppSettings.Orientation.PORTRAIT)
-            ControlMenuView.Action.LANDSCAPE -> setOrientation(AppSettings.Orientation.LANDSCAPE)
-            ControlMenuView.Action.AUTO_ROTATE -> setOrientation(AppSettings.Orientation.AUTO)
+            ControlMenuView.Action.ZOOM_OUT -> applyZoom(viewport.zoom.zoomOut())
+            ControlMenuView.Action.ZOOM_IN -> applyZoom(viewport.zoom.zoomIn())
+            ControlMenuView.Action.ZOOM_RESET -> applyZoom(viewport.zoom.reset())
             ControlMenuView.Action.FPS -> {
                 settings.showFps = !settings.showFps
-                refreshPanel()
+                updateStats()
             }
-            ControlMenuView.Action.PING -> {
-                settings.showPing = !settings.showPing
-                refreshPanel()
+            ControlMenuView.Action.PC_VIEW -> {
+                val next = settings.pcView.next()
+                settings.pcView = next
+                pcFeedbackPending = next != AppSettings.PcView.OFF
+                if (!isGamePage && next != AppSettings.PcView.OFF) showBanner("PC görünümü oyun ekranında uygulanır", null, null)
+                schedulePageConfig()
             }
-            ControlMenuView.Action.ZOOM_IN -> applyZoom(viewport.zoom.zoomIn())
-            ControlMenuView.Action.ZOOM_OUT -> applyZoom(viewport.zoom.zoomOut())
-            ControlMenuView.Action.ZOOM_RESET -> applyZoom(viewport.zoom.reset())
-            ControlMenuView.Action.ZOOM_PINCH -> {
-                closeMenu(); openZoomOverlay(); return
+            ControlMenuView.Action.ORIENTATION -> {
+                settings.orientation = settings.orientation.next()
+                screen.applyOrientation(settings.orientation)
             }
             ControlMenuView.Action.PIP -> {
-                closeMenu(); enterPip(); return
+                hideMenu(); enterPip(); return
             }
             ControlMenuView.Action.RECONNECT -> {
-                closeMenu()
+                hideMenu()
                 reconnectPolicy.onConnected()
                 reconnect(showLoading = true)
                 return
             }
-            ControlMenuView.Action.RESTART -> {
-                closeMenu(); confirmRestart(); return
-            }
             ControlMenuView.Action.SETTINGS -> {
-                closeMenu()
-                SettingsDialog.show(this, settings, ::onSettingsChanged)
+                hideMenu()
+                SettingsDialog.show(this, settings, ::onSettingsChanged, ::confirmRestart)
                 return
             }
-            ControlMenuView.Action.PC_VIEW -> {
-                closeMenu(); openViewPanel(); return
-            }
-            ControlMenuView.Action.PERFORMANCE -> {
-                closeMenu(); showPerformance(); return
-            }
             ControlMenuView.Action.CLOSE -> {
-                closeMenu(); return
+                hideMenu(); return
             }
         }
-        menuView?.let { bindMenu(it); it.post { positionMenu(it) } }
-    }
-
-    private fun setOrientation(o: AppSettings.Orientation) {
-        settings.orientation = o
-        screen.applyOrientation(o)
+        menu?.bind(menuState())
     }
 
     private fun applyZoom(scale: Float) {
         settings.zoomScale = scale
         viewport.apply()
-        zoomOverlay?.refresh()
         updatePipParams()
     }
 
-    // =====================================================================
-    // Sayfa gorunum ayarlari (oyun olcegi, render kalitesi, PC gorunumu)
-    // =====================================================================
-
-    private fun activeQuality(): RenderQuality = settings.renderQuality ?: adaptive.level
+    // ---- Sayfa gorunum ayarlari (oyun olcegi, render kalitesi, PC gorunumu) ----
 
     private fun currentPageConfig(): JsBridge.PageConfig = JsBridge.PageConfig(
         scale = if (::viewport.isInitialized) viewport.effectiveScale else settings.zoomScale,
         vwCss = lastVwCss,
-        dprCap = activeQuality().dprCap,
-        hudTop = settings.hudTopScale,
-        hudBottom = settings.hudBottomScale,
+        dprCap = adaptive.level.dprCap,
+        hudTop = settings.pcView.scale,
+        hudBottom = 1f,
     )
 
-    /** Kaydirici hareketlerinde sayfayi her pikselde yeniden yerlestirmemek icin kisa gecikmeyle birlestir. */
+    /** Art arda dokunuslari birlestir: sayfa yalnizca bir kez yeniden yerlesir. */
     private fun schedulePageConfig() {
         handler.removeCallbacks(pushConfig)
         handler.postDelayed(pushConfig, 70)
     }
 
-    private fun openViewPanel() {
-        if (viewPanel != null || inPip) return
-        val panel = ViewPanelView(this, viewport.zoom.scale, settings.hudTopScale, settings.hudBottomScale, object : ViewPanelView.Listener {
-            override fun onZoomChanged(scale: Float) = applyZoom(viewport.zoom.set(scale))
-            override fun onHudChanged(top: Float, bottom: Float) {
-                settings.hudTopScale = top
-                settings.hudBottomScale = bottom
-                schedulePageConfig()
-            }
-            override fun onPanelClosed() = closeViewPanel()
-        })
-        panel.setAppliedCount(hudCount)
-        root.addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        viewPanel = panel
-    }
-
-    private fun closeViewPanel() {
-        viewPanel?.let { root.removeView(it) }
-        viewPanel = null
-    }
-
-    private fun showPerformance() {
-        val density = resources.displayMetrics.density
-        var eff = density * viewport.effectiveScale
-        val cap = activeQuality().dprCap
-        if (cap > 0f) eff = minOf(eff, cap)
-        PerformanceDialog.show(
-            this, settings,
-            PerformanceDialog.Status(
-                deviceDpr = density,
-                effectiveDpr = eff,
-                autoLevel = adaptive.level,
-                autoDisabled = adaptive.disabled,
-                appliedHz = appliedHz,
-                maxHz = screen.maxRefreshRate(),
-                sustainedSupported = screen.sustainedSupported,
-            ),
-        ) { reloadRecommended ->
-            appliedHz = screen.applyRefreshMode(settings.refreshMode)
-            screen.applySustained(settings.sustainedPerformance)
-            if (settings.renderQuality == null) adaptive.reset()
-            schedulePageConfig()
-            refreshPanel()
-            if (reloadRecommended && isGamePage) {
-                showBanner("Render kalitesi değişti. Oyun hemen uygulamazsa yenile.", "Yenile") { reconnect(showLoading = false) }
-            }
-        }
-    }
-
-    // =====================================================================
-    // Klavye: oyunu kucultmeden, gerekirse yukari kaydir
-    // =====================================================================
+    // ---- Klavye: oyunu kucultmeden, gerekirse yukari kaydir ----
 
     private fun onImeChanged(bottom: Int) {
         if (bottom == imeBottom) return
         imeBottom = bottom
-        if (bottom > 0) bridge?.requestFocusRect() else { focusTopCss = null; focusBottomCss = null }
+        if (bottom > 0) bridge?.requestFocusRect() else focusBottomCss = null
         updateKeyboardShift()
     }
 
@@ -1188,23 +1065,6 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         val visibleBottom = root.height - imeBottom
         val delta = (bottomPx + 16 * density - visibleBottom).toInt()
         viewport.setKeyboardShift(delta.coerceIn(0, imeBottom))
-    }
-
-    private fun openZoomOverlay() {
-        if (zoomOverlay != null) return
-        val overlay = ZoomOverlayView(
-            this,
-            currentScale = { viewport.zoom.scale },
-            onScale = { s -> applyZoom(viewport.zoom.set(s)) },
-            onDone = { closeZoomOverlay() },
-        )
-        root.addView(overlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        zoomOverlay = overlay
-    }
-
-    private fun closeZoomOverlay() {
-        zoomOverlay?.let { root.removeView(it) }
-        zoomOverlay = null
     }
 
     private fun confirmRestart() {
@@ -1222,14 +1082,11 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun onSettingsChanged() {
-        ViewCompat.requestApplyInsets(root) // centik alani ayari
+        ViewCompat.requestApplyInsets(root) // kamera alani ayari
         webView?.keepAliveWhenHidden = settings.keepAliveInBackground
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             webView?.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, !settings.keepAliveInBackground)
         }
-        updateScreenOn()
-        releaseLowLatencyWifi()
-        acquireLowLatencyWifi()
         updatePipParams()
     }
 
@@ -1245,7 +1102,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         }
         banner.isVisible = true
         handler.removeCallbacks(hideBannerRunnable)
-        handler.postDelayed(hideBannerRunnable, if (action != null) 15_000 else 4_000)
+        handler.postDelayed(hideBannerRunnable, if (action != null) 12_000 else 3_500)
     }
 
     private val hideBannerRunnable = Runnable { hideBanner() }
@@ -1285,132 +1142,64 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     // =====================================================================
-    // Performans paneli
+    // FPS rozeti + otomatik render kalitesi (yalnizca gerektiginde calisir)
     // =====================================================================
 
     private val statsTicker = object : Runnable {
         override fun run() {
-            statsTick++
-            if (pendingGameFps >= 0) {
-                val fps = pendingGameFps
-                gameFps.add(fps)
-                pendingGameFps = -1.0
-                if (adaptiveActive()) onAdaptiveSample(fps)
-            }
-            if (statsTick % 3 == 1) {
-                val includePss = statsTick % 6 == 1
-                statsExecutor.execute {
-                    val snap = deviceStats.snapshot(includePss)
-                    handler.post {
-                        lastDevice = snap.copy(appPssMb = snap.appPssMb ?: lastDevice?.appPssMb)
-                    }
-                }
-            }
-            renderPanel()
+            // Once bir sonraki turu kur: asagidaki is updateStats() cagirirsa onu iptal/yeniden
+            // kurabilir; boylece ayni anda hep en fazla BIR sayac olur.
             handler.postDelayed(this, 1000)
+            val fps = if (pendingGameFps >= 0) pendingGameFps else null
+            pendingGameFps = -1.0
+            if (fpsBadge.isVisible) fpsBadge.setFps(fps)
+            if (fps != null && adaptiveActive()) onAdaptiveSample(fps)
         }
     }
 
-    private fun refreshPanel() {
+    /** FPS rozeti ve olcum dongusunu durumla esitle. Gerek yoksa hicbir sey calismaz. */
+    private fun updateStats() {
         if (!::settings.isInitialized || isDestroyed) return
-        val on = (settings.showFps || settings.showPing) && !inPip
-        perfPanel.showFps = settings.showFps
-        perfPanel.showPing = settings.showPing
-        perfPanel.isVisible = on
-        val adaptiveOn = adaptiveActive()
-        // Oyun FPS raporu: panel acikken veya otomatik kalite icin; tarayici FPS dongusu yalnizca panelde
-        bridge?.setStatsEnabled((settings.showFps && !inPip) || adaptiveOn, browser = settings.showFps && !inPip)
-        val active = on && isStarted
-        if (settings.showFps && active) frameMonitor.start() else frameMonitor.stop()
-        if (settings.showPing && active) pingMonitor.start() else pingMonitor.stop()
+        val badge = settings.showFps && !inPip
+        val badgeChanged = fpsBadge.isVisible != badge
+        fpsBadge.isVisible = badge
+        val need = isStarted && !inPip && (badge || (adaptiveActive() && !adaptive.settled))
+        bridge?.setStatsEnabled(need)
         handler.removeCallbacks(statsTicker)
-        pendingGameFps = -1.0 // eski olcum kalintisi ilk ornegi bozmasin
-        if (active || adaptiveOn) handler.post(statsTicker)
-        if (!settings.showFps) {
-            gameFps.clear(); browserFps = null; screenFps = null
+        if (need) {
+            pendingGameFps = -1.0
+            handler.postDelayed(statsTicker, 1000)
         }
-        renderPanel()
-        root.post { placeOverlays() }
+        if (badgeChanged && badge) {
+            fpsBadge.setFps(null)
+            root.post { placeOverlays() }
+        }
     }
 
-    /** Otomatik render kalitesi yalnizca oyun ekranindayken ve on plandayken calisir. */
-    private fun adaptiveActive(): Boolean =
-        ::settings.isInitialized && settings.renderQuality == null && isGamePage && !inPip && isStarted && !loadingVisible
+    private fun adaptiveActive(): Boolean = isGamePage && !inPip && isStarted && !loadingVisible
 
+    /**
+     * Otomatik render kalitesi (sessiz): FPS uzun sure dusukse oyunun cozunurlugu
+     * bir kademe (Dengeli -> Performans) dusurulur; FPS iyilesmezse geri alinir.
+     */
     private fun onAdaptiveSample(fps: Double) {
-        val now = android.os.SystemClock.elapsedRealtime()
-        when (val d = adaptive.onSample(fps, now, lastDevice?.thermalSevere == true)) {
-            is AdaptiveQualityController.Decision.Lowered -> {
-                schedulePageConfig()
-                showBanner("${d.reason.replaceFirstChar { it.uppercase() }}: render kalitesi ${d.from.label} → ${d.to.label}", "Ayarlar") { showPerformance() }
-            }
-            is AdaptiveQualityController.Decision.Reverted -> {
-                schedulePageConfig()
-                showBanner("Çözünürlük düşürmek FPS'i artırmadı; kalite geri alındı (${d.to.label}).", null, null)
-            }
-            AdaptiveQualityController.Decision.None -> Unit
-        }
+        val d = adaptive.onSample(fps, SystemClock.elapsedRealtime(), thermalSevere)
+        if (d != AdaptiveQualityController.Decision.None) schedulePageConfig()
+        if (adaptive.settled) updateStats() // karar kesinlesti: gereksiz olcumu durdur
     }
 
-    private fun stopMonitors() {
-        frameMonitor.stop()
-        pingMonitor.stop()
-        handler.removeCallbacks(statsTicker)
-        bridge?.setStatsEnabled(false)
+    private fun registerThermalListener() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val pm = getSystemService<PowerManager>() ?: return
+        val l = PowerManager.OnThermalStatusChangedListener { status -> thermalSevere = status >= PowerManager.THERMAL_STATUS_SEVERE }
+        runCatching { pm.addThermalStatusListener(ContextCompat.getMainExecutor(this), l) }.onSuccess { thermalListener = l }
     }
 
-    private fun renderPanel() {
-        if (!perfPanel.isVisible) return
-        val p = pingMonitor.stats
-        val d = lastDevice
-        val socketText: String
-        val socketColor: Int
-        when (tracker.state) {
-            ConnectionTracker.State.CONNECTED -> {
-                socketText = "Bağlı (${tracker.openCount})"; socketColor = PerfPanelView.COLOR_GOOD
-            }
-            ConnectionTracker.State.CONNECTING -> {
-                socketText = "Bağlanıyor…"; socketColor = PerfPanelView.COLOR_WARN
-            }
-            ConnectionTracker.State.DISCONNECTED -> {
-                socketText = "Koptu"; socketColor = PerfPanelView.COLOR_BAD
-            }
-            ConnectionTracker.State.NO_SOCKET -> {
-                socketText = if (isGamePage) "Oyun soketi yok" else "Oyunda değil"; socketColor = PerfPanelView.COLOR_DIM
-            }
-        }
-        val pingColor = when (p.quality()) {
-            PingStats.Quality.GOOD -> PerfPanelView.COLOR_GOOD
-            PingStats.Quality.FAIR -> PerfPanelView.COLOR_WARN
-            PingStats.Quality.POOR, PingStats.Quality.OFFLINE -> PerfPanelView.COLOR_BAD
-            PingStats.Quality.UNKNOWN -> PerfPanelView.COLOR_DIM
-        }
-        // View uzerinden: pencereye bagli degilse null doner, asla istisna firlatmaz.
-        val refresh = window?.decorView?.display?.refreshRate
-        perfPanel.update(
-            PerfPanelView.Data(
-                gameFps = gameFps.current,
-                gameAvg = gameFps.average,
-                gameMin = gameFps.min,
-                lowFps = gameFps.isLow,
-                browserFps = browserFps,
-                screenFps = screenFps,
-                refreshRate = refresh,
-                appMemMb = d?.appPssMb,
-                jsHeapMb = jsHeapMb,
-                sysAvailMb = d?.sysAvailMb,
-                sysTotalMb = d?.sysTotalMb,
-                thermal = d?.thermal,
-                battery = d?.batteryPct,
-                pingMs = if (p.lastSucceeded) p.last else null,
-                pingJitter = p.jitter,
-                pingLoss = p.lossPercent,
-                pingColor = pingColor,
-                network = network.state.label,
-                socket = socketText,
-                socketColor = socketColor,
-            ),
-        )
+    private fun unregisterThermalListener() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val l = thermalListener ?: return
+        runCatching { getSystemService<PowerManager>()?.removeThermalStatusListener(l) }
+        thermalListener = null
     }
 
     // =====================================================================
@@ -1451,11 +1240,11 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun updateScreenOn() {
-        screen.keepScreenOn(settings.keepScreenOn && isGamePage)
+        screen.keepScreenOn(isGamePage)
     }
 
     private fun acquireLowLatencyWifi() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !settings.lowLatencyWifi || lowLatencyLock != null) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || lowLatencyLock != null) return
         val wm = applicationContext.getSystemService<WifiManager>() ?: return
         lowLatencyLock = runCatching {
             wm.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "OrbitraGame::LowLatency").apply {
@@ -1478,14 +1267,14 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
-        // Tek seferlik ipucu: pil optimizasyonu arka plan baglantisini kesebilir.
+        // Tek seferlik ipucu: pil kisitlamasi arka plan baglantisini kesebilir.
         val pm = getSystemService<PowerManager>()
         if (!batteryTipShown && !settings.batteryPromptShown && settings.keepAliveInBackground &&
             pm != null && !pm.isIgnoringBatteryOptimizations(packageName)
         ) {
             batteryTipShown = true
             settings.batteryPromptShown = true
-            showBanner("Arka planda kesintisiz bağlantı için pil optimizasyonunu kapatabilirsin.", "Ayarla") {
+            showBanner("Arka planda kesintisiz bağlantı için pil kısıtlamasını kaldırabilirsin.", "Ayarla") {
                 SettingsDialog.requestIgnoreBatteryOptimizations(this)
             }
         }

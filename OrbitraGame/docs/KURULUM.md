@@ -6,8 +6,8 @@
 Küçük pencere (PiP) Android 8.0 ve üzerinde çalışır.
 
 1. Telefondan release APK'yı indir:
-   `https://github.com/bahtiyar53531-arch/ArkaPlanTarayici_AndroidProject/raw/ccr-992f123f-q9iy6l/dist/ORBITRAGAME.SPACE-v1.1.0.apk`
-   (v1.0.0 kuruluysa üzerine kurulur; giriş bilgilerin korunur.)
+   `https://github.com/bahtiyar53531-arch/ArkaPlanTarayici_AndroidProject/raw/ccr-992f123f-q9iy6l/dist/ORBITRAGAME.SPACE-v1.2.0.apk`
+   (Eski sürüm kuruluysa üzerine kurulur; giriş bilgilerin korunur.)
 2. İndirilen dosyaya dokun. "Bilinmeyen uygulamaları yükle" izni sorulursa
    tarayıcına (Chrome vb.) bu izni ver ve geri dön.
 3. **Yükle** → **Aç**.
@@ -18,17 +18,17 @@ Küçük pencere (PiP) Android 8.0 ve üzerinde çalışır.
      doğrudan oyuna girersin.
    - Oyuna girdiğinde **bildirim izni** sorulur (Android 13+). Arka plan
      bildirimini görmek için izin ver.
-   - Bir kez "pil optimizasyonunu kapat" önerisi çıkar. Arka planda bağlantı
-     için **önerilir** (Ayarlar menüsünden de yapılabilir).
+   - Bir kez "pil kısıtlamasını kaldır" önerisi çıkar. Arka planda bağlantı
+     için **önerilir** (Menü → Ayarlar'dan da yapılabilir).
 
 ### Debug ve release farkı
 
 | | Release | Debug |
 |---|---|---|
-| Dosya | `ORBITRAGAME.SPACE-v1.1.0.apk` | `ORBITRAGAME.SPACE-v1.1.0-debug.apk` |
+| Dosya | `ORBITRAGAME.SPACE-v1.2.0.apk` | `ORBITRAGAME.SPACE-v1.2.0-debug.apk` |
 | Uygulama adı | ORBITRAGAME.SPACE | ORBITRAGAME.SPACE (Debug) |
 | Paket adı | `space.orbitragame.app` | `space.orbitragame.app.debug` |
-| Boyut / hız | ~4,5 MB (açılış videoları dahil), küçültülmüş ve optimize | ~8 MB, hata ayıklama bilgisi var |
+| Boyut / hız | ~2,4 MB (açılış videoları dahil), küçültülmüş ve optimize | ~6 MB, hata ayıklama bilgisi var |
 
 İkisi aynı anda kurulabilir. Günlük kullanım için **release** sürümünü kur.
 
@@ -53,15 +53,19 @@ Küçük pencere (PiP) Android 8.0 ve üzerinde çalışır.
 > kısıtlayabilir. Uygulama mümkün olan en iyi korumayı yapar ama **her cihazda
 > kesintisiz çalışma garanti edilemez.**
 
-### PC görünümü ve performans (v1.1.0)
+### Menü (v1.2.0 — sade)
 
-- **Menü → PC görünümü:** "PC hazır ayarı" üst pencereleri %60 yapar. Kaydırıcılarla
-  üst pencereleri, alt kontrolleri ve oyun ölçeğini ayrı ayrı ayarlayabilirsin.
-  Panelde "N arayüz öğesi küçültüldü" yazar; oyun ekranında 0 yazıyorsa bana haber ver.
-- **Menü → Performans:** Render kalitesi (Otomatik önerilir), ekran yenileme hızı
-  (60 Hz kararlı önerilir), kararlı performans modu.
-- FPS düşerse uygulama otomatik olarak render çözünürlüğünü bir kademe düşürür ve
-  ekranın üstünde bilgi verir. FPS iyileşmezse değişikliği geri alır.
+Sağ kenardaki yuvarlak düğmeye dokun (basılı tutup sürükleyerek yerini değiştirebilirsin):
+
+- **− %100 +** : oyun ölçeği (%30–%160). Yüzdeye dokununca %100'e döner.
+- **FPS** : köşede yalnızca "60 FPS" yazan küçük göstergeyi aç/kapat (sürüklenebilir).
+- **PC görünümü** : dokundukça Kapalı → Orta → Güçlü. Yalnızca üstteki pencereler küçülür,
+  gemi ve harita aynı kalır. "Küçültülecek pencere bulunamadı" yazarsa bana haber ver.
+- **Ekran yönü** : dokundukça Otomatik → Yatay → Dikey.
+- **Küçük pencere**, **Yeniden bağlan**, **Ayarlar** (3 anahtar + yeniden başlat).
+
+Render kalitesi, 60 Hz kararlı ekran, otomatik yeniden bağlanma ve düşük gecikmeli
+Wi-Fi kendiliğinden çalışır; ayar gerekmez.
 
 ### Sorun giderme
 
@@ -69,11 +73,11 @@ Küçük pencere (PiP) Android 8.0 ve üzerinde çalışır.
 |---|---|
 | Oyun açılmıyor / siyah ekran | Play Store'dan **Android System WebView** ve **Chrome**'u güncelle (WebGL2 için güncel motor gerekir). Menü → Yeniden başlat. |
 | "Sunucuya ulaşılamıyor" | İnternet bağlantını kontrol et; uygulama bağlantı gelince otomatik yeniden dener. |
-| Bağlantı arka planda kopuyor | Yukarıdaki pil/üretici ayarlarını yap; "Otomatik küçük pencere" açık kalsın. |
+| Bağlantı arka planda kopuyor | Yukarıdaki pil/üretici ayarlarını yap; Ayarlar'da "Küçük pencere" ve "Arka planda bağlı kal" açık kalsın. |
 | Menü düğmesi oyun düğmesinin üstünde | Düğmeyi basılı tutup istediğin kenara sürükle; konum kaydedilir. |
-| Yazılar çok küçük/büyük | Menü → Yakınlaştır / Uzaklaştır / Varsayılan, "İki parmak" veya PC görünümü. |
-| Ekranın bir kısmı siyah | v1.1.0'da klavye kaynaklı nedeni düzeltildi. Tekrar olursa ekran görüntüsünü gönder; Menü → Yeniden bağlan. |
-| FPS hâlâ düşük | Menü → Performans → "Performans" kalitesi + 60 Hz. Telefon ısınmışsa (panelde "Isı") biraz soğumasını bekle. |
+| Yazılar çok küçük/büyük | Menü → − / + veya PC görünümü. |
+| Ekranın bir kısmı siyah | Klavye kaynaklı nedeni v1.1.0'da düzeltildi. Tekrar olursa ekran görüntüsünü gönder; Menü → Yeniden bağlan. |
+| FPS hâlâ düşük | Uygulama kaliteyi otomatik ayarlar. Telefon ısınmışsa biraz soğumasını bekle, arka plandaki uygulamaları kapat. |
 
 ## 2. Android Studio ile derleme
 

@@ -54,7 +54,7 @@ server.listen(0, '127.0.0.1', async () => {
     const vw = await page.evaluate(() => innerWidth), vh = await page.evaluate(() => innerHeight);
     const before = {}; for (const id of ['toolbar', 'gemi', 'pet', 'gorev', 'drag', 'pilot', 'hotbar', 'joy', 'label', 'cv']) before[id] = await rect(page, id);
     await cmd(page, { hudTop: 0.6, hudBottom: 1 });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(700);
     const after = {}; for (const id in before) after[id] = await rect(page, id);
     const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     checks['gemi %60 kuculdu ve sol-ust koseye yaklasti'] = near(after.gemi.w, 120) && near(after.gemi.l, 6) && near(after.gemi.t, 19);
@@ -73,14 +73,23 @@ server.listen(0, '127.0.0.1', async () => {
     checks['kucultulmus penceredeki dugmeye dokunma calisiyor'] = (await page.evaluate(() => window.clicked)).includes('gbtn');
     const hud = (await page.evaluate(() => window.__msgs)).filter(m => m.t === 'hud').pop();
     checks['uygulanan pencere sayisi bildirildi'] = hud && hud.n >= 5;
+    // Sonradan acilan yeni pencere (or. magaza) hizla kucultulmeli
+    await page.evaluate(() => { const d = document.createElement('div'); d.id = 'yeni'; d.style.cssText = 'position:absolute;left:230px;top:40px;width:180px;height:60px;background:#abc;pointer-events:auto'; document.getElementById('hud').appendChild(d); });
+    await page.waitForTimeout(700);
+    const yeni = await rect(page, 'yeni');
+    checks['sonradan acilan ust pencere de kucultuldu (700 ms icinde)'] = near(yeni.w, 108);
+    // Pencere icindeki yazi degisiklikleri tarama tetiklememeli (oyuna yuk yok) - dolayli kontrol: hata yok, boyut sabit
+    await page.evaluate(() => { const g = document.getElementById('gemi'); for (let i = 0; i < 500; i++) g.firstElementChild.textContent = 'G' + i; });
+    await page.waitForTimeout(300);
+    checks['pencere icerigi degisince boyut sabit kaldi'] = near((await rect(page, 'gemi')).w, 120);
     // Alt kontroller de %80
     await cmd(page, { hudBottom: 0.8 });
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(700);
     const hb = await rect(page, 'hotbar');
     checks['alt kontroller ayri olcekle kuculdu (hotbar alta ortali)'] = near(hb.w, 320) && near((hb.l + hb.r) / 2, vw / 2, 3) && near(hb.b, vh - 3, 2);
     // Kapatinca eski haline doner
     await cmd(page, { hudTop: 1, hudBottom: 1 });
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(700);
     const reset = {}; for (const id in before) reset[id] = await rect(page, id);
     checks['kapatinca her sey eski haline dondu'] = Object.keys(before).every(id => JSON.stringify(reset[id]) === JSON.stringify(before[id]));
     checks['A: sayfa hatasi yok'] = errs.length === 0;

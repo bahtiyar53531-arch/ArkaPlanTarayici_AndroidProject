@@ -9,7 +9,6 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
@@ -19,7 +18,6 @@ import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
 import space.orbitragame.app.R
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -64,29 +62,17 @@ class SpaceLoadingView @JvmOverloads constructor(
     private val bmpPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val starPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val brandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = typeBrand }
     private val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = typeBold; color = 0xFF19E3D6.toInt() }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; color = 0xFFBFD6F5.toInt(); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
     private val percentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.RIGHT; color = Color.WHITE; typeface = typeBold }
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x26FFFFFF }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val shipHull = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val shipAccent = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF19E3D6.toInt() }
-    private val shipPath = Path()
     private val rect = RectF()
 
     // ---- Yildizlar ----
     private class Star(var x: Float, var y: Float, val r: Float, val phase: Float, val speed: Float, val layer: Int, val color: Int)
     private val stars = ArrayList<Star>()
-
-    // ---- Gemiler ----
-    private class Ship(var t: Float, val speed: Float, val y0: Float, val amp: Float, val scale: Float, val dir: Int, val wobble: Float) {
-        // Gemi-yerel koordinatlarda sabit golgelendiriciler (her karede yeniden olusturulmaz)
-        val trail: Shader = LinearGradient(-6f * scale, 0f, -70f * scale, 0f, 0xCC9FF7FF.toInt(), 0x0019E3D6, Shader.TileMode.CLAMP)
-        val engine: Shader = RadialGradient(0f, 0f, 5f * scale, intArrayOf(0xEEFFFFFF.toInt(), 0x667FF6FF, 0x00000000), floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
-        val hull: Shader = LinearGradient(0f, -4.6f * scale, 0f, 4.6f * scale, 0xFFFFFFFF.toInt(), 0xFF7FB8E6.toInt(), Shader.TileMode.CLAMP)
-    }
 
     // Boyuta bagli, onceden olusturulan golgelendiriciler
     private var logoGlow: Shader? = null
@@ -96,7 +82,6 @@ class SpaceLoadingView @JvmOverloads constructor(
     }
     private var barShader: Shader? = null
     private var barShaderKey = 0f
-    private val ships = ArrayList<Ship>()
 
     init {
         setLayerType(LAYER_TYPE_HARDWARE, null)
@@ -144,7 +129,6 @@ class SpaceLoadingView @JvmOverloads constructor(
         if (w == 0 || h == 0) return
         shadeH = 0
         buildStars(w, h)
-        buildShips(w, h)
         if (!videoBackdrop) loadBackground(w, h)
         brandPaint.shader = null
         logoGlowR = min(w, h) * 0.34f * 0.8f
@@ -182,21 +166,6 @@ class SpaceLoadingView @JvmOverloads constructor(
                 rnd.nextFloat() * w, rnd.nextFloat() * h,
                 (0.5f + rnd.nextFloat().pow(3) * (1.4f + layer)) * dp * 0.8f,
                 rnd.nextFloat() * 6.28f, 0.6f + rnd.nextFloat() * 2.2f, layer, color,
-            )
-        }
-    }
-
-    private fun buildShips(w: Int, h: Int) {
-        ships.clear()
-        repeat(4) { i ->
-            ships += Ship(
-                t = rnd.nextFloat(),
-                speed = 0.035f + rnd.nextFloat() * 0.05f,
-                y0 = h * (0.12f + 0.76f * rnd.nextFloat()),
-                amp = h * (0.03f + rnd.nextFloat() * 0.07f),
-                scale = dp * (0.75f + rnd.nextFloat() * 0.9f) * (if (i == 0) 1.4f else 1f),
-                dir = if (i % 2 == 0) 1 else -1,
-                wobble = rnd.nextFloat() * 6.28f,
             )
         }
     }
@@ -260,13 +229,6 @@ class SpaceLoadingView @JvmOverloads constructor(
                 starPaint.alpha = 60
                 canvas.drawCircle(s.x, s.y, s.r * 3f, starPaint)
             }
-        }
-
-        // 4) Uzay gemileri: yalnizca gercekci arka plan yuklenemezse (dusuk bellek) cizilir
-        if (bg == null) for (sh in ships) {
-            sh.t += sh.speed * dt
-            if (sh.t > 1.15f) sh.t = -0.15f
-            drawShip(canvas, sh, w, time)
         }
 
         // 5) Logo + parlama
@@ -340,46 +302,9 @@ class SpaceLoadingView @JvmOverloads constructor(
         }
     }
 
-    private fun drawShip(canvas: Canvas, sh: Ship, w: Float, time: Float) {
-        val x = if (sh.dir > 0) -w * 0.1f + sh.t * w * 1.2f else w * 1.1f - sh.t * w * 1.2f
-        val y = sh.y0 + sin(sh.t * 6.28f + sh.wobble) * sh.amp
-        val dy = cos(sh.t * 6.28f + sh.wobble) * sh.amp * 6.28f / (w * 1.2f)
-        val angle = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), sh.dir.toDouble())).toFloat()
-        val s = sh.scale
-
-        canvas.save()
-        canvas.translate(x, y)
-        canvas.rotate(angle)
-        // Motor izi
-        trailPaint.strokeWidth = 2.2f * s
-        trailPaint.shader = sh.trail
-        canvas.drawLine(-6f * s, 0f, -70f * s, 0f, trailPaint)
-        // Motor parlamasi (titresim olcekle yapilir)
-        val flicker = 0.8f + 0.2f * sin(time * 30f + sh.wobble)
-        canvas.save()
-        canvas.translate(-6.5f * s, 0f)
-        canvas.scale(flicker, flicker)
-        glowPaint.shader = sh.engine
-        canvas.drawCircle(0f, 0f, 5f * s, glowPaint)
-        canvas.restore()
-        // Govde
-        shipPath.reset()
-        shipPath.moveTo(7.5f * s, 0f)
-        shipPath.lineTo(-3.8f * s, -4.6f * s)
-        shipPath.lineTo(-2.2f * s, -1.3f * s)
-        shipPath.lineTo(-6.2f * s, -1.9f * s)
-        shipPath.lineTo(-6.2f * s, 1.9f * s)
-        shipPath.lineTo(-2.2f * s, 1.3f * s)
-        shipPath.lineTo(-3.8f * s, 4.6f * s)
-        shipPath.close()
-        shipHull.shader = sh.hull
-        canvas.drawPath(shipPath, shipHull)
-        canvas.drawOval(0.4f * s, -0.9f * s, 4.4f * s, 0.9f * s, shipAccent)
-        canvas.restore()
-    }
-
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
+        if (changedView === this) setLayerType(if (visibility == VISIBLE) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE, null)
         if (visibility == VISIBLE) {
             if (!videoBackdrop && background == null && width > 0 && height > 0) loadBackground(width, height)
             lastFrameAt = SystemClock.uptimeMillis()
