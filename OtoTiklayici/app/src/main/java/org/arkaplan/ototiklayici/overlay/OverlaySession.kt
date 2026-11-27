@@ -838,7 +838,7 @@ class OverlaySession(private val service: android.accessibilityservice.Accessibi
         val transformer = ActionTransformer(
             1f, 1f, runSettings.speed, runSettings.randomOffsetPx, runSettings.randomDelayMs,
         )
-        player.start(macro, plannerConfig(), transformer)
+        player.start(macro, plannerConfig(), transformer, warmupMs = PLAY_WARMUP_MS)
         ServiceBridge.setRunning(true)
         vibrate(35)
         if (settings.collapsePanelWhileRunning) panel?.collapsed = true
@@ -1113,5 +1113,6 @@ class OverlaySession(private val service: android.accessibilityservice.Accessibi
         /** Bundan fazla hedef için ayrı pencere açılmaz; çizim katmanında gösterilir. */
         private const val MAX_MARKER_WINDOWS = 40
         private const val FORWARD_SETTLE_MS = 48L
+        private const val PLAY_WARMUP_MS = 80L
     }
 }

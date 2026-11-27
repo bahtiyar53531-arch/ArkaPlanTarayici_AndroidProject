@@ -26,22 +26,26 @@ jobs:
 
     steps:
       - name: Depoyu indir
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: SDK paketleri (API 37.2, build-tools 37)
-        run: sdkmanager --install "platforms;android-37.2" "build-tools;37.0.0"
+        run: |
+          # GitHub runner'ında Android SDK hazır gelir; yalnızca eksik paketleri kur.
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKM=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          echo "sdkmanager: $SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-37.2" "build-tools;37.0.0" "platform-tools" | tail -3
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
 
       - name: Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Yayın anahtarı (isteğe bağlı, GitHub Secrets)
         if: env.HAS_KEYSTORE == 'true'
@@ -68,14 +72,14 @@ jobs:
           ls -la out
 
       - name: Derleme çıktısını sakla
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OtoTiklayici-APK
           path: OtoTiklayici/out/*.apk
 
       - name: Test ve lint raporlarını sakla
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OtoTiklayici-raporlar
           path: |

@@ -78,7 +78,11 @@ class MacroPlayer(
     /** Oynatma her ne sebeple biterse bitsin çağrılır. */
     var onFinished: ((PlayerState.Finished) -> Unit)? = null
 
-    fun start(macro: Macro, config: PlannerConfig, transformer: ActionTransformer) {
+    /**
+     * @param warmupMs İlk hareketten önce beklenecek süre. Overlay pencerelerinin "dokunulamaz"
+     * durumunun giriş sistemine ulaşması için kullanılır.
+     */
+    fun start(macro: Macro, config: PlannerConfig, transformer: ActionTransformer, warmupMs: Long = 0) {
         stop()
         val actions = macro.enabledActions
         if (actions.isEmpty()) return
@@ -93,6 +97,7 @@ class MacroPlayer(
             var startedAt = clock()
             var reason = FinishReason.COMPLETED
             try {
+                if (warmupMs > 0) delay(warmupMs)
                 for (s in settings.startDelaySec downTo 1) {
                     _state.value = PlayerState.Countdown(s)
                     delay(1000)
