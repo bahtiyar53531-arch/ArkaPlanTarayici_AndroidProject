@@ -56,6 +56,7 @@ object SettingsDialog {
         switch("Ekran kapalıyken de koru", "İşlemci ve Wi-Fi uyanık tutulur (en fazla 3 saat). Daha fazla pil kullanır.", settings.keepAwakeScreenOff) { settings.keepAwakeScreenOff = it }
         switch("Otomatik yeniden bağlan", "Sunucu bağlantısı koparsa ve oyun kendi kendine toparlanmazsa artan aralıklarla yeniden bağlanır.", settings.autoReconnect) { settings.autoReconnect = it }
         switch("Ekranı açık tut", "Oyun sırasında ekran kararmaz.", settings.keepScreenOn) { settings.keepScreenOn = it }
+        switch("Kamera / çentik alanını kullan", "Tam ekranda ekranın kenarındaki kamera bölgesi de oyuna verilir (siyah şerit kalmaz).", settings.useCutoutArea) { settings.useCutoutArea = it }
         switch("Düşük gecikmeli Wi-Fi", "Android 10+ cihazlarda Wi-Fi gecikme dalgalanmasını azaltır.", settings.lowLatencyWifi) { settings.lowLatencyWifi = it }
 
         val pm = context.getSystemService<PowerManager>()

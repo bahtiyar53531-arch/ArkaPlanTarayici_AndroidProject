@@ -3,16 +3,15 @@ package space.orbitragame.core
 import kotlin.math.roundToInt
 
 /**
- * Oyun olcegi (zoom). CSS veya oyun koduna dokunmaz: WebView'in yerlesim
- * boyutu (CSS viewport) "ekran / olcek" yapilir ve gorunum Android tarafinda
- * "olcek" kadar buyutulur/kucultulur. Boylece:
- *  - Oyun her zaman tum ekrani doldurur (kaydirma gerekmez),
- *  - Dokunma koordinatlarini Android otomatik donusturur,
- *  - WebGL tuvali bozulmaz; oyun sadece ekrani farkli boyutta gorur.
+ * Oyun olcegi (zoom). Tarayicinin KENDI sayfa olcegi kullanilir (viewport):
+ * oyun "ekran / olcek" genisliginde yerlesir, Chromium bunu dogal
+ * cozunurlukte ekrana sigdirir. Android tarafinda gorunum olceklenmez;
+ * bu sayede cizim alani hesaplari bozulmaz (siyah alan olusmaz) ve
+ * dokunmalar tarayici tarafindan dogru donusturulur.
  */
 class ZoomModel(
-    val minScale: Float = 0.6f,
-    val maxScale: Float = 1.8f,
+    val minScale: Float = MIN,
+    val maxScale: Float = MAX,
     val step: Float = 0.1f,
     initial: Float = DEFAULT,
 ) {
@@ -44,7 +43,20 @@ class ZoomModel(
 
     companion object {
         const val DEFAULT = 1.0f
+        const val MIN = 0.3f
+        const val MAX = 1.6f
+        /** Chromium'un izin verdigi en kucuk sayfa olcegi. */
+        const val ENGINE_MIN = 0.25f
         private const val EPS = 0.001f
+
+        /**
+         * Kucuk pencerede (PiP) oyunun yerlesim genisligini sabit tutan etkin sayfa olcegi.
+         * Tam ekrandaki genislik [fullWidthPx], PiP penceresi [pipWidthPx].
+         */
+        fun pipScale(userScale: Float, fullWidthPx: Int, pipWidthPx: Int): Float {
+            if (fullWidthPx <= 0 || pipWidthPx <= 0) return userScale
+            return (userScale * pipWidthPx / fullWidthPx).coerceIn(ENGINE_MIN, MAX)
+        }
 
         /**
          * Kap (ekran) boyutuna ve olcege gore WebView'in yerlesim boyutunu hesaplar.

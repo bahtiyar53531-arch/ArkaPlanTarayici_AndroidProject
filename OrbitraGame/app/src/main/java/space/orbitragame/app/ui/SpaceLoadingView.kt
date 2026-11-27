@@ -19,9 +19,7 @@ import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
 import space.orbitragame.app.R
-import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -60,7 +58,6 @@ class SpaceLoadingView @JvmOverloads constructor(
     private val logo: Bitmap? = BitmapFactory.decodeResource(resources, R.drawable.brand_mark)
     private val typeBrand: Typeface? = ResourcesCompat.getFont(context, R.font.orbitron_black)
     private val typeBold: Typeface? = ResourcesCompat.getFont(context, R.font.orbitron_bold)
-    private var galaxy: Bitmap? = null
 
     // ---- Boyalar ----
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -107,6 +104,23 @@ class SpaceLoadingView @JvmOverloads constructor(
         contentDescription = "ORBITRAGAME.SPACE yükleniyor"
     }
 
+    /**
+     * true: arkada sinematik video oynuyor (SplashVideoView). Bu durumda arka plan,
+     * yildizlar, galaksi ve gemiler video tarafindan saglanir; burada yalnizca
+     * okunabilirlik golgesi, marka yazisi ve yukleme cubugu cizilir.
+     */
+    var videoBackdrop: Boolean = false
+        set(v) {
+            if (field == v) return
+            field = v
+            brandPaint.shader = null
+            if (v) { background?.recycle(); background = null }
+            else if (width > 0 && height > 0) loadBackground(width, height)
+            postInvalidateOnAnimation()
+        }
+    private val shadePaint = Paint()
+    private var shadeH = 0
+
     /** Gercek yukleme olaylarindan gelen yuzde ve asama metni. */
     fun setProgress(percent: Int, label: String) {
         targetPercent = percent.coerceIn(0, 100)
@@ -128,10 +142,10 @@ class SpaceLoadingView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w == 0 || h == 0) return
-        loadBackground(w, h)
+        shadeH = 0
         buildStars(w, h)
         buildShips(w, h)
-        buildGalaxy((min(w, h) * 0.95f).roundToInt())
+        if (!videoBackdrop) loadBackground(w, h)
         brandPaint.shader = null
         logoGlowR = min(w, h) * 0.34f * 0.8f
         logoGlow = RadialGradient(0f, 0f, logoGlowR, intArrayOf(0x5519E3D6, 0x222F7BFF, 0x00000000), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
@@ -187,43 +201,6 @@ class SpaceLoadingView @JvmOverloads constructor(
         }
     }
 
-    /** Logaritmik iki kollu spiral galaksi; bir kez bitmap'e cizilir. */
-    private fun buildGalaxy(size: Int) {
-        if (size <= 0) return
-        galaxy?.recycle()
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
-        val cx = size / 2f
-        val maxR = size / 2f
-        val r = Random(7)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        // Cekirdek parlamasi
-        p.shader = RadialGradient(cx, cx, maxR * 0.35f, intArrayOf(0x66DFFBFF, 0x2219E3D6, 0x00000000), floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
-        c.drawCircle(cx, cx, maxR * 0.35f, p)
-        p.shader = null
-        val n = 2600
-        for (i in 0 until n) {
-            val arm = i % 2
-            val t = r.nextFloat().pow(0.7f) * 3.3f * PI.toFloat()
-            val rad = maxR * 0.05f * exp(0.27f * t)
-            if (rad > maxR * 0.98f) continue
-            val ang = t + arm * PI.toFloat() + (r.nextFloat() - 0.5f) * 0.6f
-            val scatter = (r.nextFloat() - 0.5f) * maxR * 0.09f * (1f + rad / maxR)
-            val x = cx + cos(ang) * (rad + scatter)
-            val y = cx + sin(ang) * (rad + scatter)
-            val k = 1f - rad / maxR
-            val alpha = ((0.18f + 0.7f * k) * (0.35f + r.nextFloat() * 0.65f) * 255).roundToInt().coerceIn(0, 255)
-            val col = when {
-                rad < maxR * 0.22f -> 0xE8FDFF
-                r.nextBoolean() -> 0x7FE9FF
-                else -> 0x6F9BFF
-            }
-            p.color = (alpha shl 24) or col
-            c.drawCircle(x, y, (0.6f + r.nextFloat() * 1.3f) * dp * 0.7f, p)
-        }
-        galaxy = bmp
-    }
-
     @SuppressLint("DrawAllocation") // Tek seferlik: yazi golgelendiricisi yalnizca boyut degisince olusturulur
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
@@ -239,23 +216,36 @@ class SpaceLoadingView @JvmOverloads constructor(
             shownPercent = min(targetPercent.toFloat(), shownPercent + speed * dt)
         }
 
+        val landscape = w > h
+        val logoCy = h * (if (landscape) 0.27f else 0.36f)
+        val logoSize = min(w, h) * (if (landscape) 0.28f else 0.34f)
+        val brandSize: Float
+        val brandY: Float
+        if (videoBackdrop) {
+            // Video uzerinde okunabilirlik icin yumusak ust/alt golge
+            if (shadeH != height) {
+                shadeH = height
+                shadePaint.shader = LinearGradient(0f, 0f, 0f, h,
+                    intArrayOf(0x99000000.toInt(), 0x00000000, 0x00000000, 0xB3000000.toInt()),
+                    floatArrayOf(0f, 0.28f, 0.6f, 1f), Shader.TileMode.CLAMP)
+            }
+            canvas.drawRect(0f, 0f, w, h, shadePaint)
+            brandSize = min(w * 0.088f, 44f * dp)
+            brandY = h * (if (landscape) 0.40f else 0.40f)
+        } else {
+            drawProceduralScene(canvas, w, h, dt, time, logoCy, logoSize)
+            brandSize = min(w * 0.072f, 34f * dp)
+            brandY = logoCy + logoSize * 0.62f + brandSize
+        }
+        drawForeground(canvas, w, h, brandSize, brandY)
+        if (visibility == VISIBLE && isAttachedToWindow) postInvalidateOnAnimation()
+    }
+
+    /** Video yoksa: hareketsiz arka plan + galaksi + yildizlar + gemiler + logo. */
+    private fun drawProceduralScene(canvas: Canvas, w: Float, h: Float, dt: Float, time: Float, logoCy: Float, logoSize: Float) {
         // 1) Arka plan
         val bg = background
         if (bg != null) canvas.drawBitmap(bg, bgMatrix, bmpPaint) else canvas.drawColor(0xFF02040D.toInt())
-
-        // 2) Galaksi (yavas donus, logonun arkasinda)
-        val landscape = w > h
-        val logoCy = h * (if (landscape) 0.27f else 0.36f)
-        galaxy?.let { g ->
-            canvas.save()
-            canvas.translate(w / 2f, logoCy)
-            canvas.scale(1f, 0.46f)
-            canvas.rotate(time * 6f)
-            bmpPaint.alpha = 150
-            canvas.drawBitmap(g, -g.width / 2f, -g.height / 2f, bmpPaint)
-            bmpPaint.alpha = 255
-            canvas.restore()
-        }
 
         // 3) Yildizlar (parildama + katmanli kayma)
         for (s in stars) {
@@ -272,15 +262,14 @@ class SpaceLoadingView @JvmOverloads constructor(
             }
         }
 
-        // 4) Uzay gemileri
-        for (sh in ships) {
+        // 4) Uzay gemileri: yalnizca gercekci arka plan yuklenemezse (dusuk bellek) cizilir
+        if (bg == null) for (sh in ships) {
             sh.t += sh.speed * dt
             if (sh.t > 1.15f) sh.t = -0.15f
             drawShip(canvas, sh, w, time)
         }
 
         // 5) Logo + parlama
-        val logoSize = min(w, h) * (if (landscape) 0.28f else 0.34f)
         logoGlow?.let { shader ->
             val pulse = 0.94f + 0.06f * sin(time * 2.2f)
             canvas.save()
@@ -296,11 +285,13 @@ class SpaceLoadingView @JvmOverloads constructor(
             canvas.drawBitmap(it, null, rect, bmpPaint)
         }
 
+    }
+
+    /** Marka yazisi + yukleme cubugu + metinler (her iki modda). */
+    private fun drawForeground(canvas: Canvas, w: Float, h: Float, brandSize: Float, brandY: Float) {
         // 6) Marka yazisi
-        val brandSize = min(w * 0.072f, 34f * dp)
         brandPaint.textSize = brandSize
         brandPaint.letterSpacing = 0.06f
-        val brandY = logoCy + logoSize * 0.62f + brandSize
         if (brandPaint.shader == null) {
             brandPaint.shader = LinearGradient(0f, brandY - brandSize, 0f, brandY, 0xFFFFFFFF.toInt(), 0xFF7FE3FF.toInt(), Shader.TileMode.CLAMP)
         }
@@ -347,8 +338,6 @@ class SpaceLoadingView @JvmOverloads constructor(
             labelPaint.color = if (statusIsWarning) 0xFFFFB547.toInt() else 0xFF9FB8D9.toInt()
             canvas.drawText(it, w / 2f, barY + barH + 50f * dp, labelPaint)
         }
-
-        if (visibility == VISIBLE && isAttachedToWindow) postInvalidateOnAnimation()
     }
 
     private fun drawShip(canvas: Canvas, sh: Ship, w: Float, time: Float) {
@@ -392,6 +381,7 @@ class SpaceLoadingView @JvmOverloads constructor(
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
         if (visibility == VISIBLE) {
+            if (!videoBackdrop && background == null && width > 0 && height > 0) loadBackground(width, height)
             lastFrameAt = SystemClock.uptimeMillis()
             postInvalidateOnAnimation()
         }
@@ -400,6 +390,5 @@ class SpaceLoadingView @JvmOverloads constructor(
     /** Ekran kapandiktan sonra buyuk bitmap'leri serbest birak. */
     fun release() {
         background?.recycle(); background = null
-        galaxy?.recycle(); galaxy = null
     }
 }

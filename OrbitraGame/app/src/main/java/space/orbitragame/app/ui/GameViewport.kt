@@ -1,30 +1,34 @@
 package space.orbitragame.app.ui
 
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import space.orbitragame.core.ZoomModel
+import kotlin.math.roundToInt
 
 /**
- * WebView'in kap icindeki boyutunu ve olcegini yonetir.
+ * WebView'i oyun alanina yerlestirir ve "etkin sayfa olcegini" hesaplar.
  *
- *  Normal mod : yerlesim = kap / zoom, gorunum olcegi = zoom
- *               -> oyun tum alani doldurur, dokunmalar Android tarafindan
- *                  otomatik donusturulur, oyun koduna/CSS'e dokunulmaz.
- *  PiP modu   : yerlesim PiP oncesindeki boyutta DONDURULUR ve kucuk
- *               pencereye sigdirilir -> oyun yeniden boyutlanmaz/bozulmaz.
+ * Onemli: WebView Android tarafinda OLCEKLENMEZ / KAYDIRILMAZ (bir onceki
+ * surumde bu yontem bazi cihazlarda ekranin bir kisminin siyah kalmasina
+ * yol aciyordu). Yakinlastirma tarayicinin kendi sayfa olcegiyle yapilir;
+ * bu sinif yalnizca hangi olcegin uygulanacagini hesaplar.
+ *
+ *  Normal mod : etkin olcek = kullanicinin oyun olcegi
+ *  PiP modu   : etkin olcek = oyun olcegi x (PiP genisligi / tam ekran genisligi)
+ *               -> oyunun yerlesim genisligi sabit kalir, kucuk pencerede bozulmaz.
  */
-class GameViewport(private val container: FrameLayout, val zoom: ZoomModel) {
-
+class GameViewport(
+    private val container: FrameLayout,
+    val zoom: ZoomModel,
+    private val onChanged: (effectiveScale: Float, vwCss: Int) -> Unit,
+) {
     private var webView: View? = null
     private var inPip = false
-    private var frozenW = 0
-    private var frozenH = 0
-
-    /** Son uygulanan yerlesim boyutu (PiP en-boy orani icin). */
-    var layoutW = 0
-        private set
-    var layoutH = 0
-        private set
+    private var fullWidthPx = 0
+    private var lastScale = -1f
+    private var lastVw = -1
+    private val density = container.resources.displayMetrics.density
 
     private val listener = View.OnLayoutChangeListener { _, l, t, r, b, ol, ot, or_, ob ->
         if (r - l != or_ - ol || b - t != ob - ot) apply()
@@ -34,50 +38,43 @@ class GameViewport(private val container: FrameLayout, val zoom: ZoomModel) {
         container.addOnLayoutChangeListener(listener)
     }
 
+    val effectiveScale: Float get() = if (lastScale > 0) lastScale else zoom.scale
+
     fun attach(view: View) {
         webView = view
         if (view.parent !== container) {
-            (view.parent as? android.view.ViewGroup)?.removeView(view)
-            container.addView(view, 0, FrameLayout.LayoutParams(1, 1))
+            (view.parent as? ViewGroup)?.removeView(view)
+            container.addView(view, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        } else {
+            view.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
-        view.pivotX = 0f
-        view.pivotY = 0f
-        container.post { apply() }
+        // Eski surumden kalmis olabilecek donusumleri temizle
+        view.scaleX = 1f; view.scaleY = 1f; view.translationX = 0f; view.translationY = 0f
+        container.post { apply(force = true) }
     }
 
     fun setPip(pip: Boolean) {
-        if (pip && !inPip) {
-            frozenW = layoutW
-            frozenH = layoutH
-        }
+        if (pip && !inPip) fullWidthPx = innerWidth().takeIf { it > 0 } ?: fullWidthPx
         inPip = pip
         apply()
     }
 
-    fun apply() {
-        val v = webView ?: return
-        val cw = container.width - container.paddingLeft - container.paddingRight
-        val ch = container.height - container.paddingTop - container.paddingBottom
-        if (cw <= 0 || ch <= 0) return
+    /** Klavye icin oyun alanini yukari kaydir (oyun yeniden boyutlanmaz). */
+    fun setKeyboardShift(px: Int) {
+        container.translationY = -px.toFloat()
+    }
 
-        val (w, h, s) = if (inPip && frozenW > 0 && frozenH > 0) {
-            Triple(frozenW, frozenH, ZoomModel.fitScale(frozenW, frozenH, cw, ch))
-        } else {
-            val (lw, lh) = ZoomModel.layoutSizeFor(cw, ch, zoom.scale)
-            Triple(lw, lh, zoom.scale)
-        }
-        val lp = v.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(w, h)
-        if (lp.width != w || lp.height != h) {
-            lp.width = w
-            lp.height = h
-            v.layoutParams = lp
-        }
-        layoutW = w
-        layoutH = h
-        v.scaleX = s
-        v.scaleY = s
-        // PiP'te en-boy farki varsa ortala
-        v.translationX = ((cw - w * s) / 2f).coerceAtLeast(0f)
-        v.translationY = ((ch - h * s) / 2f).coerceAtLeast(0f)
+    private fun innerWidth() = container.width - container.paddingLeft - container.paddingRight
+
+    fun apply(force: Boolean = false) {
+        val w = innerWidth()
+        if (w <= 0) return
+        val scale = if (inPip && fullWidthPx > 0) ZoomModel.pipScale(zoom.scale, fullWidthPx, w) else zoom.scale
+        // Olcek > 1 icin viewport genisligi = mevcut WebView genisligi (CSS px) / olcek
+        val vwCss = (w / density).roundToInt()
+        if (!force && scale == lastScale && vwCss == lastVw) return
+        lastScale = scale
+        lastVw = vwCss
+        onChanged(scale, vwCss)
     }
 }

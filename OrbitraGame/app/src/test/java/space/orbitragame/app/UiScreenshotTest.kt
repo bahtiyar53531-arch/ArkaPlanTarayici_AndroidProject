@@ -18,6 +18,9 @@ import org.robolectric.annotation.GraphicsMode
 import space.orbitragame.app.settings.AppSettings
 import space.orbitragame.app.ui.PerfPanelView
 import space.orbitragame.app.ui.SpaceLoadingView
+import space.orbitragame.app.ui.ViewPanelView
+import android.graphics.BitmapFactory
+import android.graphics.Rect
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -56,6 +59,39 @@ class UiScreenshotTest {
         v.setStatus("İnternet bağlantısı bekleniyor…", warning = true)
         idle(50)
         capture(v, 2400, 1080, "03_acilis_ekrani_yatay")
+    }
+
+    /** Video arka planli acilis: videonun bir karesi (gercekci goruntu) + ustteki yazi/cubuk katmani. */
+    @Test
+    fun videoSplashComposite() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        for ((name, w, h) in listOf(Triple("08_video_acilis_dikey", 1080, 2400), Triple("09_video_acilis_yatay", 2400, 1080))) {
+            val v = SpaceLoadingView(ctx)
+            v.videoBackdrop = true
+            v.setProgress(60, "Oyun kaynakları yükleniyor")
+            repeat(20) { idle(50); v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)); v.layout(0, 0, w, h) }
+            val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val c = Canvas(out)
+            // Videonun gercek karesi (render edilen sahneden)
+            val frame = BitmapFactory.decodeFile(if (w > h) "src/test/resources/splash_frame_land.jpg" else "src/test/resources/splash_frame_port.jpg")
+            val s = maxOf(w.toFloat() / frame.width, h.toFloat() / frame.height)
+            val fw = (frame.width * s).toInt(); val fh = (frame.height * s).toInt()
+            c.drawBitmap(frame, null, Rect((w - fw) / 2, (h - fh) / 2, (w + fw) / 2, (h + fh) / 2), null)
+            v.draw(c)
+            File(outDir, "$name.png").outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+    }
+
+    @Test
+    fun pcViewPanelRenders() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val panel = ViewPanelView(ctx, 0.8f, 0.6f, 1f, object : ViewPanelView.Listener {
+            override fun onZoomChanged(scale: Float) = Unit
+            override fun onHudChanged(top: Float, bottom: Float) = Unit
+            override fun onPanelClosed() = Unit
+        })
+        panel.setAppliedCount(7)
+        capture(panel, 1080, 1100, "10_pc_gorunumu_paneli")
     }
 
     @Test

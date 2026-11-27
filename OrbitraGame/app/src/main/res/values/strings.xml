@@ -21,6 +21,8 @@
     <string name="menu_reconnect">Yeniden bağlan</string>
     <string name="menu_restart">Yeniden başlat</string>
     <string name="menu_settings">Ayarlar</string>
+    <string name="menu_pc_view">PC görünümü</string>
+    <string name="menu_performance">Performans</string>
     <string name="menu_close">Menüyü kapat</string>
     <string name="control_button">Uygulama kontrol menüsü</string>
 

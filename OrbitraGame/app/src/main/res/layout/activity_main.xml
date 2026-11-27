@@ -9,7 +9,6 @@
         android:id="@+id/gameContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/space_black"
         android:clipChildren="true" />
 
     <!-- Ince sayfa yukleme cizgisi (giris -> oyun gecisleri) -->
@@ -84,10 +83,17 @@
         android:id="@+id/errorOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@drawable/bg_space"
+        android:background="@color/space_black"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/errorBackground"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -138,7 +144,13 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Acilis / yukleme ekrani -->
+    <!-- Acilis: sinematik video arka plani -->
+    <space.orbitragame.app.ui.SplashVideoView
+        android:id="@+id/splashVideo"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Acilis / yukleme ekrani (yazi, yuzde cubugu) -->
     <space.orbitragame.app.ui.SpaceLoadingView
         android:id="@+id/loadingView"
         android:layout_width="match_parent"

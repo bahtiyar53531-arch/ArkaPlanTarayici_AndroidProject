@@ -27,8 +27,6 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:appCategory="game"
-        android:isGame="true"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -39,10 +37,16 @@
         tools:ignore="UnusedAttribute"
         tools:targetApi="36">
 
-        <!-- Android Game Mode (Android 13+): Oyun panelinden Performans / Pil modu -->
-        <meta-data
-            android:name="android.game_mode_config"
-            android:resource="@xml/game_mode_config" />
+        <!--
+          Bilerek "oyun" kategorisi BILDIRILMEZ: bazi ureticiler (or. Samsung Game
+          Optimizing Service) oyun olarak isaretlenen uygulamalarin FPS/cozunurlugunu
+          kendi profiline gore sinirlayabiliyor. Chrome ile ayni muameleyi gormek icin
+          uygulama normal bir uygulama gibi calisir.
+        -->
+        <!-- Android 16 buyuk ekranlarda kullanicinin sectigi ekran yonunu koru -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
 
         <!-- Guvenli Tarama acik; WebView metrik gonderimi kapali -->
         <meta-data android:name="android.webkit.WebView.EnableSafeBrowsing" android:value="true" />

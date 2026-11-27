@@ -19,6 +19,7 @@ class DeviceStats(context: Context) {
         val thermal: String?,
         val batteryPct: Int?,
         val charging: Boolean,
+        val thermalSevere: Boolean = false,
     )
 
     private val app = context.applicationContext
@@ -43,6 +44,7 @@ class DeviceStats(context: Context) {
         } else null
         val battery = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
         val charging = bm?.isCharging ?: false
-        return Snapshot(pss, mi.availMem / 1_048_576, mi.totalMem / 1_048_576, mi.lowMemory, thermal, battery, charging)
+        val severe = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && (pm?.currentThermalStatus ?: 0) >= PowerManager.THERMAL_STATUS_SEVERE
+        return Snapshot(pss, mi.availMem / 1_048_576, mi.totalMem / 1_048_576, mi.lowMemory, thermal, battery, charging, severe)
     }
 }

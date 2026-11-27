@@ -46,7 +46,7 @@ server.listen(0, '127.0.0.1', async () => {
     }
     await page.goto(`http://127.0.0.1:${port}/oyun`);
     await page.waitForTimeout(3200);
-    if (withProbe) await page.evaluate(() => window.OrbitraNative.onmessage({ data: JSON.stringify({ cmd: 'stats', on: true }) }));
+    if (withProbe) await page.evaluate(() => window.OrbitraNative.onmessage({ data: JSON.stringify({ cmd: 'stats', on: true, browser: true }) }));
     const f0 = await page.evaluate(() => window.gameFrames); const t0 = Date.now();
     await page.waitForTimeout(3000);
     const f1 = await page.evaluate(() => window.gameFrames); const t1 = Date.now();

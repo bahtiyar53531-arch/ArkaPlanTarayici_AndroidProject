@@ -1,4 +1,45 @@
-# Test Raporu — ORBITRAGAME.SPACE v1.0.0
+# Test Raporu — ORBITRAGAME.SPACE
+
+## v1.1.0 (27 Kasım 2026)
+
+### Gönderilen ekran görüntülerinden teşhis
+
+| Gözlem | Teşhis | Düzeltme |
+|---|---|---|
+| Ayarlarda ekranın alt ~%40'ı siyah, oyun (hotbar, joystick) üst kısma sıkışmış | Oyun sayfası daha kısa bir alana **yeniden yerleşmiş**: bir yazı alanı klavyeyi açtığında uygulama WebView'i klavye kadar küçültüyordu (ekranın %40'ı ≈ yatay klavye yüksekliği). Chrome klavyede sayfayı küçültmez. | Klavye için oyun alanı artık küçültülmüyor; gerekirse yalnızca yukarı kaydırılıyor. Ayrıca zoom'daki Android tarafı ölçekleme kaldırıldı (bu da çizim alanı hatasına yol açabiliyordu). |
+| FPS 37, en düşük 6, "Hafif ısınma", 90 Hz ekran | Oyun 90 Hz'e yetişemiyor, cihaz ısınınca daha da düşüyor; en düşük 6 FPS büyük olasılıkla yukarıdaki yeniden yerleşme anı. | 60 Hz kararlı mod (varsayılan), otomatik render kalitesi, kararlı performans modu, ekran dışı ön-çizim kapalı, "oyun" kategorisi kaldırıldı (üretici FPS sınırlamaları). |
+
+### Otomatik testler (hepsi geçti)
+
+| Test | Sonuç |
+|---|---|
+| `core` birim testleri (+ otomatik kalite: düşürme, işe yaramazsa geri alma, ısınma; PiP ölçeği) | **22 / 22** |
+| Robolectric arayüz testleri (video açılış dikey/yatay, PC görünümü paneli, yeni menü, yaşam döngüsü) | **5 / 5** |
+| Chromium: PC görünümü + oyun ölçeği + render kalitesi (`tools/js-probe-test/test_view.js`, senin ekran görüntündeki yerleşime benzer sahte oyun düzeniyle) | **24 / 24** |
+| Chromium: ölçüm betiği oyunu bozmuyor (FPS, WebSocket) | **15 / 15** |
+| Android Lint (release) | 0 hata |
+
+`test_view.js` neyi doğruluyor: Gemi/P.E.T. sol üst köşeye, Görev takibi sağ üst
+köşeye doğru %60 küçülüyor ve üst üste dizilim korunuyor; sürükleme ile taşınmış
+pencere de doğru küçülüyor; hotbar/joystick/Pilot ve ortadaki oyuncu isimleri
+değişmiyor; **canvas (gemi/harita) değişmiyor**; küçülmüş penceredeki düğmeye
+dokunma doğru öğeye gidiyor; ayar kapatılınca her şey eski haline dönüyor;
+oyun ölçeği %30 ve %140 çalışıyor; uzaklaştırınca oyun tuvali fiziksel
+çözünürlükte kalıyor (gereksiz piksel yok); giriş sayfasında hiçbir şey değişmiyor.
+
+### Hâlâ cihazda doğrulanması gerekenler
+
+- PC görünümünün **gerçek oyun** penceresi yapısında çalışması (oyuna giriş
+  yapamadığım için sahte düzenle test edildi). Panel "N arayüz öğesi küçültüldü"
+  der; oyun ekranında 0 görürsen pencereler tuval içinde çiziliyor demektir.
+- Klavye düzeltmesi: oyun ayarlarında / sohbette yazı alanına dokun → oyun
+  küçülmemeli, siyah alan oluşmamalı.
+- FPS'in Chrome'a yaklaşması (Performans menüsünden kalite ve Hz ile).
+- Açılış videosunun oynaması (oynamazsa gerçekçi hareketsiz görüntü gösterilir).
+
+---
+
+## v1.0.0
 
 Tarih: 27 Kasım 2026
 

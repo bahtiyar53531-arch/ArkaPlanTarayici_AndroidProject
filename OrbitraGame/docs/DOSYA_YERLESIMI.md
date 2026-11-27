@@ -18,6 +18,7 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │     ├─ PingStats.kt                Ping ortanca, sapma (jitter), kayıp, kalite
 │     ├─ ZoomModel.kt                Ölçek sınırları ve görünüm boyutu hesabı
 │     ├─ ReconnectPolicy.kt          Artan aralıklı (backoff) yeniden bağlanma
+│     ├─ RenderQuality.kt            Render kalitesi seviyeleri + otomatik (uyarlanabilir) kalite
 │     └─ ConnectionTracker.kt        Oyun soketlerinin açık/kapalı durumu
 │  └─ src/test/…                     18 birim testi
 │
@@ -26,7 +27,8 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │  ├─ proguard-rules.pro
 │  └─ src/main/
 │     ├─ AndroidManifest.xml         İzinler, PiP, ön plan servisi, oyun kategorisi
-│     ├─ assets/js/orbitra_probe.js  Sayfaya enjekte edilen GÖZLEM betiği (FPS + soket durumu)
+│     ├─ assets/js/orbitra_probe.js  Sayfa betiği: ölçüm (FPS, soket), oyun ölçeği (viewport),
+│     │                              render kalitesi (devicePixelRatio), PC görünümü (pencere ölçeği), klavye konumu
 │     ├─ java/space/orbitragame/app/
 │     │  ├─ MainActivity.kt          Ana ekran: yükleme, olaylar, menü, panel, PiP, bağlantı
 │     │  ├─ OrbitraApp.kt            Bildirim kanalı
@@ -39,12 +41,16 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │     │  │  ├─ JsBridge.kt           Güvenli WebMessageListener köprüsü
 │     │  │  └─ GameWebHost.kt        WebView → Activity olay arayüzü
 │     │  ├─ ui/
-│     │  │  ├─ SpaceLoadingView.kt   Animasyonlu uzay açılış ekranı + yüzde çubuğu
+│     │  │  ├─ SpaceLoadingView.kt   Açılış yazısı + yüzde çubuğu (video yoksa gerçekçi hareketsiz görüntü)
+│     │  │  ├─ SplashVideoView.kt    Sinematik açılış videosu (sessiz, döngülü, center-crop)
+│     │  │  ├─ ViewPanelView.kt      PC görünümü paneli (oyun ölçeği, üst pencereler, alt kontroller)
+│     │  │  ├─ PerformanceDialog.kt  Render kalitesi, ekran Hz, kararlı performans
+│     │  │  ├─ GlassPanelDrawable.kt Gerçekçi cam panel arka planı
 │     │  │  ├─ ControlButtonView.kt  Sürüklenebilir kontrol düğmesi
 │     │  │  ├─ ControlMenuView.kt    Açılır kapanır kontrol menüsü
 │     │  │  ├─ PerfPanelView.kt      FPS / Ping / sistem paneli
 │     │  │  ├─ ZoomOverlayView.kt    İki parmak yakınlaştırma modu
-│     │  │  ├─ GameViewport.kt       Zoom ve PiP için WebView boyut/ölçek yönetimi
+│     │  │  ├─ GameViewport.kt       Etkin sayfa ölçeği (zoom, PiP) ve klavye kaydırması
 │     │  │  ├─ DragHelper.kt         Sürükle-bırak + kenara yapışma
 │     │  │  └─ SettingsDialog.kt     Arka plan / bağlantı ayarları
 │     │  ├─ system/
@@ -60,7 +66,9 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │        ├─ mipmap-*/                Uygulama simgesi (5 yoğunluk, adaptive katmanlar)
 │        ├─ mipmap-anydpi-v26/       Adaptive icon tanımı (+ Android 13 tema simgesi)
 │        ├─ drawable/                Menü simgeleri, bildirim simgesi, şekiller
-│        ├─ drawable-nodpi/bg_space.webp   Uzay arka planı
+│        ├─ raw/splash_*.mp4         Açılış videoları (dikey 1080x1920, yatay 1920x1080)
+│        ├─ drawable-nodpi/bg_space.webp   Gerçekçi arka plan (dikey; yatay için drawable-land-nodpi)
+│        ├─ drawable-nodpi/panel_blur.webp Cam panel dokusu
 │        ├─ drawable-xxxhdpi/brand_mark.png  Uygulama içi küçük logo
 │        ├─ font/                    Orbitron (marka yazısı)
 │        ├─ layout/activity_main.xml Katman düzeni
@@ -69,7 +77,8 @@ OrbitraGame/                         Android Studio projesi (bu klasörü aç)
 │  └─ src/test/…/UiScreenshotTest.kt Robolectric arayüz testleri + ekran görüntüleri
 │
 ├─ branding/                         Play Store simgesi, tanıtım görseli, logo yazısı,
-│  └─ generator/gen.js               görsellerin kaynağı (SVG → PNG üretici)
+│  ├─ generator/gen.js               simge görsellerinin kaynağı (SVG → PNG üretici)
+│  └─ splash-scene/                  açılış videosunun 3B sahnesi (three.js) ve render betiği
 ├─ docs/                             Türkçe belgeler ve ekran görüntüleri
 └─ tools/js-probe-test/              Enjekte betiğin Chromium doğrulama testi
 

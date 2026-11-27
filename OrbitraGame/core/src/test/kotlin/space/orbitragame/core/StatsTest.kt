@@ -36,10 +36,10 @@ class StatsTest {
         val z = ZoomModel()
         assertTrue(z.isDefault)
         repeat(20) { z.zoomIn() }
-        assertEquals(1.8f, z.scale, 0.0001f)
+        assertEquals(1.6f, z.scale, 0.0001f)
         assertFalse(z.canZoomIn)
         repeat(30) { z.zoomOut() }
-        assertEquals(0.6f, z.scale, 0.0001f)
+        assertEquals(0.3f, z.scale, 0.0001f)
         z.reset()
         assertEquals("%100", z.percentLabel)
     }
@@ -48,6 +48,51 @@ class StatsTest {
         assertEquals(2000 to 1000, ZoomModel.layoutSizeFor(1000, 500, 0.5f))
         assertEquals(500 to 250, ZoomModel.layoutSizeFor(1000, 500, 2f))
         assertEquals(0.25f, ZoomModel.fitScale(1000, 2000, 250, 600), 0.0001f)
+    }
+
+    @Test fun pipScaleKeepsLayoutWidthWithinEngineLimit() {
+        // 1080 px genislikte %100 -> 540 px PiP: olcek 0.5 (yerlesim genisligi ayni kalir)
+        assertEquals(0.5f, ZoomModel.pipScale(1f, 1080, 540), 0.0001f)
+        // Cok kucuk pencere: Chromium alt siniri 0.25
+        assertEquals(0.25f, ZoomModel.pipScale(0.4f, 1080, 300), 0.0001f)
+    }
+
+    @Test fun adaptiveQualityLowersThenRevertsIfUseless() {
+        val q = AdaptiveQualityController(windowSamples = 3, cooldownMs = 1000)
+        var t = 0L
+        fun feed(v: Double): AdaptiveQualityController.Decision { t += 1000; return q.onSample(v, t) }
+        assertEquals(AdaptiveQualityController.Decision.None, feed(60.0))
+        feed(58.0); feed(59.0)
+        assertEquals(RenderQuality.BALANCED, q.level)
+        // FPS dustu -> bir kademe dusur
+        feed(30.0); feed(31.0)
+        val d = feed(29.0)
+        assertTrue(d is AdaptiveQualityController.Decision.Lowered)
+        assertEquals(RenderQuality.PERFORMANCE, q.level)
+        // Dusurme ise yaramadi -> geri al ve devre disi birak
+        feed(30.0); feed(30.0)
+        val r = feed(31.0)
+        assertEquals(AdaptiveQualityController.Decision.Reverted(RenderQuality.BALANCED), r)
+        assertTrue(q.disabled)
+        feed(20.0); feed(20.0)
+        assertEquals(AdaptiveQualityController.Decision.None, feed(20.0))
+    }
+
+    @Test fun adaptiveQualityKeepsHelpfulDrop() {
+        val q = AdaptiveQualityController(windowSamples = 2, cooldownMs = 0)
+        var t = 0L
+        fun feed(v: Double) = q.onSample(v, ++t)
+        feed(30.0); feed(30.0) // -> PERFORMANCE
+        assertEquals(RenderQuality.PERFORMANCE, q.level)
+        feed(55.0); feed(56.0) // iyilesti -> korunur
+        assertEquals(RenderQuality.PERFORMANCE, q.level)
+        assertFalse(q.disabled)
+    }
+
+    @Test fun thermalSevereLowersQuality() {
+        val q = AdaptiveQualityController(windowSamples = 1, cooldownMs = 0)
+        val d = q.onSample(60.0, 1, thermalSevere = true)
+        assertTrue(d is AdaptiveQualityController.Decision.Lowered)
     }
 
     @Test fun reconnectBackoff() {

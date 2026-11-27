@@ -3,6 +3,7 @@ package space.orbitragame.app.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import space.orbitragame.core.RenderQuality
 import space.orbitragame.core.ZoomModel
 
 /** Kullanici tercihleri (sifre/oturum bilgisi BURADA TUTULMAZ). */
@@ -12,6 +13,13 @@ class AppSettings(context: Context) {
         context.applicationContext.getSharedPreferences("orbitra_settings", Context.MODE_PRIVATE)
 
     enum class Orientation { AUTO, PORTRAIT, LANDSCAPE }
+
+    /** Ekran yenileme hizi tercihi. */
+    enum class RefreshMode(val label: String) {
+        STABLE_60("60 Hz kararlı (önerilen)"),
+        SYSTEM("Sistem varsayılanı"),
+        MAX("En yüksek (90/120 Hz)"),
+    }
 
     var fullscreen: Boolean
         get() = prefs.getBoolean(K_FULLSCREEN, true)
@@ -32,6 +40,34 @@ class AppSettings(context: Context) {
     var zoomScale: Float
         get() = prefs.getFloat(K_ZOOM, ZoomModel.DEFAULT)
         set(v) = prefs.edit { putFloat(K_ZOOM, v) }
+
+    /** PC gorunumu: ekranin ust yarisindaki pencerelerin olcegi (1 = kapali). */
+    var hudTopScale: Float
+        get() = prefs.getFloat(K_HUD_TOP, 1f)
+        set(v) = prefs.edit { putFloat(K_HUD_TOP, v) }
+
+    /** PC gorunumu: alt kontrollerin (hotbar, joystick, pilot) olcegi. */
+    var hudBottomScale: Float
+        get() = prefs.getFloat(K_HUD_BOTTOM, 1f)
+        set(v) = prefs.edit { putFloat(K_HUD_BOTTOM, v) }
+
+    /** null = Otomatik (uyarlanabilir). */
+    var renderQuality: RenderQuality?
+        get() = prefs.getString(K_QUALITY, null)?.let { n -> RenderQuality.entries.firstOrNull { it.name == n } }
+        set(v) = prefs.edit { putString(K_QUALITY, v?.name) }
+
+    var refreshMode: RefreshMode
+        get() = runCatching { RefreshMode.valueOf(prefs.getString(K_REFRESH, null) ?: "STABLE_60") }.getOrDefault(RefreshMode.STABLE_60)
+        set(v) = prefs.edit { putString(K_REFRESH, v.name) }
+
+    var sustainedPerformance: Boolean
+        get() = prefs.getBoolean(K_SUSTAINED, false)
+        set(v) = prefs.edit { putBoolean(K_SUSTAINED, v) }
+
+    /** Tam ekranda kamera/centik alanini da kullan. */
+    var useCutoutArea: Boolean
+        get() = prefs.getBoolean(K_CUTOUT, false)
+        set(v) = prefs.edit { putBoolean(K_CUTOUT, v) }
 
     /** Ana ekrana donuldugunde otomatik kucuk pencere (PiP). */
     var autoPip: Boolean
@@ -90,6 +126,12 @@ class AppSettings(context: Context) {
         const val K_SHOW_FPS = "show_fps"
         const val K_SHOW_PING = "show_ping"
         const val K_ZOOM = "zoom_scale"
+        const val K_HUD_TOP = "hud_top"
+        const val K_HUD_BOTTOM = "hud_bottom"
+        const val K_QUALITY = "render_quality"
+        const val K_REFRESH = "refresh_mode"
+        const val K_SUSTAINED = "sustained_perf"
+        const val K_CUTOUT = "use_cutout"
         const val K_AUTO_PIP = "auto_pip"
         const val K_KEEP_ALIVE = "keep_alive"
         const val K_WAKE = "keep_awake_screen_off"

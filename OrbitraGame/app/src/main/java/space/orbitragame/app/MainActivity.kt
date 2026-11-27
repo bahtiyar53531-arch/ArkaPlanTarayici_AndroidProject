@@ -27,7 +27,10 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.view.ViewOutlineProvider
+import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
@@ -56,7 +59,11 @@ import space.orbitragame.app.ui.ControlButtonView
 import space.orbitragame.app.ui.ControlMenuView
 import space.orbitragame.app.ui.DragHelper
 import space.orbitragame.app.ui.GameViewport
+import space.orbitragame.app.ui.GlassPanelDrawable
 import space.orbitragame.app.ui.PerfPanelView
+import space.orbitragame.app.ui.PerformanceDialog
+import space.orbitragame.app.ui.SplashVideoView
+import space.orbitragame.app.ui.ViewPanelView
 import space.orbitragame.app.ui.SettingsDialog
 import space.orbitragame.app.ui.SpaceLoadingView
 import space.orbitragame.app.ui.ZoomOverlayView
@@ -66,12 +73,14 @@ import space.orbitragame.app.web.GameWebView
 import space.orbitragame.app.web.GameWebViewClient
 import space.orbitragame.app.web.JsBridge
 import space.orbitragame.app.web.WebViewHolder
+import space.orbitragame.core.AdaptiveQualityController
 import space.orbitragame.core.ConnectionTracker
 import space.orbitragame.core.FpsStats
 import space.orbitragame.core.GameConfig
 import space.orbitragame.core.LoadingProgressModel
 import space.orbitragame.core.PingStats
 import space.orbitragame.core.ReconnectPolicy
+import space.orbitragame.core.RenderQuality
 import space.orbitragame.core.UrlPolicy
 import space.orbitragame.core.ZoomModel
 import java.util.concurrent.Executors
@@ -143,6 +152,19 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     private var serviceRequested = false
     private var lowLatencyLock: WifiManager.WifiLock? = null
 
+    // Gorunum / performans
+    private lateinit var splashVideo: SplashVideoView
+    private lateinit var errorBackground: ImageView
+    private var viewPanel: ViewPanelView? = null
+    private val adaptive = AdaptiveQualityController()
+    private var lastVwCss = 0
+    private var hudCount = 0
+    private var appliedHz: Float? = null
+    private var imeBottom = 0
+    private var focusTopCss: Int? = null
+    private var focusBottomCss: Int? = null
+    private val pushConfig = Runnable { bridge?.updateConfig(currentPageConfig()) }
+
     // Panel verileri
     private var browserFps: Double? = null
     private var screenFps: Double? = null
@@ -191,7 +213,10 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         settings = AppSettings(this)
         screen = DisplayController(this)
         pip = PipController(this)
-        viewport = GameViewport(gameContainer, ZoomModel(initial = settings.zoomScale))
+        viewport = GameViewport(gameContainer, ZoomModel(initial = settings.zoomScale)) { _, vw ->
+            lastVwCss = vw
+            schedulePageConfig()
+        }
         deviceStats = DeviceStats(this)
         network = NetworkMonitor(this, ::onNetworkChanged)
         pingMonitor = PingMonitor(::pingTarget) { if (!isDestroyed) renderPanel() }
@@ -199,6 +224,13 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
 
         screen.applyFullscreen(settings.fullscreen)
         screen.applyOrientation(settings.orientation)
+        appliedHz = screen.applyRefreshMode(settings.refreshMode)
+        screen.applySustained(settings.sustainedPerformance)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            // Android 10 ve oncesi: klavye pencereyi kucultmesin (oyun yeniden yerlesmesin), kaydirsin.
+            @Suppress("DEPRECATION")
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
+        }
         setupInsets()
         setupTaskDescription()
         setupOverlays()
@@ -207,6 +239,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         network.start()
 
         loadingView.setProgress(loading.percent, loading.stage.label)
+        startSplashVideo()
 
         // Acilis ekrani bir kare cizildikten sonra tarayici motorunu hazirla.
         loadingView.post { createEngine() }
@@ -370,7 +403,9 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             setSupportMultipleWindows(false)
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             cacheMode = WebSettings.LOAD_DEFAULT
-            offscreenPreRaster = true
+            // Ekran disi on-cizim kapali: GPU bellegi ve cizim yuku azalir (Chrome gibi).
+            offscreenPreRaster = false
+            layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL // yazi buyutme (font boosting) yok
             setGeolocationEnabled(false)
             userAgentString = "$userAgentString OrbitraGameAndroid/${BuildConfig.VERSION_NAME}"
         }
@@ -401,7 +436,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         val b = JsBridge().also { it.listener = this }
         WebViewHolder.bridge = b
         bridge = b
-        runCatching { b.install(this, wv) }
+        runCatching { b.install(this, wv, currentPageConfig()) }
         wv.webViewClient = GameWebViewClient(this, b)
         wv.webChromeClient = GameChromeClient(this)
         return wv
@@ -469,7 +504,26 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         loadingView.alpha = 1f
         loadingView.isVisible = true
         loadingView.setStatus(null)
+        startSplashVideo()
         updateLoadingUi()
+    }
+
+    private fun startSplashVideo() {
+        splashVideo.animate().cancel()
+        splashVideo.alpha = 1f
+        splashVideo.isVisible = true
+        splashVideo.onFirstFrame = { loadingView.videoBackdrop = true }
+        splashVideo.onError = {
+            splashVideo.isVisible = false
+            loadingView.videoBackdrop = false
+        }
+        splashVideo.start()
+    }
+
+    private fun stopSplashVideo() {
+        splashVideo.release()
+        splashVideo.isVisible = false
+        loadingView.videoBackdrop = false
     }
 
     private fun updateLoadingUi() {
@@ -500,9 +554,14 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         handler.removeCallbacks(loadTimeout)
         if (immediate) {
             loadingView.isVisible = false
+            stopSplashVideo()
+            loadingView.release()
         } else {
+            splashVideo.animate().alpha(0f).setDuration(380).start()
             loadingView.animate().alpha(0f).setDuration(380).withEndAction {
                 loadingView.isVisible = false
+                stopSplashVideo()
+                loadingView.release() // buyuk bitmap'leri serbest birak (oyun icin bellek)
             }.start()
         }
         webView?.requestFocus()
@@ -709,6 +768,23 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
 
     override fun onPageVisibility(visible: Boolean) = Unit
 
+    override fun onHudApplied(count: Int) {
+        hudCount = count
+        viewPanel?.setAppliedCount(count)
+    }
+
+    override fun onFocusRect(topCss: Int, bottomCss: Int) {
+        focusTopCss = topCss
+        focusBottomCss = bottomCss
+        updateKeyboardShift()
+    }
+
+    override fun onFocusCleared() {
+        focusTopCss = null
+        focusBottomCss = null
+        updateKeyboardShift()
+    }
+
     // =====================================================================
     // Baglanti / yeniden baglanma
     // =====================================================================
@@ -785,6 +861,14 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         errorOverlay = findViewById(R.id.errorOverlay)
         errorTitle = findViewById(R.id.errorTitle)
         errorMessage = findViewById(R.id.errorMessage)
+        splashVideo = findViewById(R.id.splashVideo)
+        errorBackground = findViewById(R.id.errorBackground)
+        // Hata kartina gercekci cam panel gorunumu
+        (errorTitle.parent as? View)?.apply {
+            background = GlassPanelDrawable(this@MainActivity, 18 * resources.displayMetrics.density)
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
+        }
         findViewById<Button>(R.id.errorRetry).setOnClickListener {
             reconnectPolicy.onConnected()
             reconnect(showLoading = true)
@@ -798,12 +882,16 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val safe = when {
                 inPip -> Insets.NONE
+                screen.isFullscreen && settings.useCutoutArea -> Insets.NONE
                 screen.isFullscreen -> cutout
                 else -> Insets.max(bars, cutout)
             }
-            gameContainer.setPadding(safe.left, safe.top, safe.right, max(safe.bottom, if (inPip) 0 else ime.bottom))
+            // ONEMLI: Klavye acilinca oyun alani KUCULTULMEZ (oyun yeniden yerlesip ekranin
+            // bir kismi siyah kalmasin). Chrome gibi: gerekirse oyun yalnizca yukari kaydirilir.
+            gameContainer.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             val gap = (6 * resources.displayMetrics.density).toInt() // kenarlara yapismasin
-            overlayLayer.setPadding(safe.left + gap, safe.top + gap, safe.right + gap, max(safe.bottom, if (inPip) 0 else ime.bottom) + gap)
+            overlayLayer.setPadding(safe.left + gap, safe.top + gap, safe.right + gap, safe.bottom + gap)
+            onImeChanged(if (inPip) 0 else ime.bottom)
             (banner.layoutParams as? FrameLayout.LayoutParams)?.let {
                 it.topMargin = safe.top + (12 * resources.displayMetrics.density).toInt()
                 banner.layoutParams = it
@@ -917,6 +1005,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
             canZoomIn = z.canZoomIn,
             canZoomOut = z.canZoomOut,
             pipAvailable = pip.isSupported,
+            pcViewActive = settings.hudTopScale < 0.999f || settings.hudBottomScale < 0.999f,
         )
     }
 
@@ -985,6 +1074,12 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
                 SettingsDialog.show(this, settings, ::onSettingsChanged)
                 return
             }
+            ControlMenuView.Action.PC_VIEW -> {
+                closeMenu(); openViewPanel(); return
+            }
+            ControlMenuView.Action.PERFORMANCE -> {
+                closeMenu(); showPerformance(); return
+            }
             ControlMenuView.Action.CLOSE -> {
                 closeMenu(); return
             }
@@ -1002,6 +1097,97 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         viewport.apply()
         zoomOverlay?.refresh()
         updatePipParams()
+    }
+
+    // =====================================================================
+    // Sayfa gorunum ayarlari (oyun olcegi, render kalitesi, PC gorunumu)
+    // =====================================================================
+
+    private fun activeQuality(): RenderQuality = settings.renderQuality ?: adaptive.level
+
+    private fun currentPageConfig(): JsBridge.PageConfig = JsBridge.PageConfig(
+        scale = if (::viewport.isInitialized) viewport.effectiveScale else settings.zoomScale,
+        vwCss = lastVwCss,
+        dprCap = activeQuality().dprCap,
+        hudTop = settings.hudTopScale,
+        hudBottom = settings.hudBottomScale,
+    )
+
+    /** Kaydirici hareketlerinde sayfayi her pikselde yeniden yerlestirmemek icin kisa gecikmeyle birlestir. */
+    private fun schedulePageConfig() {
+        handler.removeCallbacks(pushConfig)
+        handler.postDelayed(pushConfig, 70)
+    }
+
+    private fun openViewPanel() {
+        if (viewPanel != null || inPip) return
+        val panel = ViewPanelView(this, viewport.zoom.scale, settings.hudTopScale, settings.hudBottomScale, object : ViewPanelView.Listener {
+            override fun onZoomChanged(scale: Float) = applyZoom(viewport.zoom.set(scale))
+            override fun onHudChanged(top: Float, bottom: Float) {
+                settings.hudTopScale = top
+                settings.hudBottomScale = bottom
+                schedulePageConfig()
+            }
+            override fun onPanelClosed() = closeViewPanel()
+        })
+        panel.setAppliedCount(hudCount)
+        root.addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        viewPanel = panel
+    }
+
+    private fun closeViewPanel() {
+        viewPanel?.let { root.removeView(it) }
+        viewPanel = null
+    }
+
+    private fun showPerformance() {
+        val density = resources.displayMetrics.density
+        var eff = density * viewport.effectiveScale
+        val cap = activeQuality().dprCap
+        if (cap > 0f) eff = minOf(eff, cap)
+        PerformanceDialog.show(
+            this, settings,
+            PerformanceDialog.Status(
+                deviceDpr = density,
+                effectiveDpr = eff,
+                autoLevel = adaptive.level,
+                autoDisabled = adaptive.disabled,
+                appliedHz = appliedHz,
+                maxHz = screen.maxRefreshRate(),
+                sustainedSupported = screen.sustainedSupported,
+            ),
+        ) { reloadRecommended ->
+            appliedHz = screen.applyRefreshMode(settings.refreshMode)
+            screen.applySustained(settings.sustainedPerformance)
+            if (settings.renderQuality == null) adaptive.reset()
+            schedulePageConfig()
+            refreshPanel()
+            if (reloadRecommended && isGamePage) {
+                showBanner("Render kalitesi değişti. Oyun hemen uygulamazsa yenile.", "Yenile") { reconnect(showLoading = false) }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Klavye: oyunu kucultmeden, gerekirse yukari kaydir
+    // =====================================================================
+
+    private fun onImeChanged(bottom: Int) {
+        if (bottom == imeBottom) return
+        imeBottom = bottom
+        if (bottom > 0) bridge?.requestFocusRect() else { focusTopCss = null; focusBottomCss = null }
+        updateKeyboardShift()
+    }
+
+    private fun updateKeyboardShift() {
+        if (!::viewport.isInitialized) return
+        val fb = focusBottomCss
+        if (imeBottom <= 0 || fb == null) { viewport.setKeyboardShift(0); return }
+        val density = resources.displayMetrics.density
+        val bottomPx = gameContainer.paddingTop + fb * viewport.effectiveScale * density
+        val visibleBottom = root.height - imeBottom
+        val delta = (bottomPx + 16 * density - visibleBottom).toInt()
+        viewport.setKeyboardShift(delta.coerceIn(0, imeBottom))
     }
 
     private fun openZoomOverlay() {
@@ -1036,6 +1222,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun onSettingsChanged() {
+        ViewCompat.requestApplyInsets(root) // centik alani ayari
         webView?.keepAliveWhenHidden = settings.keepAliveInBackground
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             webView?.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, !settings.keepAliveInBackground)
@@ -1068,6 +1255,8 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun showError(title: String, message: String) {
+        // Gercekci arka plan (dikey/yatay goruntu yone gore secilir)
+        if (!errorOverlay.isVisible) runCatching { errorBackground.setImageResource(R.drawable.bg_space) }
         errorTitle.text = title
         errorMessage.text = message
         errorOverlay.isVisible = true
@@ -1075,6 +1264,7 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
     }
 
     private fun hideError() {
+        if (errorOverlay.isVisible) errorBackground.setImageDrawable(null) // bellegi serbest birak
         errorOverlay.isVisible = false
         errorVisible = false
     }
@@ -1102,8 +1292,10 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         override fun run() {
             statsTick++
             if (pendingGameFps >= 0) {
-                gameFps.add(pendingGameFps)
+                val fps = pendingGameFps
+                gameFps.add(fps)
                 pendingGameFps = -1.0
+                if (adaptiveActive()) onAdaptiveSample(fps)
             }
             if (statsTick % 3 == 1) {
                 val includePss = statsTick % 6 == 1
@@ -1125,18 +1317,39 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         perfPanel.showFps = settings.showFps
         perfPanel.showPing = settings.showPing
         perfPanel.isVisible = on
-        bridge?.setStatsEnabled(settings.showFps && !inPip)
+        val adaptiveOn = adaptiveActive()
+        // Oyun FPS raporu: panel acikken veya otomatik kalite icin; tarayici FPS dongusu yalnizca panelde
+        bridge?.setStatsEnabled((settings.showFps && !inPip) || adaptiveOn, browser = settings.showFps && !inPip)
         val active = on && isStarted
         if (settings.showFps && active) frameMonitor.start() else frameMonitor.stop()
         if (settings.showPing && active) pingMonitor.start() else pingMonitor.stop()
         handler.removeCallbacks(statsTicker)
         pendingGameFps = -1.0 // eski olcum kalintisi ilk ornegi bozmasin
-        if (active) handler.post(statsTicker)
+        if (active || adaptiveOn) handler.post(statsTicker)
         if (!settings.showFps) {
             gameFps.clear(); browserFps = null; screenFps = null
         }
         renderPanel()
         root.post { placeOverlays() }
+    }
+
+    /** Otomatik render kalitesi yalnizca oyun ekranindayken ve on plandayken calisir. */
+    private fun adaptiveActive(): Boolean =
+        ::settings.isInitialized && settings.renderQuality == null && isGamePage && !inPip && isStarted && !loadingVisible
+
+    private fun onAdaptiveSample(fps: Double) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        when (val d = adaptive.onSample(fps, now, lastDevice?.thermalSevere == true)) {
+            is AdaptiveQualityController.Decision.Lowered -> {
+                schedulePageConfig()
+                showBanner("${d.reason.replaceFirstChar { it.uppercase() }}: render kalitesi ${d.from.label} → ${d.to.label}", "Ayarlar") { showPerformance() }
+            }
+            is AdaptiveQualityController.Decision.Reverted -> {
+                schedulePageConfig()
+                showBanner("Çözünürlük düşürmek FPS'i artırmadı; kalite geri alındı (${d.to.label}).", null, null)
+            }
+            AdaptiveQualityController.Decision.None -> Unit
+        }
     }
 
     private fun stopMonitors() {
@@ -1212,8 +1425,8 @@ class MainActivity : AppCompatActivity(), GameWebHost, JsBridge.Listener {
         val r = Rect()
         gameContainer.getGlobalVisibleRect(r)
         pip.update(
-            viewport.layoutW.takeIf { it > 0 } ?: gameContainer.width,
-            viewport.layoutH.takeIf { it > 0 } ?: gameContainer.height,
+            gameContainer.width - gameContainer.paddingLeft - gameContainer.paddingRight,
+            gameContainer.height - gameContainer.paddingTop - gameContainer.paddingBottom,
             r.takeIf { !it.isEmpty },
             shouldAutoPip(),
         )

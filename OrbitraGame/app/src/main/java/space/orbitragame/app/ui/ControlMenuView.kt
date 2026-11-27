@@ -25,7 +25,7 @@ class ControlMenuView(context: Context, private val onAction: (Action) -> Unit) 
     enum class Action {
         FULLSCREEN, PORTRAIT, LANDSCAPE, AUTO_ROTATE,
         FPS, PING, ZOOM_IN, ZOOM_OUT, ZOOM_RESET, ZOOM_PINCH,
-        PIP, RECONNECT, RESTART, SETTINGS, CLOSE,
+        PIP, RECONNECT, RESTART, SETTINGS, PC_VIEW, PERFORMANCE, CLOSE,
     }
 
     private val dp = resources.displayMetrics.density
@@ -36,7 +36,9 @@ class ControlMenuView(context: Context, private val onAction: (Action) -> Unit) 
 
     init {
         orientation = VERTICAL
-        setBackgroundResource(R.drawable.bg_panel)
+        background = GlassPanelDrawable(context, 16 * dp)
+        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        clipToOutline = true
         val p = (10 * dp).toInt()
         setPadding(p, p, p, p)
         elevation = 12 * dp
@@ -94,6 +96,8 @@ class ControlMenuView(context: Context, private val onAction: (Action) -> Unit) 
                 Triple(Action.ZOOM_PINCH, R.drawable.ic_pinch, R.string.menu_zoom_pinch),
             ),
             listOf(
+                Triple(Action.PC_VIEW, R.drawable.ic_pc, R.string.menu_pc_view),
+                Triple(Action.PERFORMANCE, R.drawable.ic_tune, R.string.menu_performance),
                 Triple(Action.RECONNECT, R.drawable.ic_refresh, R.string.menu_reconnect),
                 Triple(Action.RESTART, R.drawable.ic_power, R.string.menu_restart),
             ),
@@ -140,7 +144,9 @@ class ControlMenuView(context: Context, private val onAction: (Action) -> Unit) 
     fun bind(
         fullscreen: Boolean, orientation: String, fps: Boolean, ping: Boolean,
         zoomPercent: String, canZoomIn: Boolean, canZoomOut: Boolean, pipAvailable: Boolean,
+        pcViewActive: Boolean = false,
     ) {
+        items[Action.PC_VIEW]?.isActivated = pcViewActive
         items[Action.FULLSCREEN]?.isActivated = fullscreen
         icons[Action.FULLSCREEN]?.setImageResource(if (fullscreen) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen)
         items[Action.PORTRAIT]?.isActivated = orientation == "PORTRAIT"

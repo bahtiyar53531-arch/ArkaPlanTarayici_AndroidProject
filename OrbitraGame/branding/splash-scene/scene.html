@@ -1,0 +1,382 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+// ORBITRAGAME.SPACE sinematik acilis sahnesi (deterministik, kare kare render edilir).
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const P = new URLSearchParams(location.search);
+const W = +P.get('w') || 1080, H = +P.get('h') || 1920;
+const MODE = P.get('mode') || 'video';   // video | still | icon | logo
+const LOOP = +P.get('loop') || 8;          // saniye
+const TAU = Math.PI * 2;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: MODE === 'logo' });
+renderer.setPixelRatio(1);
+renderer.setSize(W, H);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+if (MODE === 'logo') renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const portrait = H > W;
+const camera = new THREE.PerspectiveCamera(portrait ? 52 : 38, W / H, 0.1, 2000);
+
+// ---------- ortak gurultu (GLSL) ----------
+const NOISE = `
+vec3 hash3(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return -1.0+2.0*fract(sin(p)*43758.5453123);}
+float noise3(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);
+ return mix(mix(mix(dot(hash3(i+vec3(0,0,0)),f-vec3(0,0,0)),dot(hash3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),
+ mix(dot(hash3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(hash3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),
+ mix(mix(dot(hash3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(hash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),
+ mix(dot(hash3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(hash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}
+float fbm(vec3 p){float a=0.5,s=0.0;for(int i=0;i<6;i++){s+=a*noise3(p);p=p*2.03+vec3(1.7,9.2,3.1);a*=0.5;}return s;}
+`;
+
+// ---------- bulutsu (bir kez render edilip doku olarak kullanilir) ----------
+const NEB_SIZE = MODE === 'icon' ? 1024 : 2048;
+const nebTarget = new THREE.WebGLRenderTarget(NEB_SIZE, NEB_SIZE, { type: THREE.HalfFloatType });
+{
+  const m = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+    fragmentShader: NOISE + `
+      varying vec2 vUv;
+      void main(){
+        vec2 p = vUv*3.2;
+        vec3 q = vec3(p, 0.37);
+        vec3 w = vec3(fbm(q+vec3(0.0,0.0,1.3)), fbm(q+vec3(5.2,1.3,2.8)), 0.0);
+        float n = fbm(q + 1.8*w);
+        float n2 = fbm(q*2.1 + 2.5*w + vec3(3.3));
+        float dens = smoothstep(-0.15, 0.65, n);
+        float filaments = pow(smoothstep(0.15, 0.75, n2), 2.0);
+        // oyundaki gibi: koyu lacivert zemin, mor ve gri-mavi bulutlar, turkuaz izler
+        vec3 base = vec3(0.010,0.014,0.035);
+        vec3 violet = vec3(0.30,0.16,0.42);
+        vec3 slate  = vec3(0.30,0.36,0.50);
+        vec3 teal   = vec3(0.05,0.32,0.38);
+        vec3 col = base;
+        col = mix(col, mix(violet, slate, smoothstep(-0.2,0.6,w.x)), dens*0.85);
+        col += teal * filaments * 0.55;
+        col += vec3(0.85,0.75,1.0) * pow(max(n2-0.45,0.0),2.0) * 1.2;
+        // kenarlara dogru koyulas
+        float vign = smoothstep(1.25, 0.25, length(vUv-0.5)*1.6);
+        col *= mix(0.35, 1.0, vign);
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+    depthTest: false, depthWrite: false,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m);
+  const s = new THREE.Scene(); s.add(quad);
+  renderer.setRenderTarget(nebTarget);
+  renderer.render(s, new THREE.Camera());
+  renderer.setRenderTarget(null);
+}
+const nebMat = new THREE.ShaderMaterial({
+  uniforms: { tNeb: { value: nebTarget.texture }, uOff: { value: new THREE.Vector2() }, uAspect: { value: W / H } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.9999,1.); }`,
+  fragmentShader: `uniform sampler2D tNeb; uniform vec2 uOff; uniform float uAspect; varying vec2 vUv;
+    void main(){ vec2 uv=(vUv-0.5); uv.x*=uAspect; uv=uv*0.62+0.5+uOff; gl_FragColor=texture2D(tNeb, uv); }`,
+  depthTest: false, depthWrite: false,
+});
+const nebQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), nebMat);
+nebQuad.frustumCulled = false; nebQuad.renderOrder = -10;
+if (MODE !== 'logo') scene.add(nebQuad);
+
+// ---------- yildizlar ----------
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const R = rng(1234);
+{
+  const N = 9000, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), sz = new Float32Array(N), ph = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const u = R() * 2 - 1, th = R() * TAU, r = 600 + R() * 300, s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(th), r * u, r * s * Math.sin(th) - 200], i * 3);
+    const k = R(); const c = k < 0.12 ? [0.7, 0.85, 1.0] : k < 0.2 ? [1.0, 0.85, 0.7] : [1, 1, 1];
+    col.set(c, i * 3); sz[i] = 0.6 + Math.pow(R(), 6) * 5.0; ph[i] = R() * TAU;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('size', new THREE.BufferAttribute(sz, 1));
+  g.setAttribute('phase', new THREE.BufferAttribute(ph, 1));
+  var starMat = new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uScale: { value: H / 1080 } },
+    vertexShader: `attribute float size; attribute float phase; attribute vec3 color; uniform float uT; uniform float uScale; varying vec3 vC; varying float vA;
+      void main(){ vC=color; vA=0.55+0.45*sin(uT*6.2831853*2.0+phase); vec4 mv=modelViewMatrix*vec4(position,1.); gl_PointSize=size*uScale*1.4; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `varying vec3 vC; varying float vA; void main(){ vec2 d=gl_PointCoord-0.5; float r=length(d); float a=smoothstep(0.5,0.0,r); a=pow(a,2.2); gl_FragColor=vec4(vC*vA*a*1.6, a); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const stars = new THREE.Points(g, starMat); stars.renderOrder = -5;
+  if (MODE !== 'logo') scene.add(stars);
+}
+
+// ---------- isik ----------
+const sunDir = new THREE.Vector3(0.42, 0.30, -0.86).normalize();
+const sun = new THREE.DirectionalLight(0xfff1e0, 3.2); sun.position.copy(sunDir).multiplyScalar(100); scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x3a4a8a, 0x0a0a14, 0.35));
+const rim = new THREE.DirectionalLight(0x66ccff, 1.2); rim.position.set(-60, 20, -40); scene.add(rim);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.18;
+
+// ---------- gezegen ----------
+const planetGroup = new THREE.Group(); scene.add(planetGroup);
+const planetMat = new THREE.ShaderMaterial({
+  uniforms: { uSun: { value: sunDir }, uRot: { value: 0 } },
+  vertexShader: `varying vec3 vN; varying vec3 vP; varying vec3 vW; void main(){ vP=position; vN=normalize(mat3(modelMatrix)*normal); vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: NOISE + `uniform vec3 uSun; uniform float uRot; varying vec3 vN; varying vec3 vP; varying vec3 vW;
+    void main(){
+      float c=cos(uRot), s=sin(uRot); vec3 p=normalize(vP); p=vec3(c*p.x+s*p.z, p.y, -s*p.x+c*p.z);
+      float h=fbm(p*2.6);
+      float h2=fbm(p*9.0+3.0);
+      vec3 ocean=mix(vec3(0.01,0.05,0.14), vec3(0.02,0.12,0.25), smoothstep(-0.4,0.0,h));
+      vec3 land=mix(vec3(0.20,0.15,0.11), vec3(0.42,0.30,0.20), smoothstep(0.0,0.4,h2));
+      land=mix(land, vec3(0.10,0.22,0.20), smoothstep(0.2,0.5,fbm(p*5.0+7.0)));
+      vec3 albedo=mix(ocean, land, smoothstep(0.02,0.08,h));
+      albedo=mix(albedo, vec3(0.85,0.9,0.95), smoothstep(0.75,0.9,abs(p.y))); // kutup buzu
+      float cl=smoothstep(0.18,0.62,fbm(p*4.0+vec3(uRot*1.5,0.0,0.0)));
+      vec3 N=normalize(vN); vec3 V=normalize(cameraPosition-vW);
+      float nl=dot(N,uSun);
+      float diff=smoothstep(-0.08,0.35,nl);
+      vec3 col=albedo*diff*1.15;
+      // okyanus parlamasi
+      vec3 Hh=normalize(uSun+V); float spec=pow(max(dot(N,Hh),0.0),60.0)*(1.0-smoothstep(0.02,0.08,h))*diff;
+      col+=vec3(1.0,0.9,0.75)*spec*0.9;
+      col=mix(col, vec3(0.70,0.76,0.84)*max(diff,0.01)*0.9, cl*0.55);
+      // gece tarafinda sehir isiklari
+      float city=smoothstep(0.62,0.72,fbm(p*18.0))*smoothstep(0.02,0.1,h)*(1.0-cl);
+      col+=vec3(1.0,0.65,0.3)*city*0.6*smoothstep(0.1,-0.25,nl);
+      // atmosfer saclilmasi (kenar)
+      float fres=pow(1.0-max(dot(N,V),0.0),3.0);
+      col+=vec3(0.25,0.6,1.0)*fres*smoothstep(-0.15,0.5,nl)*0.7;
+      gl_FragColor=vec4(col,1.0);
+    }`,
+});
+const PR = 40;
+const planet = new THREE.Mesh(new THREE.SphereGeometry(PR, 160, 120), planetMat);
+planetGroup.add(planet);
+// atmosfer kabugu
+const atmo = new THREE.Mesh(new THREE.SphereGeometry(PR * 1.035, 120, 90), new THREE.ShaderMaterial({
+  uniforms: { uSun: { value: sunDir } },
+  vertexShader: `varying vec3 vN; varying vec3 vW; void main(){ vN=normalize(mat3(modelMatrix)*normal); vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: `uniform vec3 uSun; varying vec3 vN; varying vec3 vW;
+    void main(){ vec3 N=normalize(vN); vec3 V=normalize(cameraPosition-vW); float f=pow(1.0-abs(dot(N,V)),2.5);
+      float lit=smoothstep(-0.25,0.6,dot(N,uSun)); vec3 c=mix(vec3(0.1,0.3,0.9), vec3(0.45,0.85,1.0), lit)*f*lit*1.15; gl_FragColor=vec4(c, f*lit); }`,
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide,
+}));
+planetGroup.add(atmo);
+
+// uzak ay
+const moon = new THREE.Mesh(new THREE.SphereGeometry(2.2, 64, 48), new THREE.MeshStandardMaterial({ color: 0x8a8d96, roughness: 0.95, metalness: 0 }));
+scene.add(moon);
+
+// gunes parlamasi (gezegenin arkasindan)
+function glowTexture(inner, outer) {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, inner); gr.addColorStop(0.15, inner); gr.addColorStop(1, outer);
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('rgba(255,248,235,1)', 'rgba(255,170,110,0)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85 }));
+scene.add(sunGlow);
+const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('rgba(255,255,255,1)', 'rgba(170,220,255,0)'), blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
+const glintHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('rgba(255,230,200,0.55)', 'rgba(255,170,110,0)'), blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
+scene.add(glint); scene.add(glintHalo);
+function placeGlint() {
+  const c = new THREE.Vector3(); planetGroup.getWorldPosition(c);
+  const r = PR * planetGroup.scale.x * 1.01;
+  const view = c.clone().sub(camera.position).normalize();
+  const perp = sunDir.clone().sub(view.clone().multiplyScalar(sunDir.dot(view))).normalize();
+  const p = c.clone().add(perp.multiplyScalar(r));
+  glint.position.copy(p); glintHalo.position.copy(p);
+  const d = p.distanceTo(camera.position);
+  glint.scale.set(d * 0.05, d * 0.05, 1); glintHalo.scale.set(d * 0.17, d * 0.17, 1);
+}
+
+// ---------- asteroitler (oyundaki kahverengi kayalar gibi) ----------
+const asteroids = [];
+{
+  const geoBase = new THREE.IcosahedronGeometry(1, 5);
+  for (let k = 0; k < 7; k++) {
+    const g = geoBase.clone(); const p = g.attributes.position; const v = new THREE.Vector3(); const r2 = rng(77 + k);
+    const f1 = 1.2 + r2() * 1.5, f2 = 4 + r2() * 3, sx = 0.7 + r2() * 0.8, sy = 0.6 + r2() * 0.6;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      let n = Math.sin(v.x * f1 + k) * Math.cos(v.y * f1 * 1.3) * 0.2 + Math.sin(v.z * f2 + v.x * 3) * 0.07 + Math.sin(v.y * f2 * 1.7 + k) * 0.06;
+      n += Math.sin(v.x * 11 + v.y * 7 + k) * 0.025 + Math.sin(v.z * 17 - v.x * 9) * 0.018 + Math.cos(v.y * 23 + v.z * 13) * 0.012;
+      v.multiplyScalar(1 + n); v.x *= sx; v.y *= sy; p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.055 + r2() * 0.025, 0.42, 0.16 + r2() * 0.06), roughness: 0.95, metalness: 0.02 }));
+    m.userData = { base: new THREE.Vector3(), phase: r2() * TAU, rot: new THREE.Vector3(r2(), r2(), r2()), s: 0.6 + r2() * 1.6 };
+    asteroids.push(m); scene.add(m);
+  }
+}
+
+// ---------- uzay gemisi modeli ----------
+function makeShip(hullColor, accent) {
+  const grp = new THREE.Group();
+  const hull = new THREE.MeshStandardMaterial({ color: hullColor, metalness: 0.85, roughness: 0.32 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f2b, metalness: 0.6, roughness: 0.5 });
+  const acc = new THREE.MeshStandardMaterial({ color: accent, metalness: 0.5, roughness: 0.35, emissive: accent, emissiveIntensity: 0.25 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x0a1424, metalness: 1.0, roughness: 0.05, emissive: 0x0a3050, emissiveIntensity: 0.6 });
+  // govde (burun -Z yonunde)
+  const prof = [[0, -6.2], [0.35, -5.6], [0.8, -4.0], [1.15, -1.5], [1.3, 1.0], [1.25, 2.6], [1.0, 3.3], [0.0, 3.4]].map(([r, y]) => new THREE.Vector2(r, y));
+  const fus = new THREE.Mesh(new THREE.LatheGeometry(prof, 48), hull); fus.rotation.x = Math.PI / 2; fus.scale.set(1, 1, 0.62); grp.add(fus);
+  // kanatlar
+  const ws = new THREE.Shape(); ws.moveTo(0.8, -1.8); ws.lineTo(5.6, 1.6); ws.lineTo(5.9, 2.6); ws.lineTo(4.6, 2.7); ws.lineTo(0.9, 2.2); ws.closePath();
+  const wg = new THREE.ExtrudeGeometry(ws, { depth: 0.16, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 2 });
+  wg.rotateX(Math.PI / 2); wg.translate(0, 0.05, 0);
+  const wR = new THREE.Mesh(wg, hull); grp.add(wR);
+  const wL = new THREE.Mesh(wg.clone().scale(-1, 1, 1), hull); grp.add(wL);
+  // kanat ucu seritleri
+  for (const sx of [1, -1]) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 1.2), acc); strip.position.set(5.5 * sx, 0.1, 2.1); grp.add(strip);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 1.6), dark); fin.position.set(5.6 * sx, 0.55, 2.2); fin.rotation.z = -0.25 * sx; grp.add(fin);
+  }
+  // motorlar
+  const engines = [];
+  for (const sx of [1.5, -1.5]) {
+    const nac = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.72, 3.4, 32), dark); nac.rotation.x = Math.PI / 2; nac.position.set(sx, 0, 2.2); grp.add(nac);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.08, 12, 32), acc); ring.position.set(sx, 0, 3.9); grp.add(ring);
+    const core = new THREE.Mesh(new THREE.CircleGeometry(0.55, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 2.2, 3.0) }));
+    core.position.set(sx, 0, 3.93); grp.add(core);
+    engines.push(new THREE.Vector3(sx, 0, 4.0));
+  }
+  // kokpit
+  const cp = new THREE.Mesh(new THREE.SphereGeometry(0.75, 32, 16, 0, TAU, 0, Math.PI / 2), glass); cp.scale.set(0.85, 0.7, 2.2); cp.position.set(0, 0.55, -1.8); grp.add(cp);
+  // govde paneli
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 4.0), acc); spine.position.set(0, 0.78, 0.9); grp.add(spine);
+  // motor izi + parlama
+  const glowTex = glowTexture('rgba(220,255,255,1)', 'rgba(40,200,255,0)');
+  for (const e of engines) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: 0x9ff7ff }));
+    s.position.copy(e).add(new THREE.Vector3(0, 0, 0.3)); s.scale.set(3.2, 3.2, 1); grp.add(s);
+    const trailG = new THREE.PlaneGeometry(1.1, 16); trailG.rotateX(-Math.PI / 2); trailG.translate(0, 0, 8.4);
+    const tc = document.createElement('canvas'); tc.width = 16; tc.height = 256; const tg = tc.getContext('2d');
+    const lg = tg.createLinearGradient(0, 0, 0, 256); lg.addColorStop(0, 'rgba(200,255,255,0.95)'); lg.addColorStop(0.25, 'rgba(60,200,255,0.5)'); lg.addColorStop(1, 'rgba(20,80,255,0)');
+    tg.fillStyle = lg; tg.fillRect(0, 0, 16, 256);
+    const hg = tg.createLinearGradient(0, 0, 16, 0); // yan yumusatma
+    const tex = new THREE.CanvasTexture(tc); tex.colorSpace = THREE.SRGBColorSpace;
+    const tm = new THREE.MeshBasicMaterial({ map: tex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    const tr = new THREE.Mesh(trailG, tm); tr.position.copy(e); tr.position.z -= 0.0; grp.add(tr);
+    const tr2 = tr.clone(); tr2.rotation.z = Math.PI / 2; grp.add(tr2);
+  }
+  return grp;
+}
+
+const hero = makeShip(0xd5dbe3, 0x19e3d6); scene.add(hero);
+const wing1 = makeShip(0xb8c0cc, 0x2f7bff); scene.add(wing1);
+const wing2 = makeShip(0xb8c0cc, 0x2f7bff); scene.add(wing2);
+
+// ---------- kompozisyon ----------
+function layout() {
+  if (MODE === 'icon' || MODE === 'logo') {
+    camera.fov = 30; camera.updateProjectionMatrix(); camera.position.set(0, 6, 120); camera.lookAt(0, 0, 0);
+    planetGroup.position.set(-2, -2, 0); planetGroup.scale.setScalar(0.5);
+    sunDir.set(0.75, 0.55, 0.45).normalize(); sun.position.copy(sunDir).multiplyScalar(100);
+    moon.visible = false;
+    asteroids.forEach((a, i) => { a.visible = MODE === 'icon' && i < 2; a.userData.base.set(i ? -26 : 27, i ? 21 : -22, 10); a.userData.s = i ? 1.6 : 2.2; });
+    // yorunge halkasi (marka ogesi)
+    const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 1.6, 1.5) });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(31, 0.55, 16, 200), ringMat);
+    ring.rotation.set(Math.PI / 2 - 0.32, 0.0, -0.32); ring.position.copy(planetGroup.position); scene.add(ring);
+    const ringGlow = new THREE.Mesh(new THREE.TorusGeometry(31, 1.8, 16, 200), new THREE.MeshBasicMaterial({ color: 0x19e3d6, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }));
+    ringGlow.rotation.copy(ring.rotation); ringGlow.position.copy(ring.position); scene.add(ringGlow);
+    window.__ring = ring;
+  } else if (portrait) {
+    camera.position.set(0, 0, 60); camera.lookAt(0, -6, 0);
+    planetGroup.position.set(6, -62, -20);
+    moon.position.set(-22, 30, -120);
+    sunGlow.position.set(30, -22, -130); sunGlow.scale.set(46, 46, 1);
+    const spots = [[-16, -10, 8, 1.6], [18, 16, -10, 2.4], [-24, 34, -30, 3.4], [22, -26, 14, 1.2], [-6, 46, -60, 4.0], [30, 40, -50, 2.6], [-30, -30, -10, 2.0]];
+    asteroids.forEach((a, i) => { a.userData.base.set(...spots[i].slice(0, 3)); a.userData.s = spots[i][3]; });
+  } else {
+    camera.position.set(0, 0, 60); camera.lookAt(0, -3, 0);
+    planetGroup.position.set(16, -50, -30);
+    moon.position.set(-60, 18, -140);
+    sunGlow.position.set(48, -20, -150); sunGlow.scale.set(52, 52, 1);
+    const spots = [[-30, -12, 6, 1.8], [34, 14, -10, 2.4], [-46, 18, -30, 3.0], [26, -18, 14, 1.2], [-10, 26, -60, 3.6], [52, 30, -50, 2.6], [-56, -22, -10, 2.0]];
+    asteroids.forEach((a, i) => { a.userData.base.set(...spots[i].slice(0, 3)); a.userData.s = spots[i][3]; });
+  }
+}
+layout();
+sunGlow.visible = false;
+const camBase = camera.position.clone();
+const lookBase = new THREE.Vector3(0, portrait ? -6 : -3, 0);
+
+// ---------- son islem ----------
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(1); composer.setSize(W, H);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.7, 0.5, 0.78);
+composer.addPass(bloom);
+const finish = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uSeed: { value: 0 }, uVig: { value: MODE === 'video' || MODE === 'still' ? 1 : 0.4 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSeed; uniform float uVig; varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))+uSeed)*43758.5453); }
+    void main(){ vec4 c=texture2D(tDiffuse,vUv); float v=smoothstep(0.95,0.25,length(vUv-0.5)); c.rgb*=mix(1.0, mix(0.45,1.0,v), uVig);
+      c.rgb+=(h(vUv*vec2(1920.,1080.))-0.5)*0.025*uVig; gl_FragColor=c; }`,
+});
+composer.addPass(finish);
+composer.addPass(new OutputPass());
+
+// ---------- deterministik zaman ----------
+function shipPath(obj, u, from, to, lift, scale, startU, endU, yaw) {
+  const k = (u - startU) / (endU - startU);
+  if (k < 0 || k > 1) { obj.visible = false; return; }
+  obj.visible = true;
+  const e = k;
+  obj.position.lerpVectors(from, to, e);
+  obj.position.y += Math.sin(e * Math.PI) * lift;
+  const dir = new THREE.Vector3().subVectors(to, from).normalize();
+  obj.lookAt(obj.position.clone().sub(dir)); // burun -Z: hareket yonune bak
+  obj.rotateZ(Math.sin(e * Math.PI) * 0.35 * yaw);
+  obj.scale.setScalar(scale);
+}
+
+window.renderAt = function (t) {
+  const u = (t % LOOP) / LOOP;
+  const a = u * TAU;
+  starMat.uniforms.uT.value = u;
+  // kamera yavas suzulme (periyodik)
+  camera.position.set(camBase.x + Math.sin(a) * 1.2, camBase.y + Math.cos(a) * 0.6, camBase.z);
+  camera.lookAt(lookBase.x + Math.sin(a) * 0.4, lookBase.y, lookBase.z);
+  nebMat.uniforms.uOff.value.set(Math.sin(a) * 0.004, Math.cos(a) * 0.002);
+  planetMat.uniforms.uRot.value = 0.6 + Math.sin(a) * 0.035;
+  asteroids.forEach((m) => {
+    const d = m.userData, b = d.base;
+    m.position.set(b.x + Math.sin(a + d.phase) * 0.8, b.y + Math.cos(a + d.phase) * 0.6, b.z);
+    m.rotation.set(d.rot.x * 6 + Math.sin(a + d.phase) * 0.25, d.rot.y * 6 + a * 0 + Math.cos(a + d.phase) * 0.3, d.rot.z * 6);
+    m.scale.setScalar(d.s);
+  });
+  if (MODE === 'video' || MODE === 'still') {
+    const X = portrait ? 34 : 70;
+    shipPath(hero, u, new THREE.Vector3(X, -14, 6), new THREE.Vector3(-X, 18, -18), 3, portrait ? 1.0 : 1.1, 0.08, 0.80, 1);
+    shipPath(wing1, u, new THREE.Vector3(X + 10, -2, -40), new THREE.Vector3(-X - 10, 26, -70), 2, 0.8, 0.18, 0.92, 1);
+    shipPath(wing2, u, new THREE.Vector3(X + 4, -8, -55), new THREE.Vector3(-X - 16, 20, -85), 2, 0.8, 0.24, 0.98, 1);
+  } else {
+    // simge / logo: gemi gezegenin onunde, sag ustte
+    wing1.visible = wing2.visible = false; hero.visible = true;
+    hero.position.set(27, 9, 18); hero.scale.setScalar(1.25);
+    hero.lookAt(new THREE.Vector3(27 - 30, 9 - 16, 18 + 22));
+    hero.rotateZ(-0.5);
+  }
+  placeGlint();
+  finish.uniforms.uSeed.value = (t * 7.31) % 100;
+  if (MODE === 'logo') renderer.render(scene, camera); else composer.render();
+};
+window.sceneReady = true;
+</script></body></html>
