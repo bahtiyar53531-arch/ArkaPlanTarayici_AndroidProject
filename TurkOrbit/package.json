@@ -1,0 +1,37 @@
+{
+  "name": "turkorbit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TÜRK ORBIT — turkorbit.com uzay MMO platformu (monorepo)",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/client"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build:shared": "npm run build -w @turkorbit/shared",
+    "build": "npm run build:shared && npm run build -w @turkorbit/api && npm run build -w @turkorbit/client",
+    "typecheck": "npm run build:shared && npm run typecheck -w @turkorbit/api && npm run typecheck -w @turkorbit/client",
+    "db:migrate": "npm run build:shared && npm run db:migrate -w @turkorbit/api",
+    "dev:api": "npm run build:shared && npm run dev -w @turkorbit/api",
+    "dev:client": "npm run dev -w @turkorbit/client",
+    "test": "npm run build:shared && npm run test -w @turkorbit/shared && npm run test -w @turkorbit/api",
+    "test:e2e": "node scripts/e2e-auth.mjs",
+    "admin:grant-role": "npm run grant-role -w @turkorbit/api --",
+    "admin:revoke-role": "npm run revoke-role -w @turkorbit/api --",
+    "package:phase": "node scripts/package-phase.mjs",
+    "test:ui": "node scripts/ui-e2e.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "mailparser": "^3.15.0",
+    "smtp-server": "^3.21.7",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.2",
+    "vitest": "^5.1.2"
+  }
+}

@@ -1,0 +1,53 @@
+# TÜRK ORBIT — örnek nginx yapılandırması (Linux VPS/VDS, Ubuntu 24.04)
+# İstemci (web/PWA) ve API AYNI alan adında sunulur: turkorbit.com/  ve  turkorbit.com/api/
+# Böylece oturum çerezi __Host- önekli, HttpOnly, Secure, SameSite=Strict olarak çalışır.
+# Sertifika: certbot --nginx -d turkorbit.com -d www.turkorbit.com
+
+server {
+    listen 80;
+    server_name turkorbit.com www.turkorbit.com;
+    return 301 https://turkorbit.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name turkorbit.com;
+
+    ssl_certificate     /etc/letsencrypt/live/turkorbit.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/turkorbit.com/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://turkorbit.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
+    # Oyun istemcisi (apps/client/dist)
+    root /var/www/turkorbit/client;
+    index index.html;
+    location / {
+        try_files $uri /index.html;
+    }
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # REST API (apps/api) — PM2/systemd ile 127.0.0.1:4000'de çalışır
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 64k;
+    }
+
+    # Gerçek zamanlı oyun sunucusu (Aşama 8'de eklenecek, apps/game-server)
+    # location /ws/ {
+    #     proxy_pass http://127.0.0.1:4100;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "upgrade";
+    #     proxy_read_timeout 120s;
+    # }
+}

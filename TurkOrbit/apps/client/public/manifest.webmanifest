@@ -1,0 +1,15 @@
+{
+  "name": "Türk Orbit",
+  "short_name": "Türk Orbit",
+  "description": "PC, web, Android ve iOS'ta aynı hesapla oynanan uzay MMO oyunu.",
+  "lang": "tr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050816",
+  "theme_color": "#050816",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

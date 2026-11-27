@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+apps/client/dist/
+test-results/
+playwright-report/
+.DS_Store
+# Mobil derleme çıktıları (Aşama 15'te oluşacak)
+apps/client/android/app/build/
+apps/client/ios/App/Pods/

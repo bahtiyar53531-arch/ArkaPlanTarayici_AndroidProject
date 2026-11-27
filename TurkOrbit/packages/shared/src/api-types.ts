@@ -1,0 +1,90 @@
+import type { ClientPlatform } from './brand.js';
+import type { PermissionKey, RoleKey } from './roles.js';
+
+/** Sunucudan dönen hata kodları. İstemci, kullanıcı mesajını sunucudan gelen message alanından gösterir. */
+export const ERROR_CODES = [
+  'VALIDATION_ERROR',
+  'WEAK_PASSWORD',
+  'USERNAME_TAKEN',
+  'INVALID_CREDENTIALS',
+  'ACCOUNT_SUSPENDED',
+  'ACCOUNT_BANNED',
+  'ACCOUNT_LOCKED',
+  'EMAIL_NOT_VERIFIED',
+  'INVALID_TOKEN',
+  'TOKEN_EXPIRED',
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
+  'CSRF_FAILED',
+  'ORIGIN_NOT_ALLOWED',
+  'RATE_LIMITED',
+  'NOT_FOUND',
+  'REGISTRATION_CLOSED',
+  'UNSUPPORTED_MEDIA_TYPE',
+  'INTERNAL_ERROR',
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export interface ApiErrorBody {
+  error: {
+    code: ErrorCode;
+    message: string;
+    /** Alan bazlı doğrulama hataları (form alanlarının altında gösterilir). */
+    fields?: Record<string, string[]>;
+    /** RATE_LIMITED için kaç saniye sonra tekrar denenebileceği. */
+    retryAfterSeconds?: number;
+  };
+}
+
+export interface PublicUser {
+  id: string;
+  /** Oyuncuya gösterilen sayısal Oyuncu ID. */
+  playerId: number;
+  username: string;
+  email: string;
+  emailVerified: boolean;
+  status: 'active' | 'suspended' | 'banned' | 'deleted';
+  roles: RoleKey[];
+  createdAt: string;
+}
+
+export interface MeResponse {
+  user: PublicUser;
+  /** Sunucuda hesaplanan etkin yetkiler (yalnızca arayüz gösterimi için; asıl kontrol sunucudadır). */
+  permissions: PermissionKey[];
+  /** Çerez tabanlı oturumlarda durum değiştiren isteklerde X-CSRF-Token başlığına konur. */
+  csrfToken: string | null;
+  session: { id: string; platform: ClientPlatform; expiresAt: string };
+}
+
+export interface LoginResponse extends MeResponse {
+  /** Sadece transport=token seçildiğinde döner (mobil/masaüstü uygulamalar). */
+  sessionToken?: string;
+  suspicious: boolean;
+}
+
+export interface SessionInfo {
+  id: string;
+  platform: ClientPlatform;
+  deviceName: string | null;
+  browser: string | null;
+  os: string | null;
+  ipMasked: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
+export interface LoginHistoryEntry {
+  id: string;
+  success: boolean;
+  failureReason: string | null;
+  platform: ClientPlatform;
+  browser: string | null;
+  os: string | null;
+  ipMasked: string | null;
+  suspicious: boolean;
+  suspiciousReasons: string[];
+  createdAt: string;
+}
