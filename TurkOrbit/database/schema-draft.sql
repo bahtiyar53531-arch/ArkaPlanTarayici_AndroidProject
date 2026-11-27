@@ -12,8 +12,9 @@
 --
 -- (Aşama 6: item_types, upgrade_levels, player_items, item_ledger, loadout_slots, player_pets,
 -- player_pet_modules, shop_categories, shop_offers, shop_purchases.)
+-- (Aşama 7 → 0004_world.sql: map_portals, map_zones, map_transitions, position_rejections, player_settings.)
 --
--- Doğrulama: 0001 + 0002 + 0003 uygulanmış boş bir veritabanına bu dosya hatasız yüklenir:
+-- Doğrulama: 0001–0004 uygulanmış boş bir veritabanına bu dosya hatasız yüklenir:
 --   psql -v ON_ERROR_STOP=1 -1 -f database/schema-draft.sql
 -- Her aşamada ilgili bölüm gözden geçirilip numaralı bir migration'a dönüştürülecektir.
 --
@@ -87,25 +88,8 @@ CREATE TABLE player_skills (
   PRIMARY KEY (player_id, skill_node_id)
 );
 
--- ============================================================ 7. HARİTALAR VE KAPILAR (Aşama 7)
-
-CREATE TABLE map_portals (
-  id           serial PRIMARY KEY,
-  map_id       integer NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
-  x            integer NOT NULL,
-  y            integer NOT NULL,
-  target_map_id integer NOT NULL REFERENCES maps(id),
-  target_x     integer NOT NULL,
-  target_y     integer NOT NULL,
-  requirements jsonb NOT NULL DEFAULT '{}'::jsonb
-);
-
-CREATE TABLE map_zones (
-  id         serial PRIMARY KEY,
-  map_id     integer NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
-  zone_type  text NOT NULL CHECK (zone_type IN ('safe', 'radiation', 'resource', 'no_pvp', 'spawn_protection', 'station')),
-  shape      jsonb NOT NULL                     -- {"type":"circle","x":1000,"y":800,"r":600} veya çokgen
-);
+-- ============================================================ 7. HARİTALAR VE KAPILAR
+-- ✅ Portallar ve bölgeler Aşama 7 → 0004_world.sql. Kaynak düğümleri (Aşama 11) ve kapılar (Aşama 9) aşağıda.
 
 CREATE TABLE resource_nodes (
   id           serial PRIMARY KEY,
@@ -565,15 +549,6 @@ CREATE TABLE anticheat_events (
 CREATE INDEX anticheat_events_player_idx ON anticheat_events(player_id, created_at DESC);
 
 -- ============================================================ 17. SİSTEM, PLATFORM, SÜRÜM (15.10, 16.7)
--- Oyuncunun kontrol/HUD/grafik ayarları: cihaz sınıfına göre ayrı, tüm cihazlarda senkron (16.2-16.5)
-CREATE TABLE player_settings (
-  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  device_class text NOT NULL CHECK (device_class IN ('desktop', 'phone', 'tablet')),
-  -- {"keybinds":{...},"joystick":{"x":0.12,"y":0.78,"size":1.0,"opacity":0.6},"graphics":"medium","fps":60,"hud_scale":1.0}
-  settings     jsonb NOT NULL DEFAULT '{}'::jsonb,
-  updated_at   timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (user_id, device_class)
-);
 
 CREATE TABLE feature_flags (
   key         text PRIMARY KEY,

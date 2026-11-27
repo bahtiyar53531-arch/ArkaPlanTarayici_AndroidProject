@@ -7,3 +7,4 @@ export * from './labels.js';
 export * from './progression.js';
 export * from './player.js';
 export * from './items.js';
+export * from './world.js';

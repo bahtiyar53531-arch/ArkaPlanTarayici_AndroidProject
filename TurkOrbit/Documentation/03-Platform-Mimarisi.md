@@ -54,6 +54,18 @@ type Intent =
 
 Ayarlar `player_settings` tablosunda **cihaz sınıfına göre** (masaüstü/telefon/tablet) tutulur ve aynı sınıftaki tüm cihazlarda senkronize olur.
 
+**Aşama 7'de uygulananlar (tek oyunculu hareket):**
+- PC:
+  - WASD + ok tuşları; fare ile tıkla-git; fare tekerleğiyle yakınlaştırma.
+  - J ile geçitten atlama, M ile galaksi haritası, F ile tam ekran; tüm tuşlar yeniden atanabilir.
+- Mobil/tablet:
+  - Sanal joystick (taraf, boyut, şeffaflık, yükseklik ayarı) veya dokun-git modu.
+  - İki parmakla ve ＋/－ butonlarıyla yakınlaştırma; mini haritaya dokunarak hedef seçme.
+- Cihaz sınıfı tespiti: kaba işaretçi (dokunmatik) ve kısa ekran kenarı 600 px'ten küçükse telefon, 600 px ve üstündeyse tablet.
+- Henüz yok (sonraki aşamalar):
+  - Hedef seçme, ateş ve roket düğmeleri (Aşama 9).
+  - Sürükle-bırak düğme düzenleme modu ve otomatik performans kademesi (Aşama 16).
+
 ## 4. Ekran uyumluluğu ve HUD
 
 - **Yerleşim profilleri:** `desktop` (≥1024 px, yatay), `tablet` (768–1366 px, dokunmatik), `phone-landscape`, `phone-portrait` (menüler için; oyun alanında yatay mod önerilir).

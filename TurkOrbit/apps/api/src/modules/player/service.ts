@@ -312,8 +312,8 @@ export class PlayerService {
         });
       }
       await c.query(
-        `UPDATE players SET company_id = $2, company_changed_at = now(), map_id = $3, pos_x = $4, pos_y = $5
-         WHERE id = $1`,
+        `UPDATE players SET company_id = $2, company_changed_at = now(), map_id = $3, pos_x = $4, pos_y = $5,
+           pos_updated_at = now() WHERE id = $1`,
         [pilot.id, target.id, target.home_map_id, target.spawn_x, target.spawn_y],
       );
       return pilot.id;

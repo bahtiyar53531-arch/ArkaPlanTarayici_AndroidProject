@@ -485,3 +485,6 @@ select, .motto-form input {
 
 .confirm .btn-primary, .confirm .btn-secondary { width: auto; }
 .confirm span { flex: 1 1 220px; }
+
+.topnav a.nav-play { color: #fff; background: var(--accent); font-weight: 700; }
+.topnav a.nav-play:hover, .topnav a.nav-play.active { background: var(--accent-hover); }

@@ -82,10 +82,13 @@ export async function resetDatabase(rt: Runtime) {
          ('company.change', '{"cooldown_days": 30, "cost": {"currency": "AKCE", "amount": 2000}}'::jsonb),
          ('starter.kit', '{"items": [{"code": "laser.ok1", "quantity": 1}, {"code": "shield.siper1", "quantity": 1}, {"code": "speed.itki1", "quantity": 1}, {"code": "ammo.isk1", "quantity": 2000}, {"code": "rocket.yildirim", "quantity": 50}]}'::jsonb),
          ('repair', '{"currency": "KREDI", "per_1000_hp": 250}'::jsonb),
-         ('inventory', '{"max_items": 300}'::jsonb)
+         ('inventory', '{"max_items": 300}'::jsonb),
+         ('movement', '{"tolerance": 1.25, "slack": 300, "max_elapsed_seconds": 10}'::jsonb),
+         ('portal', '{"jump_radius": 450}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);
+    await rt.db.query(`UPDATE maps SET is_closed = false`);
   }
   await rt.redis?.flushdb();
 }
@@ -115,7 +118,7 @@ export function newClient(overrides: Partial<Client> = {}): Client {
 export async function call(
   app: FastifyInstance,
   client: Client,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   body?: unknown,
   extraHeaders: Record<string, string> = {},

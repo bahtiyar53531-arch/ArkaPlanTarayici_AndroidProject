@@ -2,7 +2,7 @@
 
 PC, web tarayıcısı, Android ve iOS'ta **aynı hesapla** oynanan, sunucu otoriteli gerçek zamanlı uzay MMO oyunu ve platformu.
 
-> **Durum (27.11.2026):** Aşama 1–6 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili** ve **hangar/ekipman** (10 gemi, 36 eşya, iki konfigürasyon, yükseltme, tamir, PET, mağaza). Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md).
+> **Durum (27.11.2026):** Aşama 1–7 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili**, **hangar/ekipman** ve **harita/oyun motoru** (Phaser 3 sahnesi, 21 harita, 60 geçit, sunucu doğrulamalı hareket, mini harita, galaksi haritası, joystick; tek oyunculu, multiplayer Aşama 8). Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md) · [Aşama 7](Documentation/DevelopmentNotes/Asama-07-Raporu.md).
 
 ## Hızlı başlangıç
 
@@ -23,11 +23,11 @@ Ayrıntılı kurulum ve dosya yerleştirme: [Documentation/Asama-01-Kayit-Giris/
 |---|---|
 | `npm test` | Birim + entegrasyon testleri (gerçek PostgreSQL + Redis) |
 | `npm run test:e2e` | API uçtan uca testi (gerçek sunucu + SMTP, iki hesap, çoklu platform) |
-| `npm run test:ui` | Tarayıcı testi (Playwright; masaüstü + iPhone görünümü) |
+| `npm run test:ui` | Tarayıcı testi (Playwright; masaüstü + iPhone dikey/yatay görünümü, oyun ekranı dahil) |
 | `npm run typecheck` | TypeScript denetimi |
 | `npm run build` | Üretim derlemesi |
 | `npm run admin:grant-role -- --user X --role super_admin --reason "..."` | Sunucu tarafı rol atama (denetim kaydına yazılır) |
-| `npm run package:phase -- Asama-06-Hangar-Ekipman` | Aşama ZIP teslimatı |
+| `npm run package:phase -- Asama-07-Harita-Oyun-Motoru` | Aşama ZIP teslimatı |
 
 ## Belgeler
 

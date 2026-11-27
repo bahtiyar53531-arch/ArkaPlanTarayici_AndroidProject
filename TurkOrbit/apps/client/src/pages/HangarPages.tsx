@@ -119,6 +119,7 @@ export function HangarPage() {
         <div className="page-head-actions">
           <Balances currencies={hangar.currencies} />
           <Link className="btn btn-secondary" to="/magaza">Mağaza</Link>
+          <Link className="btn btn-primary" to="/oyna">Uzaya çık</Link>
         </div>
       </div>
       {notice && <Alert kind="success">{notice}</Alert>}

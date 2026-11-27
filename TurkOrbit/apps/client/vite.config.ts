@@ -12,5 +12,11 @@ export default defineConfig({
       '/api': { target: process.env.VITE_API_PROXY ?? 'http://127.0.0.1:4000', changeOrigin: false },
     },
   },
-  build: { target: 'es2020', sourcemap: true },
+  build: {
+    target: 'es2020',
+    sourcemap: true,
+    // Phaser (~1,2 MB, gzip ~340 KB) ayrı ve uzun süre önbelleklenen bir parçadır; yalnızca /oyna açılınca indirilir.
+    chunkSizeWarningLimit: 1300,
+    rollupOptions: { output: { manualChunks: { phaser: ['phaser'] } } },
+  },
 });

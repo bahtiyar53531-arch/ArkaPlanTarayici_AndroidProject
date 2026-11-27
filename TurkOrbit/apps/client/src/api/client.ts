@@ -26,16 +26,22 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+export async function api<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+  opts: { keepalive?: boolean } = {},
+): Promise<T> {
   const headers: Record<string, string> = { 'X-Client-Platform': CLIENT_PLATFORM };
   // Fastify boş JSON gövdesini reddeder; gövdesiz POST'larda {} gönderilir.
-  const payload = method === 'POST' || method === 'PATCH' ? JSON.stringify(body ?? {}) : undefined;
+  const payload = method === 'POST' || method === 'PUT' || method === 'PATCH' ? JSON.stringify(body ?? {}) : undefined;
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
 
   let res: Response;
   try {
-    res = await fetch(API_BASE + path, { method, headers, body: payload, credentials: 'include' });
+    // keepalive: sayfa kapanırken gönderilen son istek (ör. son konum) tarayıcı tarafından tamamlanır.
+    res = await fetch(API_BASE + path, { method, headers, body: payload, credentials: 'include', keepalive: opts.keepalive });
   } catch {
     throw new ApiError(0, 'NETWORK_ERROR', 'Sunucuya ulaşılamıyor. İnternet bağlantını kontrol et.');
   }

@@ -253,6 +253,7 @@ function PilotProfileView({ pilot, onChange }: { pilot: PilotProfile; onChange: 
             <dt>Son çevrimiçi</dt><dd>{pilot.lastOnlineAt ? formatDate(pilot.lastOnlineAt) : 'Henüz oyun dünyasına girmedin'}</dd>
             <dt>Pilot oluşturuldu</dt><dd>{formatDate(pilot.createdAt)}</dd>
           </dl>
+          <Link className="btn btn-primary btn-small" to="/oyna">Uzaya çık</Link>
         </section>
       </div>
 

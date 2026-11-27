@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1 arayüz (tarayıcı) uçtan uca testi
+ * TÜRK ORBIT — Aşama 1, 5, 6 ve 7 arayüz (tarayıcı) uçtan uca testi
  *
  * Gerçek API + Vite istemcisi + SMTP alıcısı başlatır, Chromium ile masaüstü ve iPhone görünümünde
  * kayıt → e-posta bağlantısı → giriş → hesap güvenliği → cihazlar arası oturum kapatma akışını dener
@@ -31,6 +31,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-01');
 const SHOTS5 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-05');
 const SHOTS6 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-06');
+const SHOTS7 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-07');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -40,6 +41,7 @@ const WEB = `http://127.0.0.1:${WEB_PORT}`;
 mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SHOTS5, { recursive: true });
 mkdirSync(SHOTS6, { recursive: true });
+mkdirSync(SHOTS7, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -105,6 +107,8 @@ async function waitHttp(url) {
 
 const procs = [];
 let browser;
+let db;
+const fpsReadings = {};
 try {
   console.log('TÜRK ORBIT — Aşama 1 arayüz testi\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
@@ -132,6 +136,29 @@ try {
   const iphone = await browser.newContext({ ...playwright.devices['iPhone 13'], locale: 'tr-TR' });
   const pc = await desktop.newPage();
   const phone = await iphone.newPage();
+  const pageErrors = [];
+  const worldNet = { pc: [], phone: [] };
+  for (const [name, pg_] of [['pc', pc], ['phone', phone]]) {
+    pg_.on('pageerror', (e) => pageErrors.push(`${name}: ${e.message}`));
+    // Hata durumunda teşhis için dünya isteklerinin durum kodları
+    pg_.on('response', (r) => r.url().includes('/api/v1/world/') && worldNet[name].push(`${r.status()} ${new URL(r.url()).pathname.replace('/api/v1', '')}`));
+  }
+  db = new pg.Client({ connectionString: DB_URL });
+  await db.connect();
+  const coords = async (page) => {
+    const t = await page.getByTestId('hud-coords').innerText();
+    const [x, y] = t.split('/').map((v) => Number(v.trim()));
+    return { x, y };
+  };
+  const dbPos = async () => (await db.query(`SELECT p.pos_x, p.pos_y, m.code FROM players p JOIN maps m ON m.id = p.map_id`)).rows[0];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Tek tuval: geliştirme modundaki React StrictMode ilk oyunu kurup hemen kapatır; kapanan tuval DOM'dan kalkmalı.
+  const singleCanvas = async (page) => {
+    const canvases = page.locator('[data-testid="game-canvas"] canvas');
+    await canvases.first().waitFor();
+    for (let i = 0; i < 40 && (await canvases.count()) !== 1; i++) await sleep(100);
+    if ((await canvases.count()) !== 1) throw new Error(`tek tuval bekleniyordu: ${await canvases.count()}`);
+  };
   const A = { username: 'AnadoluKartali', email: 'kartal.pilot@ornek.com', password: 'Kizilelma_Seferi_1071' };
 
   console.log('Masaüstü (1280×860)');
@@ -250,6 +277,113 @@ try {
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '04-envanter-yukseltme.jpg'), fullPage: true });
   });
 
+  console.log('Aşama 7 — harita ve oyun motoru (masaüstü)');
+  await step('Oyna: tuval ve HUD açılır (pilot, can/kalkan, G-1 mini harita, güvenli bölge)', async () => {
+    await pc.getByRole('link', { name: 'Oyna', exact: true }).click();
+    await pc.waitForURL(/\/oyna$/);
+    await singleCanvas(pc);
+    await pc.locator('.hud-pilot').getByText(A.username).waitFor();
+    await pc.locator('.hud-minimap-title').getByText('G-1 · Gökbörü Üssü').waitFor();
+    await pc.locator('.hud-pilot').getByText('Güvenli').waitFor();
+    await sleep(900); // kamera açılış geçişi
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '01-oyun-g1-istasyon.jpg') });
+  });
+  await step('Klavye: D basılı tutulunca gemi sağa gider ve konum sunucuya kaydedilir', async () => {
+    const a = await coords(pc);
+    await pc.keyboard.down('KeyD');
+    await sleep(2200);
+    await pc.keyboard.up('KeyD');
+    await sleep(1600); // en az bir senkron turu
+    const b = await coords(pc);
+    if (!(b.x > a.x + 150)) throw new Error(`x artmadı: ${a.x} → ${b.x}`);
+    if (Math.abs(b.y - a.y) > 30) throw new Error(`y değişmemeliydi: ${a.y} → ${b.y}`);
+    const d = await dbPos();
+    if (Math.abs(d.pos_x - b.x) > 60) throw new Error(`sunucu konumu farklı: db ${d.pos_x}, hud ${b.x}; istekler: ${worldNet.pc.slice(-8).join(', ')}`);
+  });
+  await step('Tıkla-git: ekranın üst tarafına tıklanınca gemi yukarı yönelir', async () => {
+    const a = await coords(pc);
+    await pc.mouse.click(640, 200);
+    await sleep(1800);
+    const b = await coords(pc);
+    if (!(b.y < a.y - 100)) throw new Error(`y azalmadı: ${a.y} → ${b.y}`);
+  });
+  await step('Sunucu doğrulaması: sunucudaki konum ile uyuşmayan hareket reddedilir, istemci düzeltilir', async () => {
+    await sleep(1200);
+    const d = await dbPos();
+    const fx = Math.round(d.pos_x) - 4000;
+    const fy = Math.round(d.pos_y);
+    // Sunucu tarafında konumu değiştir (ör. başka cihazdan hareket); istemcinin eski konumdan gönderdiği adım hız sınırını aşar.
+    await db.query(`UPDATE players SET pos_x = $1, pos_y = $2, pos_updated_at = now()`, [fx, fy]);
+    await pc.keyboard.down('KeyS');
+    await sleep(700);
+    await pc.keyboard.up('KeyS');
+    await pc.getByText('Konumun sunucu tarafından doğrulanamadı ve düzeltildi.').waitFor({ timeout: 5000 });
+    await sleep(300);
+    const b = await coords(pc);
+    if (Math.abs(b.x - fx) > 40) throw new Error(`istemci sunucu konumuna çekilmedi: ${b.x} (beklenen ${fx})`);
+    const r = await db.query(`SELECT count(*)::int AS n FROM position_rejections`);
+    if (r.rows[0].n < 1) throw new Error('reddedilen konum kaydı yok');
+  });
+  await step('Kilitli geçit: seviye 5 isteyen G-4 geçidinde "Atla" pasif ve sebep Türkçe yazılı', async () => {
+    await db.query(`UPDATE players SET pos_x = 10000, pos_y = 10950, pos_updated_at = now()`);
+    await pc.reload();
+    const prompt = pc.locator('.hud-portal');
+    await prompt.getByText('G-4').waitFor();
+    await prompt.getByText(/seviye 5/i).waitFor();
+    if (!(await prompt.getByRole('button').isDisabled())) throw new Error('kilitli geçitte buton aktif');
+    await sleep(700);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '02-kilitli-gecit.jpg') });
+  });
+  await step('Geçit: G-2 geçidinin yanında J tuşu ile atlanır → G-2 yüklenir, geçiş sunucuda kayıtlı', async () => {
+    await db.query(`UPDATE players SET pos_x = 18250, pos_y = 6250, pos_updated_at = now()`);
+    await pc.reload();
+    await pc.locator('.hud-portal').getByText('G-2').waitFor();
+    await sleep(800);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '03-gecit-yaninda.jpg') });
+    await pc.keyboard.press('KeyJ');
+    await pc.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor({ timeout: 8000 });
+    await pc.getByText(/G-2 .* bölgesine geçtin\./).waitFor();
+    const d = await dbPos();
+    if (d.code !== 'G-2') throw new Error(`sunucuda harita ${d.code}`);
+    const t = await db.query(`SELECT count(*)::int AS n FROM map_transitions WHERE reason = 'portal'`);
+    if (t.rows[0].n !== 1) throw new Error('geçiş kaydı yok');
+    await sleep(2500);
+    // Geçişten sonra eski haritanın konumu gönderilip reddedilmemeli (yalnızca önceki adımdaki 1 bilinçli ret)
+    const rj = await db.query(`SELECT count(*)::int AS n FROM position_rejections`);
+    if (rj.rows[0].n !== 1) throw new Error(`geçişten sonra yanlış konum reddi: ${rj.rows[0].n - 1}`);
+    if (await pc.getByText('Konumun sunucu tarafından doğrulanamadı').isVisible()) throw new Error('geçişten sonra düzeltme uyarısı çıktı');
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '04-g2-varis.jpg') });
+  });
+  await step('Galaksi haritası: M ile açılır, bulunulan harita ve kilit sebepleri görünür; Esc kapatır', async () => {
+    await pc.keyboard.press('KeyM');
+    const dlg = pc.getByRole('dialog', { name: 'Galaksi haritası' });
+    await dlg.locator('svg circle').first().waitFor();
+    await dlg.getByText('Buradasın', { exact: false }).waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '05-galaksi-haritasi.jpg') });
+    await pc.keyboard.press('Escape');
+    await dlg.waitFor({ state: 'detached' });
+  });
+  await step('Ayarlar: galaksi tuşu G yapılır, FPS göstergesi açılır ve sunucuya kaydedilir', async () => {
+    await pc.getByRole('button', { name: 'Ayarlar', exact: true }).click();
+    const dlg = pc.getByRole('dialog', { name: 'Oyun ayarları' });
+    await dlg.locator('.key-row').filter({ hasText: 'Galaksi haritası' }).getByRole('button').click();
+    await pc.keyboard.press('KeyG');
+    await dlg.locator('.key-row').filter({ hasText: 'Galaksi haritası' }).getByRole('button', { name: 'G', exact: true }).waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '06-ayarlar-tuslar.jpg') });
+    await dlg.getByRole('button', { name: 'Grafik' }).click();
+    await dlg.getByLabel('FPS göstergesi').check();
+    await dlg.getByRole('button', { name: 'Kaydet' }).click();
+    await dlg.getByText('Kaydedildi.', { exact: false }).waitFor();
+    const r = await db.query(`SELECT settings FROM player_settings WHERE device_class = 'desktop'`);
+    if (r.rows[0]?.settings.keys.galaxy !== 'KeyG' || r.rows[0]?.settings.graphics.showFps !== true) throw new Error('ayar sunucuya yazılmadı');
+    await dlg.getByRole('button', { name: 'Kapat' }).click();
+    await pc.keyboard.press('KeyG');
+    await pc.getByRole('dialog', { name: 'Galaksi haritası' }).waitFor();
+    await pc.keyboard.press('Escape');
+    await sleep(2500);
+    fpsReadings.desktop = await pc.getByTestId('hud-fps').innerText();
+  });
+
   console.log('iPhone 13 görünümü');
   await step('Aynı hesapla telefondan giriş', async () => {
     await phone.goto(`${WEB}/giris`);
@@ -269,6 +403,66 @@ try {
     await phone.getByRole('heading', { name: 'Envanter' }).waitFor();
     await phone.locator('.level-badge', { hasText: '+1' }).first().waitFor();
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '05-mobil-hangar.jpg'), fullPage: true });
+  });
+  await step('Telefonda oyun: PC\'de geçilen G-2 haritası açılır (senkron), sanal joystick görünür', async () => {
+    await phone.goto(`${WEB}/oyna`);
+    await singleCanvas(phone);
+    await phone.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
+    await phone.getByTestId('joystick').waitFor();
+    await phone.getByText('Daha geniş görüş için telefonu yan çevir').waitFor();
+    await sleep(900);
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '07-mobil-dikey-joystick.jpg') });
+  });
+  await step('Telefonda joystick sağa çekilince gemi sağa gider ve sunucuya kaydedilir', async () => {
+    const a = await coords(phone);
+    const box = await phone.getByTestId('joystick').boundingBox();
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await phone.mouse.move(cx, cy);
+    await phone.mouse.down();
+    await phone.mouse.move(cx + box.width / 2, cy, { steps: 5 });
+    await sleep(2000);
+    await phone.mouse.up();
+    await sleep(1600);
+    const b = await coords(phone);
+    if (!(b.x > a.x + 150)) throw new Error(`x artmadı: ${a.x} → ${b.x}`);
+    const d = await dbPos();
+    if (Math.abs(d.pos_x - b.x) > 60) throw new Error(`sunucu konumu farklı: db ${d.pos_x}, hud ${b.x}; istekler: ${worldNet.phone.slice(-8).join(', ')}`);
+  });
+  await step('Telefon yatay: oyun ekranı yatay düzende açılır (aynı oturum)', async () => {
+    const land = await browser.newContext({ ...playwright.devices['iPhone 13 landscape'], locale: 'tr-TR', storageState: await iphone.storageState() });
+    const lp = await land.newPage();
+    lp.on('pageerror', (e) => pageErrors.push(`landscape: ${e.message}`));
+    await lp.goto(`${WEB}/oyna`);
+    await lp.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
+    await lp.getByTestId('joystick').waitFor();
+    await sleep(900);
+    await lp.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '08-mobil-yatay.jpg') });
+    await land.close();
+  });
+  await step('Telefonda ayarlar: dokunmatik sekmeleri ve joystick ayarları (telefon sınıfı ayrı saklanır)', async () => {
+    await phone.goto(`${WEB}/oyna`);
+    await phone.getByTestId('joystick').waitFor();
+    await phone.getByRole('button', { name: 'Ayarlar', exact: true }).click();
+    const dlg = phone.getByRole('dialog', { name: 'Oyun ayarları' });
+    await dlg.getByText('(telefon)').waitFor();
+    await dlg.getByLabel('Joystick tarafı').selectOption('right');
+    await dlg.getByRole('button', { name: 'Grafik' }).click();
+    await dlg.getByLabel('FPS göstergesi').check();
+    await dlg.getByRole('button', { name: 'Kaydet' }).click();
+    await dlg.getByText('Kaydedildi.', { exact: false }).waitFor();
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '09-mobil-ayarlar.jpg') });
+    const r = await db.query(`SELECT device_class, settings->'controls'->>'joystickSide' AS side FROM player_settings ORDER BY device_class`);
+    const rows = Object.fromEntries(r.rows.map((x) => [x.device_class, x.side]));
+    if (rows.phone !== 'right' || rows.desktop !== 'left') throw new Error(`cihaz sınıfı ayarları karıştı: ${JSON.stringify(rows)}`);
+    await dlg.getByRole('button', { name: 'Kapat' }).click();
+    const box = await phone.getByTestId('joystick').boundingBox();
+    if (box.x < 390 / 2) throw new Error('joystick sağa geçmedi');
+    await sleep(2500);
+    fpsReadings.phone = await phone.getByTestId('hud-fps').innerText();
+  });
+  await step('Oyun ekranlarında JavaScript hatası oluşmadı', async () => {
+    if (pageErrors.length) throw new Error(pageErrors.join(' | '));
   });
   await step('Telefonda güvenlik sayfası: iki aktif oturum görünür', async () => {
     await phone.goto(`${WEB}/hesap/guvenlik`);
@@ -310,11 +504,13 @@ try {
   results.push({ name: 'hazırlık', ok: false });
   console.error(err);
 } finally {
+  if (Object.keys(fpsReadings).length) console.log(`\nBaşsız (yazılımsal çizim) FPS ölçümü: ${JSON.stringify(fpsReadings)}`);
   await browser?.close();
+  await db?.end().catch(() => {});
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

@@ -36,7 +36,7 @@ flowchart LR
 
 | Bileşen | Teknoloji | Görev | Durum |
 |---|---|---|---|
-| `apps/client` | TypeScript, React 18, Vite 7, (Aşama 7) Phaser 3 | Hesap ekranları, oyun, HUD. Web/PWA + Capacitor ile Android/iOS | Hesap ekranları ✅ |
+| `apps/client` | TypeScript, React 18, Vite 7, Phaser 3.90 | Hesap ekranları, oyun, HUD. Web/PWA + Capacitor ile Android/iOS | Hesap ekranları ✅, oyun ekranı (tek oyunculu) ✅ |
 | `apps/api` | Node.js 22, Fastify 5, zod, pg, ioredis, argon2 | Hesap, profil, hangar, ekonomi, görev, klan, forum, destek, yönetim REST API'si | Kimlik doğrulama ✅ |
 | `apps/game-server` | Node.js 22, `ws` (gerekirse uWebSockets.js), ikili protokol | Sunucu otoriteli gerçek zamanlı simülasyon (hareket, savaş, NPC, ödül) | Aşama 8 |
 | `apps/admin` | React (istemciyle ortak bileşenler) | TÜRK ORBIT YÖNETİM MERKEZİ | Aşama 14 |

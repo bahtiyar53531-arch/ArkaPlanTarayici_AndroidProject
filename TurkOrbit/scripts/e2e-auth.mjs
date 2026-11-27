@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1 + 5 + 6 uçtan uca (E2E) test
+ * TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 uçtan uca (E2E) test
  *
  * Gerçek API sürecini başlatır, e-postaları GERÇEK SMTP üzerinden yakalar ve iki ayrı hesapla
  * (PC web oturumu + Android uygulama oturumu) tüm kayıt/giriş akışlarını HTTP üzerinden dener.
@@ -132,7 +132,7 @@ const env = {
 
 let server;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -341,6 +341,78 @@ async function main() {
     expect(la[0].reason === 'shop_purchase' && la.every((e) => e.reason !== 'item_sell'), JSON.stringify(la.slice(0, 3)));
     expect(lb[0].reason === 'item_sell' && lb[0].delta === -500, JSON.stringify(lb.slice(0, 3)));
   });
+
+  console.log('\nAşama 7 — harita, konum doğrulama ve geçitler (iki hesap)');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const db = new pg.Client({ connectionString: DB_URL });
+  await db.connect();
+  let aMap = null;
+  await step('Pilot A (web) K-1, Pilot B (Android) G-1 haritasında; düşman şirket haritası seviye 15 ister', async () => {
+    aMap = (await pc.req('GET', '/world/map?server=TR1')).json.map;
+    const bMap = (await app.req('GET', '/world/map?server=TR1')).json.map;
+    expect(aMap.map.code === 'K-1' && bMap.map.code === 'G-1', `${aMap?.map.code} / ${bMap?.map.code}`);
+    expect(aMap.zones.some((z) => z.zoneType === 'station') && aMap.portals.length >= 2, 'istasyon/geçit eksik');
+    const g = (await pc.req('GET', '/world/galaxy?server=TR1')).json.galaxy;
+    const enemy = g.maps.find((m) => m.code === 'G-1');
+    expect(g.currentMap === 'K-1' && enemy.access.ok === false && enemy.access.requiredLevel === 15, JSON.stringify(enemy.access));
+  });
+  await step('Konum: geçerli hareket kabul edilir; ışınlanma (hız sınırı aşımı) reddedilir ve sunucu konumu döner', async () => {
+    await sleep(1100);
+    const p0 = aMap.position;
+    const ok = await pc.req('POST', '/world/position', { serverCode: 'TR1', x: p0.x + 200, y: p0.y });
+    expect(ok.status === 200 && ok.json.accepted === true, JSON.stringify(ok.json));
+    const fast = await pc.req('POST', '/world/position', { serverCode: 'TR1', x: p0.x + 201, y: p0.y });
+    expect(fast.status === 429, `çok sık güncelleme 429 bekleniyordu: ${fast.status}`);
+    await sleep(300);
+    const bad = await pc.req('POST', '/world/position', { serverCode: 'TR1', x: p0.x + 9000, y: p0.y });
+    expect(bad.status === 200 && bad.json.accepted === false && bad.json.reason === 'too_fast' && bad.json.x === p0.x + 200, JSON.stringify(bad.json));
+    const r = await db.query(`SELECT distance, allowed FROM position_rejections`);
+    expect(r.rows.length === 1 && r.rows[0].distance > r.rows[0].allowed, JSON.stringify(r.rows));
+  });
+  await step('Pilot B, başka haritanın geçidini kullanamaz; uzaktan atlayamaz', async () => {
+    const k2 = aMap.portals.find((p) => p.target.code === 'K-2');
+    const bMap = (await app.req('GET', '/world/map?server=TR1')).json.map;
+    const foreign = await app.req('POST', '/world/jump', { serverCode: 'TR1', portalId: k2.id, x: bMap.position.x, y: bMap.position.y });
+    expect(foreign.status === 404 && foreign.json.error.code === 'PORTAL_NOT_FOUND', JSON.stringify(foreign.json));
+    const g2 = bMap.portals.find((p) => p.target.code === 'G-2');
+    const far = await app.req('POST', '/world/jump', { serverCode: 'TR1', portalId: g2.id, x: bMap.position.x, y: bMap.position.y });
+    expect(far.status === 400 && far.json.error.code === 'TOO_FAR_FROM_PORTAL', JSON.stringify(far.json));
+  });
+  await step('Pilot A K-2 geçidinin yanından atlar → K-2; seviye 5 isteyen K-3 geçidi kilitli (403)', async () => {
+    const k2 = aMap.portals.find((p) => p.target.code === 'K-2');
+    const k3 = aMap.portals.find((p) => p.target.code === 'K-3');
+    await db.query(`UPDATE players SET pos_x = $1, pos_y = $2, pos_updated_at = now() - interval '2 seconds' FROM users u WHERE u.id = players.user_id AND u.username = 'AnadoluKartali'`, [k3.x, k3.y - 200]);
+    const locked = await pc.req('POST', '/world/jump', { serverCode: 'TR1', portalId: k3.id, x: k3.x, y: k3.y - 200 });
+    expect(locked.status === 403 && locked.json.error.code === 'MAP_LOCKED', JSON.stringify(locked.json));
+    await db.query(`UPDATE players SET pos_x = $1, pos_y = $2, pos_updated_at = now() - interval '2 seconds' FROM users u WHERE u.id = players.user_id AND u.username = 'AnadoluKartali'`, [k2.x - 250, k2.y]);
+    const j = await pc.req('POST', '/world/jump', { serverCode: 'TR1', portalId: k2.id, x: k2.x - 250, y: k2.y });
+    expect(j.status === 200 && j.json.map.map.code === 'K-2' && j.json.map.portals.some((p) => p.target.code === 'K-1'), JSON.stringify(j.json).slice(0, 300));
+    const again = (await pc.req('GET', '/world/map?server=TR1')).json.map;
+    expect(again.map.code === 'K-2', 'harita kalıcı değil');
+    const t = await db.query(`SELECT reason FROM map_transitions`);
+    expect(t.rows.length === 1 && t.rows[0].reason === 'portal', JSON.stringify(t.rows));
+  });
+  await step('Harita bakıma alınınca Pilot A ana haritasına (K-1) taşınır ve Türkçe bildirim alır', async () => {
+    await db.query(`UPDATE maps SET is_closed = true WHERE code = 'K-2'`);
+    const m = (await pc.req('GET', '/world/map?server=TR1')).json.map;
+    await db.query(`UPDATE maps SET is_closed = false WHERE code = 'K-2'`);
+    expect(m.map.code === 'K-1' && typeof m.notice === 'string' && m.notice.length > 10, JSON.stringify({ code: m.map.code, notice: m.notice }));
+    const t = await db.query(`SELECT reason FROM map_transitions ORDER BY id DESC LIMIT 1`);
+    expect(t.rows[0].reason === 'map_closed', JSON.stringify(t.rows));
+  });
+  await step('Ayarlar cihaz sınıfına göre ayrı saklanır; geçersiz değer reddedilir; B, A\'nın ayarını görmez', async () => {
+    const d = (await pc.req('GET', '/settings?deviceClass=desktop')).json.settings;
+    d.keys.galaxy = 'KeyG';
+    const save = await pc.req('PUT', '/settings', { deviceClass: 'desktop', settings: d });
+    expect(save.status === 200, JSON.stringify(save.json));
+    const ph = (await pc.req('GET', '/settings?deviceClass=phone')).json.settings;
+    expect(ph.keys.galaxy === 'KeyM' && ph.controls.mode === 'joystick', JSON.stringify(ph.keys));
+    const bad = await pc.req('PUT', '/settings', { deviceClass: 'desktop', settings: { ...d, hud: { ...d.hud, scale: 9 } } });
+    expect(bad.status === 400 && bad.json.error.code === 'VALIDATION_ERROR', JSON.stringify(bad.json));
+    const b = (await app.req('GET', '/settings?deviceClass=desktop')).json.settings;
+    expect(b.keys.galaxy === 'KeyM', 'ayarlar hesaplar arasında sızdı');
+  });
+  await db.end();
 
   console.log('\nYetki (sunucu tarafı)');
   await step('Sunucu tarafı rol aracı Pilot A\'ya moderatör verir; yetki /me\'de görünür, denetim kaydı yazılır', async () => {

@@ -43,6 +43,10 @@ export const ERROR_CODES = [
   'PURCHASE_LIMIT',
   'INVENTORY_FULL',
   'PET_REQUIRED',
+  'PORTAL_NOT_FOUND',
+  'TOO_FAR_FROM_PORTAL',
+  'MAP_LOCKED',
+  'MAP_CLOSED',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

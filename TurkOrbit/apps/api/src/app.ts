@@ -11,6 +11,8 @@ import { healthRoutes } from './modules/health/routes.js';
 import { hangarRoutes } from './modules/hangar/routes.js';
 import { HangarService, type Rng } from './modules/hangar/service.js';
 import { playerRoutes } from './modules/player/routes.js';
+import { worldRoutes } from './modules/world/routes.js';
+import { WorldService } from './modules/world/service.js';
 import { PlayerService } from './modules/player/service.js';
 import type { Runtime } from './runtime.js';
 
@@ -19,6 +21,7 @@ export interface BuiltApp {
   auth: AuthService;
   players: PlayerService;
   hangar: HangarService;
+  world: WorldService;
   guards: AuthGuards;
 }
 
@@ -53,7 +56,7 @@ export async function buildApp(
   await app.register(cors, {
     origin: (origin, cb) => cb(null, !origin || config.allowedOrigins.includes(origin)),
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Client-Platform', 'X-Client-Version'],
     maxAge: 600,
   });
@@ -125,6 +128,7 @@ export async function buildApp(
   const guards = createAuthGuards(auth, config.session.cookieName);
   const players = new PlayerService(rt.db, app.log);
   const hangar = new HangarService(rt.db, app.log, options.rng);
+  const world = new WorldService(rt.db, app.log);
 
   await app.register(
     async (api) => {
@@ -132,9 +136,10 @@ export async function buildApp(
       authRoutes(api, { service: auth, guards, config });
       playerRoutes(api, { service: players, guards, limiter: rt.limiter });
       hangarRoutes(api, { service: hangar, guards });
+      worldRoutes(api, { service: world, guards });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, guards };
+  return { app, auth, players, hangar, world, guards };
 }

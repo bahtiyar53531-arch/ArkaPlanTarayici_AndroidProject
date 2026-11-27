@@ -12,8 +12,8 @@
 | 4 | Kayıt ve giriş | ✅ **Web için tamamlandı** | API + web arayüzü + 72 otomatik test + 18 adımlı API E2E + 11 adımlı tarayıcı E2E. Mobil güvenli depolama Aşama 15'te. |
 | 5 | Oyuncu profili | ✅ **Tamamlandı** | Sunucu/şirket seçimi, pilot, cüzdan + defter, seviye/rütbe, başarımlar, açık profil. Rapor: [Aşama 5](DevelopmentNotes/Asama-05-Raporu.md) |
 | 6 | Hangar ve ekipman | ✅ **Tamamlandı** | 10 gemi, 36 eşya, envanter + defter, 2 konfigürasyon, yükseltme, tamir, PET, mağaza. Rapor: [Aşama 6](DevelopmentNotes/Asama-06-Raporu.md) |
-| 7 | Harita ve oyun motoru | ⏭ Sıradaki | Phaser, harita yükleme, tek oyunculu hareket |
-| 8 | Multiplayer | ⏳ | WebSocket, oyun bileti, tahmin/uzlaştırma/enterpolasyon |
+| 7 | Harita ve oyun motoru | ✅ **Tamamlandı (tek oyunculu)** | Phaser 3.90 sahnesi, 21 harita + 60 geçit + 51 bölge, sunucu hız denetimli konum, geçit geçişi, galaksi haritası, mini harita, joystick, cihaz sınıfına göre ayarlar. Rapor: [Aşama 7](DevelopmentNotes/Asama-07-Raporu.md) |
+| 8 | Multiplayer | ⏭ Sıradaki | WebSocket, oyun bileti, sunucu tarafı hareket, tahmin/uzlaştırma/enterpolasyon |
 | 9 | NPC ve savaş | ⏳ | |
 | 10 | Görev sistemi | ⏳ | ~300 görev |
 | 11 | Ekonomi | ⏳ | |
@@ -46,10 +46,10 @@
 
 | Katman | Araç | Kapsam | Aşama 1 durumu |
 |---|---|---|---|
-| Birim | Vitest | Saf fonksiyonlar (parola politikası, şemalar, seviye/rütbe, eşya/slot kuralları, konfigürasyon istatistikleri) | ✅ 31 test |
-| Entegrasyon | Vitest + `fastify.inject` + **gerçek PostgreSQL + Redis** | API uç noktaları, veritabanı kısıtları, tetikleyiciler, eşzamanlı harcama/satın alma | ✅ 104 test |
-| API uçtan uca | `scripts/e2e-auth.mjs` (gerçek süreç + gerçek SMTP) | Çoklu hesap, çoklu platform senaryoları | ✅ 26/26 adım |
-| Arayüz uçtan uca | Playwright (Chromium; masaüstü + iPhone emülasyonu) | Gerçek tarayıcıda kullanıcı akışları + ekran görüntüleri | ✅ 22/22 adım |
+| Birim | Vitest | Saf fonksiyonlar (parola politikası, şemalar, seviye/rütbe, eşya/slot kuralları, konfigürasyon istatistikleri, harita giriş koşulları, hız denetimi, ayar şeması) | ✅ 38 test |
+| Entegrasyon | Vitest + `fastify.inject` + **gerçek PostgreSQL + Redis** | API uç noktaları, veritabanı kısıtları, tetikleyiciler, eşzamanlı harcama/satın alma, konum doğrulama, geçitler | ✅ 117 test |
+| API uçtan uca | `scripts/e2e-auth.mjs` (gerçek süreç + gerçek SMTP) | Çoklu hesap, çoklu platform senaryoları | ✅ 32/32 adım |
+| Arayüz uçtan uca | Playwright (Chromium; masaüstü + iPhone dikey/yatay emülasyonu) | Gerçek tarayıcıda kullanıcı akışları, oyun ekranı (klavye, tıkla-git, joystick, geçit, galaksi, ayarlar) + ekran görüntüleri | ✅ 35/35 adım |
 | Multiplayer | Başsız bot istemcileri (Node) + iki gerçek tarayıcı | Senkronizasyon, gecikme, paket kaybı, yük | Aşama 8 |
 | Gerçek cihaz | Android/iOS telefon + tablet | Bkz. [03 §8](03-Platform-Mimarisi.md) | Aşama 15 |
 | Güvenlik | Bağımlılık taraması (`npm audit`), statik analiz, sızma testi kontrol listesi | — | `npm audit`: 0 açık |

@@ -7,7 +7,8 @@
 | [database/migrations/0001_auth.sql](../database/migrations/0001_auth.sql) | ✅ **Uygulanan migration** (Aşama 1). Testler bu dosyayla kurulan gerçek veritabanında çalışır. |
 | [database/migrations/0002_player_profile.sql](../database/migrations/0002_player_profile.sql) | ✅ **Uygulanan migration** (Aşama 5). |
 | [database/migrations/0003_hangar.sql](../database/migrations/0003_hangar.sql) | ✅ **Uygulanan migration** (Aşama 6). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 7–17). 0001 + 0002 + 0003'ün üzerine hatasız yüklendiği doğrulandı (toplam 89 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0004_world.sql](../database/migrations/0004_world.sql) | ✅ **Uygulanan migration** (Aşama 7). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 8–17). 0001 → 0004 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 89 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -53,6 +54,17 @@
 | `shop_categories`, `shop_offers`, `shop_purchases` | Mağaza | İndirim, paket, oyuncu sınırı, tarih aralığı; satın alma `idempotency_key` benzersiz |
 | `players.active_loadout`, `player_ships.design_item_id` | Eklenen sütunlar | Tasarım tek gemide (UNIQUE) |
 
+## 1d. Aşama 7'de uygulanan tablolar (0004)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `map_portals` | 60 geçit (30 çift yönlü bağlantı) | Harita başına hedef benzersiz; `requirements` ek şart; `is_enabled` ile kapatılabilir; varış noktası karşı geçidin 700 birim içi |
+| `map_zones` | 51 bölge: istasyon, güvenli bölge, kaynak alanı, PvP yasak | Şekil şimdilik daire (`shape.type = 'circle'`) |
+| `map_transitions` | Harita geçiş kaydı | Sebep: `portal`, `map_closed`, `company_change` |
+| `position_rejections` | Hız denetiminden geçmeyen konumlar | Aşama 8'de hile olaylarına taşınacak |
+| `player_settings` | Oyuncu ayarları | Birincil anahtar (kullanıcı, cihaz sınıfı); zod şemasıyla doğrulanır |
+| `maps.galaxy_x/galaxy_y`, `players.pos_updated_at` | Eklenen sütunlar | Galaksi haritası düzeni; hız denetimi için son konum zamanı |
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
@@ -61,7 +73,7 @@
 | İçerik sürümleme | `content_revisions, approval_requests` | 14 (tasarım şimdiden) |
 | Eşya, envanter, konfigürasyon, PET | ✅ 0003'te uygulandı | 6 ✅ |
 | Yetenekler | `skill_nodes, player_skills` | 9 |
-| Harita | `maps, map_portals, map_zones, resource_nodes` | 7 |
+| Harita | ✅ `map_portals, map_zones` 0004'te uygulandı; taslakta `resource_nodes` (madencilik) | 7 ✅ / 11 |
 | NPC ve kapılar | `npc_types, npc_spawns, gates, gate_waves, player_gates` | 9 |
 | Ödüller | `reward_tables, reward_entries` | 9 |
 | Görevler | `quests, quest_objectives, player_quests` | 10 |

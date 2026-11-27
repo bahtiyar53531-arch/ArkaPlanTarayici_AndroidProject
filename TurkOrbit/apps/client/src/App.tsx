@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AccountPage, SecurityPage } from './pages/AccountPages';
@@ -12,6 +12,9 @@ import {
 import { NotFoundPage, PrivacyPage, TermsPage } from './pages/InfoPages';
 import { HangarPage, ShopPage } from './pages/HangarPages';
 import { PilotPage, PublicPilotPage } from './pages/PilotPages';
+
+// Oyun ekranı (Phaser dahil) ayrı parça olarak yalnızca /oyna açılınca indirilir.
+const GamePage = lazy(() => import('./pages/GamePage').then((m) => ({ default: m.GamePage })));
 
 function Splash() {
   return (
@@ -54,6 +57,7 @@ export function App() {
           <Route path="/pilot/:server/:name" element={<PublicPilotPage />} />
           <Route path="/hangar" element={<RequireAuth><HangarPage /></RequireAuth>} />
           <Route path="/magaza" element={<RequireAuth><ShopPage /></RequireAuth>} />
+          <Route path="/oyna" element={<RequireAuth><Suspense fallback={<Splash />}><GamePage /></Suspense></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AuthProvider>
