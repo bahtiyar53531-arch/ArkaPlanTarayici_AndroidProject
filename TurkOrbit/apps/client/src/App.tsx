@@ -10,6 +10,7 @@ import {
   VerifyEmailPage,
 } from './pages/AuthPages';
 import { NotFoundPage, PrivacyPage, TermsPage } from './pages/InfoPages';
+import { HangarPage, ShopPage } from './pages/HangarPages';
 import { PilotPage, PublicPilotPage } from './pages/PilotPages';
 
 function Splash() {
@@ -51,6 +52,8 @@ export function App() {
           <Route path="/hesap/guvenlik" element={<RequireAuth><SecurityPage /></RequireAuth>} />
           <Route path="/pilot" element={<RequireAuth><PilotPage /></RequireAuth>} />
           <Route path="/pilot/:server/:name" element={<PublicPilotPage />} />
+          <Route path="/hangar" element={<RequireAuth><HangarPage /></RequireAuth>} />
+          <Route path="/magaza" element={<RequireAuth><ShopPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AuthProvider>

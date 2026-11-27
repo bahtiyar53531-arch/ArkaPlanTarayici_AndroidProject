@@ -1,5 +1,6 @@
 import {
   LEDGER_REASON_LABELS_TR,
+  SHIP_CLASS_LABELS_TR,
   type CompanyInfo,
   type GameServerInfo,
   type LedgerEntry,
@@ -240,7 +241,7 @@ function PilotProfileView({ pilot, onChange }: { pilot: PilotProfile; onChange: 
               <dt>Slotlar</dt>
               <dd>{pilot.activeShip.slots.laser} lazer · {pilot.activeShip.slots.generator} jeneratör · {pilot.activeShip.slots.extra} ekstra · {pilot.activeShip.slots.drone} drone</dd>
             </dl>
-            <p className="muted small">Hangar ve ekipman yönetimi Aşama 6'da açılacak.</p>
+            <Link className="btn btn-secondary btn-small" to="/hangar">Hangara git</Link>
           </section>
         )}
         <section className="panel">
@@ -304,7 +305,7 @@ function PilotProfileView({ pilot, onChange }: { pilot: PilotProfile; onChange: 
 }
 
 function shipClassTr(c: string) {
-  return ({ starter: 'Başlangıç gemisi', fighter: 'Avcı', tank: 'Tank', support: 'Destek' } as Record<string, string>)[c] ?? c;
+  return SHIP_CLASS_LABELS_TR[c] ?? c;
 }
 
 function Tile({ label, value, accent }: { label: string; value: string; accent?: 'gold' }) {

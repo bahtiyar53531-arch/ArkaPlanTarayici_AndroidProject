@@ -6,7 +6,8 @@
 |---|---|
 | [database/migrations/0001_auth.sql](../database/migrations/0001_auth.sql) | ✅ **Uygulanan migration** (Aşama 1). Testler bu dosyayla kurulan gerçek veritabanında çalışır. |
 | [database/migrations/0002_player_profile.sql](../database/migrations/0002_player_profile.sql) | ✅ **Uygulanan migration** (Aşama 5). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 6–17). 0001 + 0002'nin üzerine hatasız yüklendiği doğrulandı (toplam 88 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0003_hangar.sql](../database/migrations/0003_hangar.sql) | ✅ **Uygulanan migration** (Aşama 6). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 7–17). 0001 + 0002 + 0003'ün üzerine hatasız yüklendiği doğrulandı (toplam 89 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -38,14 +39,27 @@
 | `achievements`, `player_achievements` | Başarımlar | `stat_key` ile istatistikten ilerleme |
 | `currencies`, `wallets`, `currency_ledger` | Para | `balance >= 0`; defter UPDATE yasak; `idempotency_key` benzersiz |
 
+## 1c. Aşama 6'da uygulanan tablolar (0003)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `item_types` | 36 eşyalık katalog | Kategori CHECK; `stats` kategori şemasıyla sunucuda doğrulanır; yalnızca mühimmat yığınlanır |
+| `upgrade_levels` | Kategori bazlı yükseltme tablosu | Seviye 1–10: +%2/seviye, şans ve ücret |
+| `player_items` | Envanter | Yığın satırı oyuncu başına tek (kısmi benzersiz dizin); yığın değilse adet 1 |
+| `item_ledger` | Eşya defteri | UPDATE yasak; `idempotency_key` benzersiz |
+| `item_upgrade_log` | Yükseltme denemeleri | Zar sonucu ve şans saklanır (denetim) |
+| `loadout_slots` | İki konfigürasyon | Bir eşya aynı konfigürasyonda tek slotta |
+| `player_pets`, `player_pet_modules` | PET | Oyuncu başına bir PET; modül tek slotta |
+| `shop_categories`, `shop_offers`, `shop_purchases` | Mağaza | İndirim, paket, oyuncu sınırı, tarih aralığı; satın alma `idempotency_key` benzersiz |
+| `players.active_loadout`, `player_ships.design_item_id` | Eklenen sütunlar | Tasarım tek gemide (UNIQUE) |
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
 |---|---|---|
 | Evren ve profil | ✅ 0002'de uygulandı; taslakta yalnızca `player_settings` ve sonraki aşamaların ekleyeceği sütunlar (`active_loadout`, `clan_id`, `reward_table_id`, `max_players`) | 5 ✅ / 6, 9, 12 |
 | İçerik sürümleme | `content_revisions, approval_requests` | 14 (tasarım şimdiden) |
-| Eşya tanımları | `item_types, ship_types, upgrade_levels` | 6 |
-| Oyuncu envanteri | `player_ships, player_items, loadout_slots (2 konfigürasyon), player_drones, player_pets, player_pet_modules` | 6 |
+| Eşya, envanter, konfigürasyon, PET | ✅ 0003'te uygulandı | 6 ✅ |
 | Yetenekler | `skill_nodes, player_skills` | 9 |
 | Harita | `maps, map_portals, map_zones, resource_nodes` | 7 |
 | NPC ve kapılar | `npc_types, npc_spawns, gates, gate_waves, player_gates` | 9 |

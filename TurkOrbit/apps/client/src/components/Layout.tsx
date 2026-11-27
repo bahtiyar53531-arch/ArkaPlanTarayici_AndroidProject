@@ -28,6 +28,8 @@ export function AccountLayout({ children }: { children: ReactNode }) {
           <NavLink to="/pilot" end>
             Pilot
           </NavLink>
+          <NavLink to="/hangar">Hangar</NavLink>
+          <NavLink to="/magaza">Mağaza</NavLink>
           <NavLink to="/hesap" end>
             Hesabım
           </NavLink>

@@ -25,6 +25,8 @@ export async function createTestContext(
   limits: Partial<AuthLimits> = {},
   /** app.ready() öncesi ek (yalnızca test) rotaları kaydetmek için. */
   setup?: (built: BuiltApp) => void,
+  /** Yükseltme zarı gibi rastgeleliği testte belirlemek için. */
+  extra: { rng?: (max: number) => number } = {},
 ): Promise<TestContext> {
   const config = loadConfig({
     NODE_ENV: 'test',
@@ -43,6 +45,7 @@ export async function createTestContext(
   await resetDatabase(rt);
   const built = await buildApp(rt, {
     limits: { registerPerIp: [1000, 3600], loginPerIp: [1000, 900], forgotPerIp: [1000, 3600], ...limits },
+    ...(extra.rng ? { rng: extra.rng } : {}),
   });
   setup?.(built);
   await built.app.ready();
@@ -76,7 +79,10 @@ export async function resetDatabase(rt: Runtime) {
          ('registration.enabled', 'true'::jsonb),
          ('terms.version', '"2026-11"'::jsonb),
          ('starter.currencies', '{"KREDI": 25000, "AKCE": 1000}'::jsonb),
-         ('company.change', '{"cooldown_days": 30, "cost": {"currency": "AKCE", "amount": 2000}}'::jsonb)
+         ('company.change', '{"cooldown_days": 30, "cost": {"currency": "AKCE", "amount": 2000}}'::jsonb),
+         ('starter.kit', '{"items": [{"code": "laser.ok1", "quantity": 1}, {"code": "shield.siper1", "quantity": 1}, {"code": "speed.itki1", "quantity": 1}, {"code": "ammo.isk1", "quantity": 2000}, {"code": "rocket.yildirim", "quantity": 50}]}'::jsonb),
+         ('repair', '{"currency": "KREDI", "per_1000_hp": 250}'::jsonb),
+         ('inventory', '{"max_items": 300}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

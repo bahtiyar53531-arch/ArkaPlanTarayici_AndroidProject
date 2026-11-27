@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1 + 5 uçtan uca (E2E) test
+ * TÜRK ORBIT — Aşama 1 + 5 + 6 uçtan uca (E2E) test
  *
  * Gerçek API sürecini başlatır, e-postaları GERÇEK SMTP üzerinden yakalar ve iki ayrı hesapla
  * (PC web oturumu + Android uygulama oturumu) tüm kayıt/giriş akışlarını HTTP üzerinden dener.
@@ -132,7 +132,7 @@ const env = {
 
 let server;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 + 5 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -302,6 +302,44 @@ async function main() {
     const c = await app.req('GET', '/game/companies?server=TR1');
     const counts = Object.fromEntries(c.json.companies.map((x) => [x.code, x.pilotCount]));
     expect(counts.KZL === 1 && counts.GKB === 1 && counts.ALT === 0, JSON.stringify(counts));
+  });
+
+  console.log('\nAşama 6 — hangar ve mağaza (iki hesap)');
+  let aNewLaser = null;
+  await step('Pilot A hangarında başlangıç kiti hazır; mağazadan OK-1 alır, aynı requestId tekrarında ücret alınmaz', async () => {
+    const h = (await pc.req('GET', '/hangar?server=TR1')).json.hangar;
+    expect(h.inventory.length === 5 && h.ships[0].stats[1].damagePerSecond === 40, JSON.stringify(h.ships[0].stats));
+    const shop = (await pc.req('GET', '/shop?server=TR1')).json.shop;
+    const offer = shop.categories.flatMap((c) => c.offers).find((o) => o.code === 'laser.ok1');
+    const requestId = crypto.randomUUID();
+    const r1 = await pc.req('POST', '/shop/purchase', { serverCode: 'TR1', offerId: offer.id, requestId });
+    const r2 = await pc.req('POST', '/shop/purchase', { serverCode: 'TR1', offerId: offer.id, requestId });
+    expect(r1.status === 200 && r2.json.purchase.replay === true, JSON.stringify([r1.json, r2.json]));
+    const kredi = r2.json.currencies.find((c) => c.code === 'KREDI').balance;
+    expect(kredi === 15000, `kredi ${kredi}`);
+    const h2 = (await pc.req('GET', '/hangar?server=TR1')).json.hangar;
+    aNewLaser = h2.inventory.find((i) => i.code === 'laser.ok1' && i.equippedIn.length === 0);
+    expect(aNewLaser, 'yeni lazer envanterde yok');
+  });
+  await step('Pilot B, Pilot A\'nın eşyasını kendi gemisine takamaz; A\'nın gemisini yönetemez', async () => {
+    const hb = (await app.req('GET', '/hangar?server=TR1')).json.hangar;
+    const ha = (await pc.req('GET', '/hangar?server=TR1')).json.hangar;
+    const steal = await app.req('POST', '/hangar/equip', { serverCode: 'TR1', shipId: hb.ships[0].id, loadout: 1, slotType: 'laser', slotIndex: 0, itemId: aNewLaser.id });
+    expect(steal.status === 404 && steal.json.error.code === 'ITEM_NOT_FOUND', JSON.stringify(steal.json));
+    const other = await app.req('POST', `/hangar/ships/${ha.ships[0].id}/activate`, { serverCode: 'TR1' });
+    expect(other.status === 404 && other.json.error.code === 'SHIP_NOT_FOUND', JSON.stringify(other.json));
+  });
+  await step('Pilot A lazeri yükseltir (+1); Pilot B mermi satar; eşya defterleri ayrı ve doğru', async () => {
+    const up = await pc.req('POST', `/hangar/items/${aNewLaser.id}/upgrade`, { serverCode: 'TR1', requestId: crypto.randomUUID() });
+    expect(up.status === 200 && up.json.result.success === true && up.json.result.toLevel === 1, JSON.stringify(up.json));
+    const hb = (await app.req('GET', '/hangar?server=TR1')).json.hangar;
+    const ammo = hb.inventory.find((i) => i.code === 'ammo.isk1');
+    const sell = await app.req('POST', `/hangar/items/${ammo.id}/sell`, { serverCode: 'TR1', quantity: 500, requestId: crypto.randomUUID() });
+    expect(sell.status === 200 && sell.json.result.earned === 500, JSON.stringify(sell.json));
+    const la = (await pc.req('GET', '/hangar/ledger?server=TR1')).json.entries;
+    const lb = (await app.req('GET', '/hangar/ledger?server=TR1')).json.entries;
+    expect(la[0].reason === 'shop_purchase' && la.every((e) => e.reason !== 'item_sell'), JSON.stringify(la.slice(0, 3)));
+    expect(lb[0].reason === 'item_sell' && lb[0].delta === -500, JSON.stringify(lb.slice(0, 3)));
   });
 
   console.log('\nYetki (sunucu tarafı)');

@@ -119,7 +119,8 @@ const PILOT_SELECT = `
          c.id AS company_id, c.code AS company_code, c.name AS company_name, c.color_hex AS company_color,
          p.experience, p.honor, m.code AS map_code, m.name AS map_name, m.map_type, m.pvp_enabled,
          p.pos_x, p.pos_y, p.playtime_seconds, p.motto, p.company_changed_at, p.last_online_at, p.created_at,
-         st.code AS ship_code, st.name AS ship_name, st.ship_class, st.sprite_key AS ship_sprite,
+         st.code AS ship_code, st.name AS ship_name, st.ship_class,
+         COALESCE(dt.stats->>'spriteKey', st.sprite_key) AS ship_sprite,
          ps.hitpoints AS ship_hp, st.hitpoints AS ship_max_hp, st.base_speed AS ship_speed,
          st.cargo_capacity AS ship_cargo, st.laser_slots AS slots_laser, st.generator_slots AS slots_generator,
          st.extra_slots AS slots_extra, st.drone_slots AS slots_drone,
@@ -134,6 +135,8 @@ const PILOT_SELECT = `
   JOIN maps m ON m.id = p.map_id
   LEFT JOIN player_ships ps ON ps.id = p.active_ship_id
   LEFT JOIN ship_types st ON st.id = ps.ship_type_id
+  LEFT JOIN player_items di ON di.id = ps.design_item_id
+  LEFT JOIN item_types dt ON dt.id = di.item_type_id
   LEFT JOIN player_stats x ON x.player_id = p.id`;
 
 export async function findPilotsByUser(db: Queryable, userId: string): Promise<PilotRow[]> {

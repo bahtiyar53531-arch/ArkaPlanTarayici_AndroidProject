@@ -159,6 +159,9 @@ export interface LedgerEntry {
 export const LEDGER_REASON_LABELS_TR: Record<string, string> = {
   starter_grant: 'Başlangıç desteği',
   company_change: 'Şirket değiştirme ücreti',
+  item_sell: 'Eşya satışı',
+  item_upgrade: 'Ekipman yükseltme',
+  ship_repair: 'Gemi tamiri',
   admin_grant: 'Yönetici işlemi',
   npc_reward: 'NPC ödülü',
   quest_reward: 'Görev ödülü',

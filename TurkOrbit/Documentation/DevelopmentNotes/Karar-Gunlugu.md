@@ -29,3 +29,10 @@ Her önemli mimari kararın neden alındığını ve hangi seçeneklerin elendi�
 | K-023 | 27.11.2026 | Başlangıç gemisi ve haritaların temel kayıtları Aşama 5'te | Profilde "aktif gemi/harita" gerçek veriyle gösterilsin | Aşama 6/7'ye kadar boş bırakmak |
 | K-024 | 27.11.2026 | Şirket değişimi: 30 gün bekleme + 2.000 Akçe, ayarlanabilir | Şirketler arası sık geçişle PvP dengesinin bozulmasını önler | Kalıcı seçim / ücretsiz değişim |
 | K-025 | 27.11.2026 | Herkese açık profil e-posta, para, konum ve oynama süresi göstermez | Gizlilik + PvP'de taktik bilgi sızmaması | Tüm profili açık göstermek |
+| K-026 | 27.11.2026 | Eşya istatistikleri `jsonb` + kategori bazlı zod şeması | Yönetim Merkezi'nden esnek düzenleme; bozuk veri sunucuda reddedilir | Kategori başına ayrı tablolar |
+| K-027 | 27.11.2026 | Para/eşya harcayan her istekte istemci `requestId` (UUID) zorunlu | Çift tıklama ve ağ tekrarında işlem iki kez uygulanmaz | Sunucunun tekrarı tahmin etmesi |
+| K-028 | 27.11.2026 | Hangar işlemleri oyuncu satırı kilitlenerek sıraya sokulur | Eşzamanlı istekler tutarlı; deadlock riski düşük (tek kilit sırası) | Satır satır kilit |
+| K-029 | 27.11.2026 | Bir eşya tek gemide takılı olabilir, aynı geminin iki konfigürasyonunda ortak | Basit ve öngörülebilir kural | Her konfigürasyon için ayrı eşya |
+| K-030 | 27.11.2026 | Yükseltme zarı sunucuda kriptografik RNG, sonuç ve şans kayda yazılır | Hile önleme + şikâyet durumunda denetlenebilirlik | İstemci tarafı zar |
+| K-031 | 27.11.2026 | Tıkla-seç ekipman arayüzü (sürükle-bırak yerine) | PC ve dokunmatikte aynı, erişilebilir | Yalnızca sürükle-bırak |
+| K-032 | 27.11.2026 | Gemi çizimleri parametrik SVG şekil tablosundan | 10 gemi + paletler tek bileşenle; Aşama 7 sprite'ları aynı tanımdan üretilebilir | Ayrı görsel dosyaları |

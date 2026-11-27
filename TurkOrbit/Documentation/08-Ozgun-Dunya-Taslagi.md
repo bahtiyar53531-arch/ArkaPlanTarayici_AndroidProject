@@ -76,6 +76,22 @@
 | Drone | **Arı / Yaban / Alkım** | Alkım: kapı ödülü elit drone |
 | PET | **Yoldaş** | Modüller: Toplayıcı, Onarıcı Dişli, Koruyucu, Takipçi |
 
+## 5b. Uygulanan katalog (✅ Aşama 6, `0003_hangar.sql`)
+| Gemi | Can | Hız | Lazer/Jen./Ekstra/Drone | Sv | Fiyat |
+|---|---|---|---|---|---|
+| Kırlangıç | 4.000 | 320 | 1/1/1/0 | 1 | başlangıç |
+| Doğan | 16.000 | 380 | 3/3/1/1 | 3 | 40.000 Kredi |
+| Atmaca | 64.000 | 340 | 6/6/2/2 | 6 | 160.000 Kredi |
+| Şahin | 120.000 | 320 | 10/10/3/3 | 10 | 450.000 Kredi |
+| Tulpar | 90.000 | 420 | 8/12/3/2 | 12 | 20.000 Akçe |
+| Kartal | 200.000 | 300 | 15/12/3/4 | 15 | 35.000 Akçe |
+| Umay | 220.000 | 300 | 12/15/4/4 | 15 | 40.000 Akçe |
+| Kale | 300.000 | 270 | 13/18/3/4 | 18 | 50.000 Akçe |
+| Akıncı | 250.000 | 300 | 16/14/4/5 | 20 | 60.000 Akçe |
+| Börü | 320.000 | 300 | 16/16/4/6 | 25 | 80.000 Akçe |
+
+Lazer hasarı OK-1…4: 40 / 60 / 100 / 150. Kalkan Siper-1…4: 1.000 / 2.500 / 4.000 / 6.000 (emme %50–%80). Hız İtki-1…4: +2 / +5 / +7 / +10. Yükseltme: seviye başına +%2, en fazla +10.
+
 ## 6. NPC aileleri ("Sızıntı" türleri)
 
 | Aile | Davranış | Kademeler (aynı tür farklı haritalarda yeniden kullanılır) | Görüldüğü yer |

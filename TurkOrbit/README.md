@@ -2,7 +2,7 @@
 
 PC, web tarayıcısı, Android ve iOS'ta **aynı hesapla** oynanan, sunucu otoriteli gerçek zamanlı uzay MMO oyunu ve platformu.
 
-> **Durum (27.11.2026):** Aşama 1–5 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş** ve **oyuncu profili** (pilot oluşturma, şirket, cüzdan + defter, seviye/rütbe, başarımlar, herkese açık profil). Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md).
+> **Durum (27.11.2026):** Aşama 1–6 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili** ve **hangar/ekipman** (10 gemi, 36 eşya, iki konfigürasyon, yükseltme, tamir, PET, mağaza). Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md).
 
 ## Hızlı başlangıç
 
@@ -27,7 +27,7 @@ Ayrıntılı kurulum ve dosya yerleştirme: [Documentation/Asama-01-Kayit-Giris/
 | `npm run typecheck` | TypeScript denetimi |
 | `npm run build` | Üretim derlemesi |
 | `npm run admin:grant-role -- --user X --role super_admin --reason "..."` | Sunucu tarafı rol atama (denetim kaydına yazılır) |
-| `npm run package:phase -- Asama-05-Oyuncu-Profili` | Aşama ZIP teslimatı |
+| `npm run package:phase -- Asama-06-Hangar-Ekipman` | Aşama ZIP teslimatı |
 
 ## Belgeler
 

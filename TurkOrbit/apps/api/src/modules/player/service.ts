@@ -18,6 +18,7 @@ import { AppError, Errors } from '../../lib/errors.js';
 import type { Logger } from '../auth/service.js';
 import { getSetting } from '../auth/repository.js';
 import { applyCurrencyChange, getBalances, listLedger } from '../economy/wallet.js';
+import { ensureStarterKit } from '../hangar/starter-kit.js';
 import * as repo from './repository.js';
 
 export interface PilotOwner {
@@ -120,6 +121,7 @@ export class PlayerService {
            SELECT $1, id FROM achievements WHERE code = 'pilot_created' ON CONFLICT DO NOTHING`,
           [id],
         );
+        await ensureStarterKit(c, id);
         return id;
       });
     } catch (err) {
@@ -198,7 +200,7 @@ export class PlayerService {
             name: r.ship_name!,
             shipClass: r.ship_class!,
             spriteKey: r.ship_sprite!,
-            hitpoints: r.ship_hp!,
+            hitpoints: Math.min(r.ship_hp!, r.ship_max_hp!),
             maxHitpoints: r.ship_max_hp!,
             speed: r.ship_speed!,
             cargoCapacity: r.ship_cargo!,

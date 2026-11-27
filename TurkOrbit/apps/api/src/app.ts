@@ -8,6 +8,8 @@ import { createAuthGuards, type AuthGuards } from './modules/auth/guards.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { AuthService, type AuthLimits } from './modules/auth/service.js';
 import { healthRoutes } from './modules/health/routes.js';
+import { hangarRoutes } from './modules/hangar/routes.js';
+import { HangarService, type Rng } from './modules/hangar/service.js';
 import { playerRoutes } from './modules/player/routes.js';
 import { PlayerService } from './modules/player/service.js';
 import type { Runtime } from './runtime.js';
@@ -16,12 +18,16 @@ export interface BuiltApp {
   app: FastifyInstance;
   auth: AuthService;
   players: PlayerService;
+  hangar: HangarService;
   guards: AuthGuards;
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export async function buildApp(rt: Runtime, options: { limits?: Partial<AuthLimits> } = {}): Promise<BuiltApp> {
+export async function buildApp(
+  rt: Runtime,
+  options: { limits?: Partial<AuthLimits>; rng?: Rng } = {},
+): Promise<BuiltApp> {
   const { config } = rt;
   const app = Fastify({
     logger: {
@@ -118,15 +124,17 @@ export async function buildApp(rt: Runtime, options: { limits?: Partial<AuthLimi
   });
   const guards = createAuthGuards(auth, config.session.cookieName);
   const players = new PlayerService(rt.db, app.log);
+  const hangar = new HangarService(rt.db, app.log, options.rng);
 
   await app.register(
     async (api) => {
       healthRoutes(api, rt);
       authRoutes(api, { service: auth, guards, config });
       playerRoutes(api, { service: players, guards, limiter: rt.limiter });
+      hangarRoutes(api, { service: hangar, guards });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, guards };
+  return { app, auth, players, hangar, guards };
 }

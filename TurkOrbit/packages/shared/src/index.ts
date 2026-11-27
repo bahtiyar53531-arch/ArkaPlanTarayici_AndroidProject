@@ -6,3 +6,4 @@ export * from './api-types.js';
 export * from './labels.js';
 export * from './progression.js';
 export * from './player.js';
+export * from './items.js';

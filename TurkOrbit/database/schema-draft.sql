@@ -6,11 +6,14 @@
 -- (users, roles, permissions, role_permissions, user_roles, sessions, email_verification_tokens,
 -- password_reset_tokens, login_events, user_known_devices, game_settings, admin_audit_log).
 --
--- Aşama 5'te uygulanan tablolar database/migrations/0002_player_profile.sql içindedir
+-- Aşama 5 ve 6'da uygulanan tablolar 0002_player_profile.sql ve 0003_hangar.sql içindedir
 -- (game_servers, companies, maps, ranks, ship_types, players, player_stats, player_ships, achievements,
 -- player_achievements, currencies, wallets, currency_ledger). Bu dosya onları yalnızca genişletir.
 --
--- Doğrulama: 0001 + 0002 uygulanmış boş bir veritabanına bu dosya hatasız yüklenir:
+-- (Aşama 6: item_types, upgrade_levels, player_items, item_ledger, loadout_slots, player_pets,
+-- player_pet_modules, shop_categories, shop_offers, shop_purchases.)
+--
+-- Doğrulama: 0001 + 0002 + 0003 uygulanmış boş bir veritabanına bu dosya hatasız yüklenir:
 --   psql -v ON_ERROR_STOP=1 -1 -f database/schema-draft.sql
 -- Her aşamada ilgili bölüm gözden geçirilip numaralı bir migration'a dönüştürülecektir.
 --
@@ -59,98 +62,10 @@ CREATE TABLE approval_requests (
   CHECK (reviewed_by IS NULL OR reviewed_by <> requested_by)
 );
 
--- ============================================================ 4. EŞYA TANIMLARI (Aşama 6)
+-- ============================================================ 4-5. EŞYA, ENVANTER, KONFİGÜRASYON, PET
+-- ✅ Aşama 6'da uygulandı → database/migrations/0003_hangar.sql
+-- Aşama 7'de haritalara eklenecek:
 ALTER TABLE maps ADD COLUMN max_players integer;
-CREATE TABLE item_types (
-  id             serial PRIMARY KEY,
-  code           text NOT NULL UNIQUE,          -- ör. 'laser.ok1', 'ammo.isk2', 'shield.kalkan3'
-  category       text NOT NULL CHECK (category IN (
-                   'laser', 'rocket_launcher', 'rocket', 'ammo', 'shield_generator', 'speed_generator',
-                   'drone', 'drone_design', 'pet', 'pet_module', 'ship_design', 'booster', 'resource',
-                   'gate_part', 'key', 'cosmetic', 'consumable')),
-  name           text NOT NULL,
-  description    text,
-  icon_url       text,
-  rarity         text NOT NULL DEFAULT 'common' CHECK (rarity IN ('common', 'uncommon', 'rare', 'epic', 'legendary')),
-  stackable      boolean NOT NULL DEFAULT false,
-  max_stack      integer,
-  tradable       boolean NOT NULL DEFAULT true,
-  -- Kategoriye göre istatistikler: {"damage":150,"rate_ms":1000,"range":650} / {"shield":4000,"absorb":0.8} ...
-  stats          jsonb NOT NULL DEFAULT '{}'::jsonb,
-  max_upgrade_level smallint NOT NULL DEFAULT 0,
-  -- Kullanım koşulları: {"min_level":5,"company":null,"ship_classes":["fighter"]}
-  requirements   jsonb NOT NULL DEFAULT '{}'::jsonb,
-  is_archived    boolean NOT NULL DEFAULT false,
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  updated_at     timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE upgrade_levels (
-  item_type_id   integer NOT NULL REFERENCES item_types(id) ON DELETE CASCADE,
-  level          smallint NOT NULL CHECK (level >= 1),
-  stat_multiplier numeric(6,3) NOT NULL,
-  success_chance numeric(4,3) NOT NULL CHECK (success_chance > 0 AND success_chance <= 1),
-  cost           jsonb NOT NULL,                -- {"credits":10000,"resources":{"kuvars":50}}
-  PRIMARY KEY (item_type_id, level)
-);
-
--- ============================================================ 5. OYUNCU ENVANTERİ, GEMİLER, KONFİGÜRASYON
-
--- Eşya örnekleri. Yığınlanabilir eşyalarda (mermi, kaynak) quantity kullanılır.
-CREATE TABLE player_items (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_id     uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  item_type_id  integer NOT NULL REFERENCES item_types(id),
-  quantity      bigint NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  upgrade_level smallint NOT NULL DEFAULT 0,
-  bound         boolean NOT NULL DEFAULT false, -- satılamaz/takas edilemez
-  acquired_at   timestamptz NOT NULL DEFAULT now(),
-  source        text NOT NULL                   -- 'shop', 'npc_drop', 'quest', 'auction', 'admin_grant' ...
-);
-CREATE INDEX player_items_player_idx ON player_items(player_id, item_type_id);
-
-ALTER TABLE player_ships ADD COLUMN design_item_type_id integer REFERENCES item_types(id);
-ALTER TABLE players ADD COLUMN active_loadout smallint NOT NULL DEFAULT 1 CHECK (active_loadout IN (1, 2));
-
--- Her gemi için 2 ayrı ekipman konfigürasyonu
-CREATE TABLE loadout_slots (
-  player_ship_id uuid NOT NULL REFERENCES player_ships(id) ON DELETE CASCADE,
-  loadout        smallint NOT NULL CHECK (loadout IN (1, 2)),
-  slot_type      text NOT NULL CHECK (slot_type IN ('laser', 'generator', 'extra', 'drone')),
-  slot_index     smallint NOT NULL,
-  player_item_id uuid REFERENCES player_items(id) ON DELETE SET NULL,
-  PRIMARY KEY (player_ship_id, loadout, slot_type, slot_index)
-);
--- Aynı eşya aynı konfigürasyonda iki slota takılamaz (iki konfigürasyonda ortak kullanılabilir)
-CREATE UNIQUE INDEX loadout_slots_item_once ON loadout_slots(player_ship_id, loadout, player_item_id)
-  WHERE player_item_id IS NOT NULL;
-
-CREATE TABLE player_drones (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_id      uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  item_type_id   integer NOT NULL REFERENCES item_types(id),
-  level          smallint NOT NULL DEFAULT 1,
-  experience     integer NOT NULL DEFAULT 0,
-  damage_percent smallint NOT NULL DEFAULT 0 CHECK (damage_percent BETWEEN 0 AND 100),
-  design_item_type_id integer REFERENCES item_types(id)
-);
-
-CREATE TABLE player_pets (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_id    uuid NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
-  name         text NOT NULL,
-  level        smallint NOT NULL DEFAULT 1,
-  experience   bigint NOT NULL DEFAULT 0,
-  fuel         integer NOT NULL DEFAULT 0,
-  hitpoints    integer NOT NULL
-);
-
-CREATE TABLE player_pet_modules (
-  pet_id         uuid NOT NULL REFERENCES player_pets(id) ON DELETE CASCADE,
-  slot_index     smallint NOT NULL,
-  player_item_id uuid NOT NULL REFERENCES player_items(id) ON DELETE CASCADE,
-  PRIMARY KEY (pet_id, slot_index)
-);
 
 -- ============================================================ 6. PİLOT YETENEKLERİ
 CREATE TABLE skill_nodes (
@@ -337,46 +252,6 @@ CREATE TABLE player_quests (
 );
 
 -- ============================================================ 11. EKONOMİ (Aşama 11)
-
--- Yalnızca eklenebilir para defteri. Her bakiye değişikliği tek transaction içinde wallets + ledger.
-
-CREATE TABLE item_ledger (
-  id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  player_id       uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  item_type_id    integer NOT NULL REFERENCES item_types(id),
-  player_item_id  uuid,
-  delta           bigint NOT NULL CHECK (delta <> 0),
-  reason          text NOT NULL,
-  idempotency_key text UNIQUE,
-  actor_user_id   uuid REFERENCES users(id),
-  created_at      timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE shop_categories (
-  id         serial PRIMARY KEY,
-  code       text NOT NULL UNIQUE,
-  name       text NOT NULL,
-  sort_order smallint NOT NULL DEFAULT 0,
-  is_visible boolean NOT NULL DEFAULT true
-);
-
-CREATE TABLE shop_offers (
-  id            serial PRIMARY KEY,
-  category_id   integer NOT NULL REFERENCES shop_categories(id),
-  offer_type    text NOT NULL CHECK (offer_type IN ('item', 'ship', 'bundle')),
-  item_type_id  integer REFERENCES item_types(id),
-  ship_type_id  integer REFERENCES ship_types(id),
-  bundle        jsonb,                          -- paket içeriği
-  quantity      bigint NOT NULL DEFAULT 1,
-  currency_code text NOT NULL REFERENCES currencies(code),
-  price         bigint NOT NULL CHECK (price >= 0),
-  discount_percent smallint NOT NULL DEFAULT 0 CHECK (discount_percent BETWEEN 0 AND 90),
-  discount_ends_at timestamptz,
-  per_player_limit integer,
-  starts_at     timestamptz,
-  ends_at       timestamptz,
-  is_active     boolean NOT NULL DEFAULT true
-);
 
 CREATE TABLE auctions (
   id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -30,6 +30,7 @@ try {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-01');
 const SHOTS5 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-05');
+const SHOTS6 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-06');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -38,6 +39,7 @@ const SMTP_PORT = 2526;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
 mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SHOTS5, { recursive: true });
+mkdirSync(SHOTS6, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -205,6 +207,49 @@ try {
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS5, '03-acik-profil.jpg'), fullPage: true });
   });
 
+  console.log('Aşama 6 — hangar ve mağaza (masaüstü)');
+  const statDps = async () => (await pc.locator('.stats-table dd').nth(1).innerText()).trim();
+  await step('Hangar: başlangıç kiti takılı, Kırlangıç aktif, konfigürasyon değerleri görünür', async () => {
+    await pc.getByRole('link', { name: 'Hangar', exact: true }).click();
+    await pc.getByRole('heading', { name: 'Hangar' }).waitFor();
+    await pc.getByText('Konfigürasyon 1 değerleri').waitFor();
+    if ((await statDps()) !== '40') throw new Error(`saniyede hasar 40 bekleniyordu: ${await statDps()}`);
+    await pc.getByText('IŞK-1 Batarya').first().waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '01-hangar.jpg'), fullPage: true });
+  });
+  await step('Slot seçici: lazer çıkarılır (hasar 0), yeniden takılır (hasar 40)', async () => {
+    await pc.getByRole('button', { name: /Lazer 1: OK-1/ }).click();
+    await pc.getByRole('button', { name: 'Çıkar' }).click();
+    await pc.getByRole('button', { name: /Lazer 1: boş/ }).waitFor();
+    if ((await statDps()) !== '0') throw new Error('çıkarınca hasar 0 olmalı');
+    await pc.getByRole('button', { name: /Lazer 1: boş/ }).click();
+    await pc.getByRole('dialog').getByRole('button', { name: 'Tak' }).first().click();
+    await pc.getByRole('button', { name: /Lazer 1: OK-1/ }).waitFor();
+    if ((await statDps()) !== '40') throw new Error('takınca hasar 40 olmalı');
+  });
+  await step('Mağaza: gemiler listelenir; lazer satın alınır ve bakiye düşer', async () => {
+    await pc.getByRole('link', { name: 'Mağaza', exact: true }).first().click();
+    await pc.getByRole('heading', { name: 'Mağaza' }).waitFor();
+    await pc.getByText('Doğan', { exact: true }).waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '02-magaza-gemiler.jpg'), fullPage: true });
+    await pc.getByRole('tab', { name: 'Lazerler' }).click();
+    const card = pc.locator('.offer').filter({ hasText: 'OK-1 Lazer Topu' });
+    await card.getByRole('button', { name: 'Satın al' }).click();
+    await card.getByRole('button', { name: 'Onayla' }).click();
+    await pc.getByText('OK-1 Lazer Topu satın alındı').waitFor();
+    await pc.getByText('Kredi: 15.000').waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '03-magaza-lazerler.jpg') });
+  });
+  await step('Envanter: yeni lazer yükseltilir (+1) ve sonuç Türkçe bildirilir', async () => {
+    await pc.getByRole('link', { name: 'Hangar', exact: true }).first().click();
+    await pc.getByRole('heading', { name: 'Envanter' }).waitFor();
+    const free = pc.locator('.inv-item').filter({ hasText: 'OK-1 Lazer Topu' }).filter({ hasNotText: 'Kırlangıç' }).first();
+    await free.getByRole('button', { name: 'Yükselt' }).click();
+    await free.locator('.confirm').getByRole('button', { name: 'Yükselt' }).click(); // onay kutusundaki buton
+    await pc.getByText('Yükseltme başarılı! OK-1 Lazer Topu artık +1.').waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '04-envanter-yukseltme.jpg'), fullPage: true });
+  });
+
   console.log('iPhone 13 görünümü');
   await step('Aynı hesapla telefondan giriş', async () => {
     await phone.goto(`${WEB}/giris`);
@@ -218,6 +263,12 @@ try {
     await phone.getByText('“Sürü güçlüdür, rota bizden sorulur”').waitFor();
     await phone.getByText('Gökbörü Filosu').first().waitFor();
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS5, '04-mobil-profil.jpg'), fullPage: true });
+  });
+  await step('Telefonda hangar: aynı ekipman ve +1 lazer görünür (senkron)', async () => {
+    await phone.goto(`${WEB}/hangar`);
+    await phone.getByRole('heading', { name: 'Envanter' }).waitFor();
+    await phone.locator('.level-badge', { hasText: '+1' }).first().waitFor();
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '05-mobil-hangar.jpg'), fullPage: true });
   });
   await step('Telefonda güvenlik sayfası: iki aktif oturum görünür', async () => {
     await phone.goto(`${WEB}/hesap/guvenlik`);
@@ -263,7 +314,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }
