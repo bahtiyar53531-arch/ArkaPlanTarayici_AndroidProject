@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Oto Tıklayıcı</string>
+    <string name="a11y_label">Oto Tıklayıcı</string>
+    <string name="a11y_description">Oto Tıklayıcı, belirlediğin noktalara otomatik dokunmak, kaydırmak ve kaydettiğin hareketleri aynen tekrarlamak için bu servisi kullanır.\n\n• Dokunuşları ve kaydırmaları senin adına ekrana uygular.\n• Kontrol panelini diğer uygulamaların üzerinde gösterir.\n• Oynatmayı durdurmak için ses tuşlarını dinleyebilir (ayarlardan kapatılabilir).\n\nEkranındaki içeriği okumaz, yazdıklarını kaydetmez, hiçbir veriyi internete göndermez. Uygulamanın internet izni yoktur.</string>
+    <string name="a11y_summary">Otomatik dokunma ve hareket tekrarı</string>
+    <string name="tile_label">Oto Tıklayıcı</string>
+</resources>
