@@ -111,7 +111,10 @@ class OverlaySession(private val service: android.accessibilityservice.Accessibi
     // =====================================================================
 
     fun open(request: PanelRequest) {
-        if (isOpen && dirty && actions.isNotEmpty() && !isRunning) {
+        if (isOpen && isRecording) stopRecording()
+        if (isOpen && dirty && actions.isNotEmpty()) {
+            // Kaydedilmemiş adımlar varken sormadan yeni oturuma geçme (oynatma sürüyor olsa bile).
+            if (isRunning) player.stop()
             confirmUnsaved(onContinue = { openNow(request) })
             return
         }
@@ -701,10 +704,7 @@ class OverlaySession(private val service: android.accessibilityservice.Accessibi
             val jitterPos = number("Rastgele konum sapması ± (piksel)", r.randomOffsetPx.toLong(), 0, 500)
             val allDelay = optionalNumber("Tüm adımların beklemesini ayarla (ms)", 0, 86_400_000, "Boş bırak = değiştirme")
             val scale = switch("Farklı ekran boyutunda konumları oranla", r.scaleToScreen)
-            button("Gelişmiş") { openInApp(); true }
-            spacer()
-            button("İptal")
-            button("Uygula", OverlayDialog.Style.PRIMARY) {
+            fun apply() {
                 runSettings = r.copy(
                     stopMode = StopMode.entries[mode()],
                     cycles = cycles().toInt(),
@@ -717,8 +717,18 @@ class OverlaySession(private val service: android.accessibilityservice.Accessibi
                     scaleToScreen = scale(),
                 )
                 allDelay()?.let { d -> actions.replaceAll { it.withDelay(d) } }
-                dirty = true
+                if (runSettings != r || allDelay() != null) dirty = true
                 renderStatus()
+            }
+            button("Gelişmiş") {
+                apply()
+                openInApp()
+                true
+            }
+            spacer()
+            button("İptal")
+            button("Uygula", OverlayDialog.Style.PRIMARY) {
+                apply()
                 true
             }
         }

@@ -27,9 +27,11 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
+    /** Oturum ilk ihtiyaçta oluşturulur; servis bağlanırken ana iş parçacığı boş kalsın. */
+    private fun requireSession(): OverlaySession = session ?: OverlaySession(this).also { session = it }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
-        session = OverlaySession(this)
         ContextCompat.registerReceiver(
             this, screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -37,7 +39,7 @@ class AutoClickService : AccessibilityService() {
     }
 
     fun openPanel(request: PanelRequest) {
-        (session ?: OverlaySession(this).also { session = it }).open(request)
+        requireSession().open(request)
     }
 
     fun closePanel() {
@@ -46,7 +48,7 @@ class AutoClickService : AccessibilityService() {
 
     /** Hızlı ayar kutucuğu için: açıksa kapat, kapalıysa son türde aç. */
     fun togglePanel() {
-        val s = session ?: return
+        val s = requireSession()
         if (s.isOpen) {
             s.close()
         } else {
