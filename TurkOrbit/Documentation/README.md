@@ -14,8 +14,10 @@
 
 ## Aşama klasörleri
 - [Asama-01-Kayit-Giris/](Asama-01-Kayit-Giris/): API referansı, kurulum ve dosya yerleştirme rehberi
+- [Asama-05-Oyuncu-Profili/](Asama-05-Oyuncu-Profili/): profil API referansı, güncelleme rehberi
 
 ## Geliştirme notları
-- [DevelopmentNotes/Asama-01-Raporu.md](DevelopmentNotes/Asama-01-Raporu.md): aşama raporu ve değişiklik raporu
+- [DevelopmentNotes/Asama-01-Raporu.md](DevelopmentNotes/Asama-01-Raporu.md): Aşama 1–4 raporu ve değişiklik raporu
+- [DevelopmentNotes/Asama-05-Raporu.md](DevelopmentNotes/Asama-05-Raporu.md): Aşama 5 (oyuncu profili) raporu
 - [DevelopmentNotes/Karar-Gunlugu.md](DevelopmentNotes/Karar-Gunlugu.md): mimari kararlar ve gerekçeleri
 - [DevelopmentNotes/ekran-goruntuleri/](DevelopmentNotes/ekran-goruntuleri/): otomatik arayüz testinin ekran görüntüleri

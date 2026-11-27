@@ -5,7 +5,8 @@
 | Dosya | Durum |
 |---|---|
 | [database/migrations/0001_auth.sql](../database/migrations/0001_auth.sql) | ✅ **Uygulanan migration** (Aşama 1). Testler bu dosyayla kurulan gerçek veritabanında çalışır. |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 2–17). 0001'in üzerine hatasız yüklendiği doğrulandı (toplam 88 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0002_player_profile.sql](../database/migrations/0002_player_profile.sql) | ✅ **Uygulanan migration** (Aşama 5). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 6–17). 0001 + 0002'nin üzerine hatasız yüklendiği doğrulandı (toplam 88 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -22,12 +23,26 @@
 | `admin_audit_log` | Yönetici işlem geçmişi | Önceki/yeni değer, gerekçe, sonuç; **UPDATE/DELETE tetikleyiciyle yasak** (yalnızca eklenebilir) |
 | `schema_migrations` | Migration takibi | Dosya adı + SHA-256; uygulanmış dosya değişirse çalıştırıcı durur |
 
+## 1b. Aşama 5'te uygulanan tablolar (0002)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `game_servers` | Oyun sunucuları | `TR1 Anadolu-1`; `is_open`, `is_maintenance` |
+| `companies` | 3 şirket | Renk, slogan, açıklama, `home_map_id` (zorunlu) |
+| `maps` | 21 haritanın temel kaydı | Tür, şirket, seviye şartı, PvP, doğma noktası; portal/NPC Aşama 7 |
+| `ranks` | 18 rütbe | `min_points` artan ve benzersiz |
+| `ship_types` | Gemi türleri | Şimdilik yalnızca başlangıç gemisi Kırlangıç; aynı anda tek `is_starter` |
+| `players` | Pilot (sunucu başına bir) | `UNIQUE(user_id, server_id)`, `UNIQUE(server_id, pilot_name)`; **seviye ve rütbe puanı saklanmaz** |
+| `player_stats` | Savaş/NPC istatistikleri | Tüm sayaçlar `>= 0`; yalnızca oyun sunucusu yazar |
+| `player_ships` | Sahip olunan gemiler | `players.active_ship_id` FK |
+| `achievements`, `player_achievements` | Başarımlar | `stat_key` ile istatistikten ilerleme |
+| `currencies`, `wallets`, `currency_ledger` | Para | `balance >= 0`; defter UPDATE yasak; `idempotency_key` benzersiz |
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
 |---|---|---|
-| Evren | `game_servers, companies` | 5 |
-| Profil | `players, player_stats, ranks, achievements, player_achievements, player_settings` | 5 |
+| Evren ve profil | ✅ 0002'de uygulandı; taslakta yalnızca `player_settings` ve sonraki aşamaların ekleyeceği sütunlar (`active_loadout`, `clan_id`, `reward_table_id`, `max_players`) | 5 ✅ / 6, 9, 12 |
 | İçerik sürümleme | `content_revisions, approval_requests` | 14 (tasarım şimdiden) |
 | Eşya tanımları | `item_types, ship_types, upgrade_levels` | 6 |
 | Oyuncu envanteri | `player_ships, player_items, loadout_slots (2 konfigürasyon), player_drones, player_pets, player_pet_modules` | 6 |

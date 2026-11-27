@@ -7,6 +7,7 @@ import {
   type SessionInfo,
 } from '@turkorbit/shared';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { AccountLayout } from '../components/Layout';
@@ -69,12 +70,12 @@ export function AccountPage() {
           </dl>
         </section>
         <section className="panel">
-          <h2>Geliştirme durumu</h2>
+          <h2>Pilot</h2>
           <p className="muted">
-            Türk Orbit şu an <b>Aşama 1 (Kayıt ve Giriş)</b> tamamlanmış durumda. Hesabın PC, web, Android ve iOS
-            istemcilerinin tamamında aynı olacak. Oyuncu profili, şirket seçimi ve hangar sonraki aşamalarda bu ekrana
-            eklenecek.
+            Oyuncu profilin, şirketin, gemin ve istatistiklerin Pilot sayfasında. Hesabın PC, web, Android ve iOS
+            istemcilerinde aynıdır.
           </p>
+          <Link className="btn btn-secondary" to="/pilot">Pilot sayfasına git</Link>
         </section>
       </div>
     </AccountLayout>

@@ -4,3 +4,5 @@ export * from './password-policy.js';
 export * from './auth-schemas.js';
 export * from './api-types.js';
 export * from './labels.js';
+export * from './progression.js';
+export * from './player.js';

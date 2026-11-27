@@ -10,6 +10,7 @@ import {
   VerifyEmailPage,
 } from './pages/AuthPages';
 import { NotFoundPage, PrivacyPage, TermsPage } from './pages/InfoPages';
+import { PilotPage, PublicPilotPage } from './pages/PilotPages';
 
 function Splash() {
   return (
@@ -30,7 +31,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function GuestOnly({ children }: { children: ReactNode }) {
   const { me, loading } = useAuth();
   if (loading) return <Splash />;
-  return me ? <Navigate to="/hesap" replace /> : <>{children}</>;
+  return me ? <Navigate to="/pilot" replace /> : <>{children}</>;
 }
 
 export function App() {
@@ -48,6 +49,8 @@ export function App() {
           <Route path="/kvkk" element={<PrivacyPage />} />
           <Route path="/hesap" element={<RequireAuth><AccountPage /></RequireAuth>} />
           <Route path="/hesap/guvenlik" element={<RequireAuth><SecurityPage /></RequireAuth>} />
+          <Route path="/pilot" element={<RequireAuth><PilotPage /></RequireAuth>} />
+          <Route path="/pilot/:server/:name" element={<PublicPilotPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AuthProvider>

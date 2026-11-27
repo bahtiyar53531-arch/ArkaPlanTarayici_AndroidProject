@@ -10,8 +10,8 @@
 | 2 | Teknik mimari | ✅ Tamamlandı | [02](02-Teknik-Mimari.md), [03](03-Platform-Mimarisi.md), [05](05-Yonetim-Merkezi-Plani.md) |
 | 3 | Veritabanı ve altyapı | ✅ Tamamlandı | 0001 migration + doğrulanmış taslak; docker-compose, nginx örneği |
 | 4 | Kayıt ve giriş | ✅ **Web için tamamlandı** | API + web arayüzü + 72 otomatik test + 18 adımlı API E2E + 11 adımlı tarayıcı E2E. Mobil güvenli depolama Aşama 15'te. |
-| 5 | Oyuncu profili | ⏭ Sıradaki | Sunucu + şirket seçimi, `players`, profil ekranı |
-| 6 | Hangar ve ekipman | ⏳ | |
+| 5 | Oyuncu profili | ✅ **Tamamlandı** | Sunucu/şirket seçimi, pilot, cüzdan + defter, seviye/rütbe, başarımlar, açık profil. Rapor: [Aşama 5](DevelopmentNotes/Asama-05-Raporu.md) |
+| 6 | Hangar ve ekipman | ⏭ Sıradaki | 10 gemi, eşya tanımları, envanter, 2 konfigürasyon, mağaza |
 | 7 | Harita ve oyun motoru | ⏳ | Phaser, harita yükleme, tek oyunculu hareket |
 | 8 | Multiplayer | ⏳ | WebSocket, oyun bileti, tahmin/uzlaştırma/enterpolasyon |
 | 9 | NPC ve savaş | ⏳ | |
@@ -46,10 +46,10 @@
 
 | Katman | Araç | Kapsam | Aşama 1 durumu |
 |---|---|---|---|
-| Birim | Vitest | Saf fonksiyonlar (parola politikası, şemalar, hasar formülü, protokol kodlayıcı) | ✅ 16 test |
-| Entegrasyon | Vitest + `fastify.inject` + **gerçek PostgreSQL + Redis** | API uç noktaları, veritabanı kısıtları, tetikleyiciler | ✅ 56 test |
-| API uçtan uca | `scripts/e2e-auth.mjs` (gerçek süreç + gerçek SMTP) | Çoklu hesap, çoklu platform senaryoları | ✅ 18/18 adım |
-| Arayüz uçtan uca | Playwright (Chromium; masaüstü + iPhone emülasyonu) | Gerçek tarayıcıda kullanıcı akışları + ekran görüntüleri | ✅ 11/11 adım |
+| Birim | Vitest | Saf fonksiyonlar (parola politikası, şemalar, seviye/rütbe, hasar formülü, protokol kodlayıcı) | ✅ 24 test |
+| Entegrasyon | Vitest + `fastify.inject` + **gerçek PostgreSQL + Redis** | API uç noktaları, veritabanı kısıtları, tetikleyiciler, eşzamanlı harcama | ✅ 84 test |
+| API uçtan uca | `scripts/e2e-auth.mjs` (gerçek süreç + gerçek SMTP) | Çoklu hesap, çoklu platform senaryoları | ✅ 23/23 adım |
+| Arayüz uçtan uca | Playwright (Chromium; masaüstü + iPhone emülasyonu) | Gerçek tarayıcıda kullanıcı akışları + ekran görüntüleri | ✅ 17/17 adım |
 | Multiplayer | Başsız bot istemcileri (Node) + iki gerçek tarayıcı | Senkronizasyon, gecikme, paket kaybı, yük | Aşama 8 |
 | Gerçek cihaz | Android/iOS telefon + tablet | Bkz. [03 §8](03-Platform-Mimarisi.md) | Aşama 15 |
 | Güvenlik | Bağımlılık taraması (`npm audit`), statik analiz, sızma testi kontrol listesi | — | `npm audit`: 0 açık |

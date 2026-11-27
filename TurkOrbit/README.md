@@ -2,7 +2,7 @@
 
 PC, web tarayıcısı, Android ve iOS'ta **aynı hesapla** oynanan, sunucu otoriteli gerçek zamanlı uzay MMO oyunu ve platformu.
 
-> **Durum (27.11.2026):** Aşama 1–4 tamamlandı: araştırma, mimari, veritabanı/altyapı ve **kayıt/giriş sistemi** (web). Araştırma, ağ kısıtı nedeniyle kısmen yapıldı. Ayrıntı: [Aşama 1 raporu](Documentation/DevelopmentNotes/Asama-01-Raporu.md).
+> **Durum (27.11.2026):** Aşama 1–5 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş** ve **oyuncu profili** (pilot oluşturma, şirket, cüzdan + defter, seviye/rütbe, başarımlar, herkese açık profil). Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md).
 
 ## Hızlı başlangıç
 
@@ -27,7 +27,7 @@ Ayrıntılı kurulum ve dosya yerleştirme: [Documentation/Asama-01-Kayit-Giris/
 | `npm run typecheck` | TypeScript denetimi |
 | `npm run build` | Üretim derlemesi |
 | `npm run admin:grant-role -- --user X --role super_admin --reason "..."` | Sunucu tarafı rol atama (denetim kaydına yazılır) |
-| `npm run package:phase -- Asama-01-Kayit-Giris` | Aşama ZIP teslimatı |
+| `npm run package:phase -- Asama-05-Oyuncu-Profili` | Aşama ZIP teslimatı |
 
 ## Belgeler
 

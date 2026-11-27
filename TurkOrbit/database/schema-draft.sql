@@ -6,7 +6,11 @@
 -- (users, roles, permissions, role_permissions, user_roles, sessions, email_verification_tokens,
 -- password_reset_tokens, login_events, user_known_devices, game_settings, admin_audit_log).
 --
--- Doğrulama: 0001 uygulanmış boş bir veritabanına bu dosya hatasız yüklenir:
+-- Aşama 5'te uygulanan tablolar database/migrations/0002_player_profile.sql içindedir
+-- (game_servers, companies, maps, ranks, ship_types, players, player_stats, player_ships, achievements,
+-- player_achievements, currencies, wallets, currency_ledger). Bu dosya onları yalnızca genişletir.
+--
+-- Doğrulama: 0001 + 0002 uygulanmış boş bir veritabanına bu dosya hatasız yüklenir:
 --   psql -v ON_ERROR_STOP=1 -1 -f database/schema-draft.sql
 -- Her aşamada ilgili bölüm gözden geçirilip numaralı bir migration'a dönüştürülecektir.
 --
@@ -19,88 +23,8 @@
 --    veritabanına yalnızca kalıcı sonuçlar (ödül, ölüm istatistiği, çıkış konumu) işlenir.
 -- =====================================================================================
 
--- ============================================================ 1. EVREN, SUNUCU, ŞİRKET
-CREATE TABLE game_servers (
-  id            smallint PRIMARY KEY,
-  code          text NOT NULL UNIQUE,            -- ör. 'TR1'
-  name          text NOT NULL,                   -- ör. 'Anadolu-1'
-  region        text NOT NULL DEFAULT 'eu-tr',
-  is_open       boolean NOT NULL DEFAULT true,
-  is_maintenance boolean NOT NULL DEFAULT false,
-  created_at    timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE companies (
-  id          smallint PRIMARY KEY,
-  code        text NOT NULL UNIQUE,              -- 'KZL', 'GKB', 'ALT'
-  name        text NOT NULL,
-  description text,
-  color_hex   text NOT NULL,
-  home_map_id integer                            -- FK aşağıda (maps oluşturulduktan sonra)
-);
-
--- ============================================================ 2. OYUNCU PROFİLİ (Aşama 5)
-CREATE TABLE players (
-  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id          uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  server_id        smallint NOT NULL REFERENCES game_servers(id),
-  pilot_name       citext NOT NULL,
-  company_id       smallint REFERENCES companies(id),
-  level            smallint NOT NULL DEFAULT 1 CHECK (level BETWEEN 1 AND 100),
-  experience       bigint NOT NULL DEFAULT 0 CHECK (experience >= 0),
-  honor            bigint NOT NULL DEFAULT 0,
-  rank_points      bigint NOT NULL DEFAULT 0,
-  rank_id          smallint,
-  active_ship_id   uuid,                         -- FK aşağıda
-  active_loadout   smallint NOT NULL DEFAULT 1 CHECK (active_loadout IN (1, 2)),
-  map_id           integer,                      -- son kalıcı konum (oturum kapanınca yazılır)
-  pos_x            real,
-  pos_y            real,
-  playtime_seconds bigint NOT NULL DEFAULT 0,
-  clan_id          uuid,                         -- FK aşağıda
-  last_online_at   timestamptz,
-  created_at       timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, server_id),
-  UNIQUE (server_id, pilot_name)
-);
-
-CREATE TABLE player_stats (
-  player_id        uuid PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
-  npc_kills        bigint NOT NULL DEFAULT 0,
-  player_kills     bigint NOT NULL DEFAULT 0,
-  deaths           bigint NOT NULL DEFAULT 0,
-  gates_completed  integer NOT NULL DEFAULT 0,
-  cargo_collected  bigint NOT NULL DEFAULT 0,
-  damage_dealt     bigint NOT NULL DEFAULT 0,
-  damage_taken     bigint NOT NULL DEFAULT 0,
-  updated_at       timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE ranks (
-  id          smallint PRIMARY KEY,
-  name        text NOT NULL,
-  min_points  bigint NOT NULL,
-  icon_url    text
-);
-
-CREATE TABLE achievements (
-  id          serial PRIMARY KEY,
-  code        text NOT NULL UNIQUE,
-  name        text NOT NULL,
-  description text NOT NULL,
-  category    text NOT NULL,
-  target      bigint NOT NULL DEFAULT 1,
-  reward_table_id integer,
-  is_hidden   boolean NOT NULL DEFAULT false
-);
-
-CREATE TABLE player_achievements (
-  player_id      uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  achievement_id integer NOT NULL REFERENCES achievements(id),
-  progress       bigint NOT NULL DEFAULT 0,
-  completed_at   timestamptz,
-  PRIMARY KEY (player_id, achievement_id)
-);
+-- ============================================================ 1-2. EVREN VE OYUNCU PROFİLİ
+-- ✅ Aşama 5'te uygulandı → database/migrations/0002_player_profile.sql
 
 -- ============================================================ 3. İÇERİK SÜRÜMLEME (15.13)
 -- Yönetim Merkezi'nde düzenlenen her içerik kaydı için önizleme/yayın/geri alma geçmişi.
@@ -136,6 +60,7 @@ CREATE TABLE approval_requests (
 );
 
 -- ============================================================ 4. EŞYA TANIMLARI (Aşama 6)
+ALTER TABLE maps ADD COLUMN max_players integer;
 CREATE TABLE item_types (
   id             serial PRIMARY KEY,
   code           text NOT NULL UNIQUE,          -- ör. 'laser.ok1', 'ammo.isk2', 'shield.kalkan3'
@@ -160,27 +85,6 @@ CREATE TABLE item_types (
   updated_at     timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE ship_types (
-  id             serial PRIMARY KEY,
-  code           text NOT NULL UNIQUE,
-  name           text NOT NULL,
-  description    text,
-  ship_class     text NOT NULL,                 -- 'starter', 'fighter', 'tank', 'support', 'stealth'
-  sprite_key     text NOT NULL,                 -- istemci varlık anahtarı
-  hitpoints      integer NOT NULL CHECK (hitpoints > 0),
-  base_speed     integer NOT NULL CHECK (base_speed > 0),
-  cargo_capacity integer NOT NULL DEFAULT 0,
-  laser_slots    smallint NOT NULL,
-  generator_slots smallint NOT NULL,
-  extra_slots    smallint NOT NULL DEFAULT 0,
-  drone_slots    smallint NOT NULL DEFAULT 0,
-  min_level      smallint NOT NULL DEFAULT 1,
-  is_for_sale    boolean NOT NULL DEFAULT true,
-  is_archived    boolean NOT NULL DEFAULT false,
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  updated_at     timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE upgrade_levels (
   item_type_id   integer NOT NULL REFERENCES item_types(id) ON DELETE CASCADE,
   level          smallint NOT NULL CHECK (level >= 1),
@@ -191,15 +95,6 @@ CREATE TABLE upgrade_levels (
 );
 
 -- ============================================================ 5. OYUNCU ENVANTERİ, GEMİLER, KONFİGÜRASYON
-CREATE TABLE player_ships (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_id    uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  ship_type_id integer NOT NULL REFERENCES ship_types(id),
-  design_item_type_id integer REFERENCES item_types(id),  -- görünüm tasarımı
-  hitpoints    integer NOT NULL,               -- son kalıcı can (tamir ile dolar)
-  acquired_at  timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (player_id, ship_type_id)
-);
 
 -- Eşya örnekleri. Yığınlanabilir eşyalarda (mermi, kaynak) quantity kullanılır.
 CREATE TABLE player_items (
@@ -213,6 +108,9 @@ CREATE TABLE player_items (
   source        text NOT NULL                   -- 'shop', 'npc_drop', 'quest', 'auction', 'admin_grant' ...
 );
 CREATE INDEX player_items_player_idx ON player_items(player_id, item_type_id);
+
+ALTER TABLE player_ships ADD COLUMN design_item_type_id integer REFERENCES item_types(id);
+ALTER TABLE players ADD COLUMN active_loadout smallint NOT NULL DEFAULT 1 CHECK (active_loadout IN (1, 2));
 
 -- Her gemi için 2 ayrı ekipman konfigürasyonu
 CREATE TABLE loadout_slots (
@@ -275,24 +173,6 @@ CREATE TABLE player_skills (
 );
 
 -- ============================================================ 7. HARİTALAR VE KAPILAR (Aşama 7)
-CREATE TABLE maps (
-  id             serial PRIMARY KEY,
-  code           text NOT NULL UNIQUE,          -- ör. 'K-1', 'S-3', 'KAPI-ERGENEKON'
-  name           text NOT NULL,
-  map_type       text NOT NULL CHECK (map_type IN ('starter', 'company', 'border', 'pvp', 'special', 'event', 'gate')),
-  company_id     smallint REFERENCES companies(id),
-  width          integer NOT NULL,
-  height         integer NOT NULL,
-  background_key text NOT NULL,
-  min_level      smallint NOT NULL DEFAULT 1,
-  entry_rules    jsonb NOT NULL DEFAULT '{}'::jsonb,  -- {"enemy_company_min_level":12,"requires_item":"key.x"}
-  pvp_enabled    boolean NOT NULL DEFAULT true,
-  max_players    integer,
-  is_closed      boolean NOT NULL DEFAULT false,      -- bakım nedeniyle kapalı
-  closed_reason  text,
-  is_archived    boolean NOT NULL DEFAULT false
-);
-ALTER TABLE companies ADD CONSTRAINT companies_home_map_fk FOREIGN KEY (home_map_id) REFERENCES maps(id);
 
 CREATE TABLE map_portals (
   id           serial PRIMARY KEY,
@@ -410,7 +290,7 @@ CREATE TABLE reward_entries (
 );
 ALTER TABLE npc_types ADD CONSTRAINT npc_types_reward_fk FOREIGN KEY (reward_table_id) REFERENCES reward_tables(id);
 ALTER TABLE gates ADD CONSTRAINT gates_reward_fk FOREIGN KEY (completion_reward_table_id) REFERENCES reward_tables(id);
-ALTER TABLE achievements ADD CONSTRAINT achievements_reward_fk FOREIGN KEY (reward_table_id) REFERENCES reward_tables(id);
+ALTER TABLE achievements ADD COLUMN reward_table_id integer REFERENCES reward_tables(id);
 
 -- ============================================================ 10. GÖREVLER (Aşama 10)
 CREATE TABLE quests (
@@ -457,37 +337,8 @@ CREATE TABLE player_quests (
 );
 
 -- ============================================================ 11. EKONOMİ (Aşama 11)
-CREATE TABLE currencies (
-  code        text PRIMARY KEY,                -- 'KREDI', 'AKCE', 'SEREF_JETONU'
-  name        text NOT NULL,
-  is_premium  boolean NOT NULL DEFAULT false,
-  tradable    boolean NOT NULL DEFAULT true
-);
-
-CREATE TABLE wallets (
-  player_id     uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  currency_code text NOT NULL REFERENCES currencies(code),
-  balance       bigint NOT NULL DEFAULT 0 CHECK (balance >= 0),   -- negatif bakiye veritabanı seviyesinde imkânsız
-  version       bigint NOT NULL DEFAULT 0,                         -- iyimser kilit
-  PRIMARY KEY (player_id, currency_code)
-);
 
 -- Yalnızca eklenebilir para defteri. Her bakiye değişikliği tek transaction içinde wallets + ledger.
-CREATE TABLE currency_ledger (
-  id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  player_id       uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  currency_code   text NOT NULL REFERENCES currencies(code),
-  delta           bigint NOT NULL CHECK (delta <> 0),
-  balance_after   bigint NOT NULL CHECK (balance_after >= 0),
-  reason          text NOT NULL,               -- 'npc_reward', 'shop_purchase', 'auction_bid', 'admin_grant' ...
-  ref_type        text,
-  ref_id          text,
-  -- Aynı işlemin iki kez uygulanmasını engeller (çift harcama / tekrar gönderim)
-  idempotency_key text UNIQUE,
-  actor_user_id   uuid REFERENCES users(id),   -- yönetici işlemlerinde
-  created_at      timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX currency_ledger_player_idx ON currency_ledger(player_id, created_at DESC);
 
 CREATE TABLE item_ledger (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -586,7 +437,8 @@ CREATE TABLE clans (
   UNIQUE (server_id, tag),
   UNIQUE (server_id, name)
 );
-ALTER TABLE players ADD CONSTRAINT players_clan_fk FOREIGN KEY (clan_id) REFERENCES clans(id) ON DELETE SET NULL;
+
+ALTER TABLE players ADD COLUMN clan_id uuid REFERENCES clans(id) ON DELETE SET NULL;
 
 CREATE TABLE clan_ranks (
   id          serial PRIMARY KEY,
@@ -917,7 +769,3 @@ CREATE TABLE backups (
   triggered_by uuid REFERENCES users(id)
 );
 
--- Son kalan FK'ler
-ALTER TABLE players ADD CONSTRAINT players_active_ship_fk FOREIGN KEY (active_ship_id) REFERENCES player_ships(id) ON DELETE SET NULL;
-ALTER TABLE players ADD CONSTRAINT players_map_fk FOREIGN KEY (map_id) REFERENCES maps(id);
-ALTER TABLE players ADD CONSTRAINT players_rank_fk FOREIGN KEY (rank_id) REFERENCES ranks(id);

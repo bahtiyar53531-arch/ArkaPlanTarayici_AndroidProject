@@ -234,6 +234,15 @@ export async function revokeSessions(
   return rows.map((r) => r.token_hash);
 }
 
+/** Kullanıcının açık oturumlarının özetleri (hesap durumu değiştiğinde önbelleği temizlemek için). */
+export async function activeSessionHashes(db: Queryable, userId: string): Promise<Buffer[]> {
+  const { rows } = await db.query<{ token_hash: Buffer }>(
+    'SELECT token_hash FROM sessions WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()',
+    [userId],
+  );
+  return rows.map((r) => r.token_hash);
+}
+
 export async function listActiveSessions(db: Queryable, userId: string): Promise<SessionRow[]> {
   const { rows } = await db.query<SessionRow>(
     `SELECT ${SESSION_COLUMNS} FROM sessions

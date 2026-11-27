@@ -29,6 +29,7 @@ try {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-01');
+const SHOTS5 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-05');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -36,6 +37,7 @@ const WEB_PORT = 5174;
 const SMTP_PORT = 2526;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
 mkdirSync(SHOTS, { recursive: true });
+mkdirSync(SHOTS5, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -159,12 +161,48 @@ try {
     await pc.getByText('Kullanıcı adı/e-posta veya parola hatalı.').waitFor();
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS, '02-giris-hata.jpg') });
   });
-  await step('Giriş → Hesabım (Oyuncu ID, doğrulanmış e-posta, rol: Oyuncu)', async () => {
+  await step('Giriş → pilotu olmayan oyuncu pilot oluşturma sihirbazına yönlenir', async () => {
     await pc.getByLabel('Parola', { exact: true }).fill(A.password);
     await pc.getByRole('button', { name: 'Giriş yap' }).click();
+    await pc.getByRole('heading', { name: 'Pilotunu oluştur' }).waitFor();
+  });
+  await step('Hesabım: Oyuncu ID, doğrulanmış e-posta, rol: Oyuncu', async () => {
+    await pc.goto(`${WEB}/hesap`);
     await pc.getByRole('heading', { name: `Hoş geldin, ${A.username}` }).waitFor();
     await pc.getByText('Doğrulandı', { exact: true }).waitFor();
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS, '03-hesabim.jpg') });
+  });
+
+  console.log('Aşama 5 — pilot profili (masaüstü)');
+  await step('Sihirbaz: sunucu seçili gelir, şirket seçilir ve pilot oluşturulur', async () => {
+    await pc.goto(`${WEB}/pilot`);
+    await pc.getByRole('heading', { name: 'Pilotunu oluştur' }).waitFor();
+    await pc.getByText('Gökbörü Filosu', { exact: true }).click();
+    await pc.getByText('Kırlangıç gemisiyle göreve başlayacak').waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS5, '01-pilot-olusturma.jpg'), fullPage: true });
+    await pc.getByRole('button', { name: 'Pilotu oluştur' }).click();
+    await pc.getByRole('heading', { name: A.username }).waitFor();
+  });
+  await step('Profil: şirket, Oyuncu ID, seviye, rütbe, paralar, gemi, konum ve başarım gerçek veriyle görünür', async () => {
+    for (const t of ['Gökbörü Filosu', 'Sv 1', 'Pilot Adayı', '25.000', '1.000', 'Kırlangıç', 'Gökbörü Üssü', 'Galaksiye Hoş Geldin', 'Başlangıç desteği']) {
+      await pc.getByText(t).first().waitFor();
+    }
+    await pc.getByText(/Oyuncu ID #\d+/).first().waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS5, '02-pilot-profili.jpg'), fullPage: true });
+  });
+  await step('Slogan düzenlenir ve kaydedilir', async () => {
+    await pc.getByRole('button', { name: 'Sloganı düzenle' }).click();
+    await pc.getByLabel('Pilot sloganı').fill('Sürü güçlüdür, rota bizden sorulur');
+    await pc.getByRole('button', { name: 'Kaydet' }).click();
+    await pc.getByText('“Sürü güçlüdür, rota bizden sorulur”').waitFor();
+  });
+  await step('Herkese açık profil: e-posta ve para bilgisi göstermez', async () => {
+    await pc.getByRole('link', { name: 'Herkese açık profilim' }).click();
+    await pc.waitForURL(/\/pilot\/TR1\/AnadoluKartali$/);
+    await pc.getByText('Kazanılan başarımlar').waitFor();
+    const body = await pc.locator('main').innerText();
+    if (body.includes(A.email) || body.includes('25.000') || body.includes('Akçe')) throw new Error('özel bilgi görünüyor');
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS5, '03-acik-profil.jpg'), fullPage: true });
   });
 
   console.log('iPhone 13 görünümü');
@@ -174,7 +212,12 @@ try {
     await phone.getByLabel('Kullanıcı adı veya e-posta').fill(A.email);
     await phone.getByLabel('Parola', { exact: true }).fill(A.password);
     await phone.getByRole('button', { name: 'Giriş yap' }).click();
-    await phone.getByRole('heading', { name: `Hoş geldin, ${A.username}` }).waitFor();
+    await phone.getByRole('heading', { name: A.username }).waitFor();
+  });
+  await step('Telefonda aynı pilot profili ve PC\'de yazılan slogan görünür (senkron)', async () => {
+    await phone.getByText('“Sürü güçlüdür, rota bizden sorulur”').waitFor();
+    await phone.getByText('Gökbörü Filosu').first().waitFor();
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS5, '04-mobil-profil.jpg'), fullPage: true });
   });
   await step('Telefonda güvenlik sayfası: iki aktif oturum görünür', async () => {
     await phone.goto(`${WEB}/hesap/guvenlik`);
@@ -220,7 +263,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

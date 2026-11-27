@@ -8,11 +8,14 @@ import { createAuthGuards, type AuthGuards } from './modules/auth/guards.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { AuthService, type AuthLimits } from './modules/auth/service.js';
 import { healthRoutes } from './modules/health/routes.js';
+import { playerRoutes } from './modules/player/routes.js';
+import { PlayerService } from './modules/player/service.js';
 import type { Runtime } from './runtime.js';
 
 export interface BuiltApp {
   app: FastifyInstance;
   auth: AuthService;
+  players: PlayerService;
   guards: AuthGuards;
 }
 
@@ -44,7 +47,7 @@ export async function buildApp(rt: Runtime, options: { limits?: Partial<AuthLimi
   await app.register(cors, {
     origin: (origin, cb) => cb(null, !origin || config.allowedOrigins.includes(origin)),
     credentials: true,
-    methods: ['GET', 'POST', 'DELETE'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Client-Platform', 'X-Client-Version'],
     maxAge: 600,
   });
@@ -114,14 +117,16 @@ export async function buildApp(rt: Runtime, options: { limits?: Partial<AuthLimi
     ...(options.limits ? { limits: options.limits } : {}),
   });
   const guards = createAuthGuards(auth, config.session.cookieName);
+  const players = new PlayerService(rt.db, app.log);
 
   await app.register(
     async (api) => {
       healthRoutes(api, rt);
       authRoutes(api, { service: auth, guards, config });
+      playerRoutes(api, { service: players, guards, limiter: rt.limiter });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, guards };
+  return { app, auth, players, guards };
 }

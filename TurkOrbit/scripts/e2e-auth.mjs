@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TÜRK ORBIT — Aşama 1 uçtan uca (E2E) test
+ * TÜRK ORBIT — Aşama 1 + 5 uçtan uca (E2E) test
  *
  * Gerçek API sürecini başlatır, e-postaları GERÇEK SMTP üzerinden yakalar ve iki ayrı hesapla
  * (PC web oturumu + Android uygulama oturumu) tüm kayıt/giriş akışlarını HTTP üzerinden dener.
@@ -132,7 +132,7 @@ const env = {
 
 let server;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -265,6 +265,43 @@ async function main() {
     const r = await pc.req('POST', '/auth/password/change', { currentPassword: PASSWORD, newPassword: 'Kizilelma_Seferi_1071' });
     expect(r.status === 200 && r.json.revokedOtherSessions >= 1, JSON.stringify(r.json));
     expect((await pc.req('GET', '/auth/me')).status === 200, 'mevcut oturum açık kalmalı');
+  });
+
+  console.log('\nAşama 5 — pilot profili (iki hesap, iki platform)');
+  await step('Pilot A (web) Kızılelma pilotu oluşturur: başlangıç paraları defterli, Kırlangıç aktif, konum K-1', async () => {
+    const r = await pc.req('POST', '/players', { serverCode: 'TR1', companyCode: 'KZL' });
+    expect(r.status === 201, JSON.stringify(r.json));
+    const p = r.json.pilot;
+    const bal = Object.fromEntries(p.currencies.map((c) => [c.code, c.balance]));
+    expect(p.company.code === 'KZL' && p.map.code === 'K-1' && p.activeShip.code === 'kirlangic', JSON.stringify(p));
+    expect(bal.KREDI === 25000 && bal.AKCE === 1000, JSON.stringify(bal));
+    const ledger = await pc.req('GET', '/players/me/ledger?server=TR1');
+    expect(ledger.json.entries.length === 2 && ledger.json.entries.every((e) => e.reason === 'starter_grant'), JSON.stringify(ledger.json));
+  });
+  await step('Pilot B (Android uygulama) Gökbörü pilotu oluşturur', async () => {
+    const r = await app.req('POST', '/players', { serverCode: 'TR1', companyCode: 'GKB' });
+    expect(r.status === 201 && r.json.pilot.map.code === 'G-1', JSON.stringify(r.json));
+  });
+  await step('Aynı sunucuda ikinci pilot ve istatistik yazma girişimi reddedilir', async () => {
+    const dup = await pc.req('POST', '/players', { serverCode: 'TR1', companyCode: 'ALT' });
+    expect(dup.status === 409 && dup.json.error.code === 'PILOT_EXISTS', JSON.stringify(dup.json));
+    const cheat = await app.req('PATCH', '/players/me', { serverCode: 'TR1', motto: 'x', experience: 99999999 });
+    expect(cheat.status === 400, `beklenen 400, gelen ${cheat.status}`);
+  });
+  await step('Pilot B sloganını uygulamadan yazar → Pilot A herkese açık profilde görür; özel bilgi sızmaz', async () => {
+    const u = await app.req('PATCH', '/players/me', { serverCode: 'TR1', motto: 'Bozkırdan yıldızlara' });
+    expect(u.status === 200, JSON.stringify(u.json));
+    const pub = await pc.req('GET', '/pilots/TR1/GokBoru');
+    expect(pub.status === 200 && pub.json.pilot.motto === 'Bozkırdan yıldızlara' && pub.json.pilot.company.code === 'GKB', JSON.stringify(pub.json));
+    const text = JSON.stringify(pub.json);
+    expect(!text.includes('@ornek.com') && !text.includes('currencies') && !text.includes('"map"'), 'özel bilgi sızdı: ' + text);
+  });
+  await step('Sunucu listesi iki pilotu sayar; şirket listesi dağılımı gösterir', async () => {
+    const s = await app.req('GET', '/game/servers');
+    expect(s.json.servers[0].pilotCount === 2 && s.json.servers[0].hasMyPilot === true, JSON.stringify(s.json));
+    const c = await app.req('GET', '/game/companies?server=TR1');
+    const counts = Object.fromEntries(c.json.companies.map((x) => [x.code, x.pilotCount]));
+    expect(counts.KZL === 1 && counts.GKB === 1 && counts.ALT === 0, JSON.stringify(counts));
   });
 
   console.log('\nYetki (sunucu tarafı)');

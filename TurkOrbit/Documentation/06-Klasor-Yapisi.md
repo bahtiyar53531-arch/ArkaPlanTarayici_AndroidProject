@@ -18,6 +18,8 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │           ├── auth-schemas.ts       zod doğrulama şemaları
     │           ├── api-types.ts          API yanıt tipleri, hata kodları
     │           ├── labels.ts             Türkçe etiketler
+    │           ├── progression.ts        seviye eğrisi ve rütbe puanı (Aşama 5)
+    │           ├── player.ts             profil şemaları ve tipleri (Aşama 5)
     │           └── shared.test.ts
     │
     ├── apps/
@@ -31,6 +33,8 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   ├── lib/                  crypto, Argon2id, e-posta, hız sınırı, cihaz bilgisi, hatalar
     │   │   │   ├── modules/
     │   │   │   │   ├── auth/             kayıt, giriş, oturum, parola, güvenlik (Aşama 1)
+    │   │   │   │   ├── player/           pilot oluşturma, profil, şirket değişimi, açık profil (Aşama 5)
+    │   │   │   │   ├── economy/          cüzdan çekirdeği: kilit + defter + idempotency (Aşama 5)
     │   │   │   │   └── health/           sağlık uç noktası
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
     │   │   └── test/                     entegrasyon testleri (gerçek PostgreSQL + Redis)
@@ -42,14 +46,14 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │       ├── api/client.ts         API istemcisi (CSRF, hata yönetimi)
     │   │       ├── auth/AuthContext.tsx  oturum durumu
     │   │       ├── components/           Layout, form bileşenleri, parola gücü göstergesi
-    │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik
+    │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot (Aşama 5)
     │   │       └── styles/global.css     koyu uzay teması
     │   │
     │   ├── game-server/                  (Aşama 8) gerçek zamanlı oyun sunucusu — şimdilik README
     │   └── admin/                        (Aşama 14) TÜRK ORBIT YÖNETİM MERKEZİ — şimdilik README
     │
     ├── database/
-    │   ├── migrations/0001_auth.sql      uygulanan migration'lar (numaralı, değiştirilmez)
+    │   ├── migrations/                   0001_auth.sql, 0002_player_profile.sql (numaralı, değiştirilmez)
     │   └── schema-draft.sql              tüm oyunun doğrulanmış taslak şeması
     │
     ├── infra/
@@ -63,6 +67,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │
     ├── Documentation/                    tasarım belgeleri (00–08), aşama klasörleri
     │   ├── Asama-01-Kayit-Giris/         API referansı, kurulum ve dosya yerleştirme rehberi
+    │   ├── Asama-05-Oyuncu-Profili/      API referansı, güncelleme rehberi
     │   └── DevelopmentNotes/             aşama raporları, karar günlüğü, ekran görüntüleri
     │
     └── Deliveries/                       aşama ZIP paketleri

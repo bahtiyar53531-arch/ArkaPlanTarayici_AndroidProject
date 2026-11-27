@@ -25,6 +25,9 @@ export function AccountLayout({ children }: { children: ReactNode }) {
       <header className="topbar topbar-account">
         <Logo size={36} />
         <nav className="topnav" aria-label="Hesap menüsü">
+          <NavLink to="/pilot" end>
+            Pilot
+          </NavLink>
           <NavLink to="/hesap" end>
             Hesabım
           </NavLink>

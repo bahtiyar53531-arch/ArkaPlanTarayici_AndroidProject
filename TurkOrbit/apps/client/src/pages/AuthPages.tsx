@@ -29,7 +29,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(identifier.trim(), password);
-      navigate('/hesap', { replace: true });
+      navigate('/pilot', { replace: true });
     } catch (err) {
       setError(err);
       setPassword('');
@@ -231,8 +231,8 @@ export function VerifyEmailPage() {
         {state === 'ok' && <Alert kind="success">{message}</Alert>}
         {state === 'error' && <Alert kind="error">{message}</Alert>}
         {state !== 'working' && (
-          <Link className="btn btn-primary" to={me ? '/hesap' : '/giris'}>
-            {me ? 'Hesabıma git' : 'Giriş yap'}
+          <Link className="btn btn-primary" to={me ? '/pilot' : '/giris'}>
+            {me ? 'Pilotunu oluştur' : 'Giriş yap'}
           </Link>
         )}
       </Card>

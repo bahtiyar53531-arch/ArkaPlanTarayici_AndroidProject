@@ -41,6 +41,15 @@ export function createAuthGuards(service: AuthService, cookieName: string) {
     if (!request.auth) throw Errors.unauthenticated();
   };
 
+  /** Oturum varsa çözer, yoksa veya geçersizse isteği reddetmeden devam eder (herkese açık uç noktalar). */
+  const optionalAuth: preHandlerAsyncHookHandler = async (request) => {
+    try {
+      request.auth = await resolve(request);
+    } catch {
+      request.auth = null;
+    }
+  };
+
   const requireVerifiedEmail: preHandlerAsyncHookHandler = async (request) => {
     if (!request.auth) throw Errors.unauthenticated();
     if (!request.auth.user.email_verified_at) {
@@ -56,7 +65,7 @@ export function createAuthGuards(service: AuthService, cookieName: string) {
     };
   }
 
-  return { requireAuth, requireVerifiedEmail, requirePermission };
+  return { requireAuth, optionalAuth, requireVerifiedEmail, requirePermission };
 }
 
 export type AuthGuards = ReturnType<typeof createAuthGuards>;

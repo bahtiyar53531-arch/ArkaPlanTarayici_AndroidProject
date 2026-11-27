@@ -158,7 +158,7 @@ export class AuthService {
   // ================================================================== E-posta doğrulama
   async verifyEmail(input: unknown): Promise<{ username: string }> {
     const { token } = verifyEmailSchema.parse(input);
-    return withTransaction(this.d.db, async (c) => {
+    const result = await withTransaction(this.d.db, async (c) => {
       const row = await repo.findEmailVerificationToken(c, sha256(token));
       if (!row || row.used_at) throw Errors.invalidToken();
       if (row.expires_at.getTime() <= Date.now()) throw Errors.tokenExpired();
@@ -169,8 +169,11 @@ export class AuthService {
       }
       await repo.markEmailVerificationTokenUsed(c, row.id);
       await repo.markEmailVerified(c, user.id);
-      return { username: user.username };
+      return { userId: user.id, username: user.username };
     });
+    // Açık oturumların önbelleğindeki "doğrulanmadı" bilgisi hemen düşsün (ör. pilot oluşturma için).
+    await this.d.cache.del(await repo.activeSessionHashes(this.d.db, result.userId)).catch(() => undefined);
+    return { username: result.username };
   }
 
   async resendVerification(auth: AuthenticatedContext): Promise<{ alreadyVerified: boolean }> {

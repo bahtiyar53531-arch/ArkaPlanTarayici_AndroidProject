@@ -102,6 +102,12 @@ Her ailenin "Kadim" (boss) çeşidi vardır: aynı tür ×4 can, ek yetenek ve �
 | **Erlik Kapısı** | 120 | 45 | Kadim türler, zor mod | Elit ekipman |
 | **Kızılelma Kapısı** | 150 | 50 | Tüm ailelerin Kadim'leri + Kadim Tepegöz | Uç seviye ödüller (yalnızca diğer 6 kapıyı tamamlayanlar) |
 
+## 7b. Seviye ve rütbe (✅ Aşama 5'te uygulandı)
+- **Seviye:** 1–50. n. seviye için toplam deneyim: `5000 × (n−1)^2.4` (Sv2 = 5.000 · Sv10 ≈ 971.000 · Sv50 ≈ 56,9 milyon).
+- **Rütbe puanı:** `deneyim/1000 + max(şeref,0)/10 + 2×NPC + 10×pilot yenme + 100×kapı`.
+- **18 rütbe:** Pilot Adayı · Uzay Pilotu · Kıdemli Uzay Pilotu · Onbaşı · Çavuş · Başçavuş · Astsubay · Asteğmen · Teğmen · Üsteğmen · Yüzbaşı · Binbaşı · Yarbay · Albay · Tuğgeneral · Tümgeneral · Korgeneral · Orgeneral.
+- **Başlangıç:** 25.000 Kredi + 1.000 Akçe, Kırlangıç, şirketin x-1 haritası (Yönetim Merkezi'nden ayarlanabilir).
+
 ## 8. Görev temaları (Aşama 10'da ~300 görev)
 - **Ana görev zinciri "Büyük Sıçrama":** eğitim → ilk harita → şirket görevleri → sınır kuşağı → Çekirdek → kapılar.
 - **Günlük örnekleri:** "Sürü Temizliği: 30 Çakal yok et", "Maden Turu: 50 Kuvarsit topla", "Devriye: S-2 ve S-3'ü ziyaret et".

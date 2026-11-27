@@ -271,3 +271,114 @@ h1, h2 { line-height: 1.25; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* =====================================================================================
+   Aşama 5 — Pilot profili
+   ===================================================================================== */
+.small { font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.btn-small { min-height: 36px; padding: 6px 12px; font-size: 14px; }
+select, .motto-form input {
+  min-height: var(--tap);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: #070c22;
+  color: var(--text);
+  font: inherit;
+}
+
+/* --- ilerleme çubuğu --- */
+.bar { height: 8px; border-radius: 999px; background: #ffffff14; overflow: hidden; margin-top: 6px; }
+.bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cyan), #7be4ff); transition: width 0.4s ease; }
+
+/* --- pilot oluşturma sihirbazı --- */
+.wizard .panel { margin-bottom: 16px; }
+.choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.choice-grid.companies { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: #0a1129;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.choice:hover { border-color: var(--cyan); }
+.choice.selected { border-color: var(--company, var(--cyan)); box-shadow: 0 0 0 2px var(--company, var(--cyan)) inset; }
+.choice.disabled { opacity: 0.5; cursor: not-allowed; }
+.choice input { position: absolute; opacity: 0; pointer-events: none; }
+.choice:has(input:focus-visible) { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.choice-title { font-weight: 700; font-size: 17px; }
+.choice-desc { color: #cfd7f5; font-size: 14px; }
+.choice-meta { color: var(--muted); font-size: 13px; }
+.company { padding-top: 22px; overflow: hidden; }
+.company-stripe { position: absolute; inset: 0 0 auto 0; height: 6px; background: var(--company); }
+.company-motto { color: var(--company); font-style: italic; font-size: 14px; }
+
+/* --- profil kahraman kartı --- */
+.hero { display: flex; gap: 24px; align-items: center; border-top: 4px solid var(--company, var(--cyan)); }
+.hero-ship { flex: none; display: grid; place-items: center; width: 180px; filter: drop-shadow(0 10px 18px rgba(0,0,0,.45)); }
+.hero-body { flex: 1; min-width: 0; }
+.hero-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pilot-name { margin: 0; font-size: 30px; letter-spacing: 0.5px; overflow-wrap: anywhere; }
+.company-badge { font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; color: #fff; background: var(--company); }
+.hero-sub { color: var(--muted); font-size: 14px; margin: 4px 0 10px; }
+.hero-progress { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.progress-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.level-badge, .rank-badge { font-weight: 800; font-size: 14px; padding: 2px 10px; border-radius: 6px; background: #ffffff12; border: 1px solid var(--border-strong); }
+.rank-badge { color: var(--warn); }
+.motto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-style: italic; color: #d7def7; }
+.motto .btn { font-style: normal; }
+.motto-form { display: flex; flex-direction: column; gap: 6px; }
+.motto-form input { width: 100%; }
+.motto-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.motto-actions .muted { margin-right: auto; }
+
+/* --- kutucuklar ve istatistikler --- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tiles.inline { margin: 12px 0 0; }
+.tile { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.tile-label { color: var(--muted); font-size: 13px; }
+.tile-value { font-size: 22px; font-weight: 800; margin-top: 2px; overflow-wrap: anywhere; }
+.tile-gold .tile-value { color: #f5b700; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat { background: #0a1129; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.stat-value { font-size: 22px; font-weight: 800; }
+.stat-label { color: var(--muted); font-size: 13px; }
+.ship-row { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
+.ship-row > div { flex: 1; min-width: 0; }
+.kv.compact { gap: 6px 14px; margin-top: 8px; }
+
+/* --- başarımlar --- */
+.achievements { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.achievements li { padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: #0a1129; opacity: 0.8; }
+.achievements li.done { opacity: 1; border-color: #b45309; background: linear-gradient(180deg, #2a1f0a, #0a1129); }
+.ach-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.ach-name { font-weight: 700; }
+.achievements li.done .ach-name { color: var(--warn); }
+
+/* --- şirket değişimi ve defter --- */
+.company-change { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.confirm { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #b45309; background: #78350f33; }
+.ledger-amount { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.ledger-amount .plus { color: var(--ok); font-weight: 700; }
+.ledger-amount .minus { color: var(--danger); font-weight: 700; }
+.upcoming { margin: 0; padding-left: 18px; color: #cfd7f5; }
+.upcoming li { margin: 4px 0; }
+
+@media (max-width: 760px) {
+  .hero { flex-direction: column; text-align: center; }
+  .hero-top, .motto { justify-content: center; }
+  .hero-progress { grid-template-columns: 1fr; text-align: left; }
+  .hero-ship { width: auto; }
+  .pilot-name { font-size: 26px; }
+}
+@media (max-width: 640px) {
+  .ledger-item { flex-direction: row !important; align-items: center !important; }
+  .company-change select, .company-change .btn { width: 100%; }
+}

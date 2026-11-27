@@ -72,9 +72,14 @@ export async function resetDatabase(rt: Runtime) {
     );
     // game_settings.updated_by → users FK'si nedeniyle TRUNCATE CASCADE ayarları da siler; varsayılanları geri yaz.
     await rt.db.query(
-      `INSERT INTO game_settings (key, value) VALUES ('registration.enabled', 'true'::jsonb), ('terms.version', '"2026-11"'::jsonb)
+      `INSERT INTO game_settings (key, value) VALUES
+         ('registration.enabled', 'true'::jsonb),
+         ('terms.version', '"2026-11"'::jsonb),
+         ('starter.currencies', '{"KREDI": 25000, "AKCE": 1000}'::jsonb),
+         ('company.change', '{"cooldown_days": 30, "cost": {"currency": "AKCE", "amount": 2000}}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
+    await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);
   }
   await rt.redis?.flushdb();
 }
@@ -104,7 +109,7 @@ export function newClient(overrides: Partial<Client> = {}): Client {
 export async function call(
   app: FastifyInstance,
   client: Client,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   url: string,
   body?: unknown,
   extraHeaders: Record<string, string> = {},

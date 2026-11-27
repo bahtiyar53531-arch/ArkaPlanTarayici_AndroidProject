@@ -26,10 +26,10 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'X-Client-Platform': CLIENT_PLATFORM };
   // Fastify boş JSON gövdesini reddeder; gövdesiz POST'larda {} gönderilir.
-  const payload = method === 'POST' ? JSON.stringify(body ?? {}) : undefined;
+  const payload = method === 'POST' || method === 'PATCH' ? JSON.stringify(body ?? {}) : undefined;
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
 

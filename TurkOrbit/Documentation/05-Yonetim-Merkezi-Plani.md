@@ -56,7 +56,7 @@ Klan listesi/üyeleri/liderlik devri, grup gözlemi, sohbet raporları (`reports
 Sunucu durumları (`server_nodes`), bağlantı sayısı, WebSocket durumu, ortalama ping, CPU/RAM, veritabanı durumu, hata kayıtları, sistem logları, yedekleme başlatma/listeleme (`backups`), geri yükleme talimatı (geri yükleme **iki yetkili onayı** ve bakım modu ister), bakım modu (`maintenance_windows`), bildirim gönderme. Sunucu başlatma/durdurma yalnızca desteklenen altyapı üzerinden yapılır (systemd/PM2 API'si, yetkili ve denetimli). Panelden keyfi kabuk komutu çalıştırılmaz.
 
 ### 15.11 Oyun ayarları
-Oyun adı, web sitesi, **kayıt açık/kapalı** (✅ `game_settings.registration.enabled` Aşama 1'de API tarafından uygulanıyor ve test edildi), sunucu seçimi, başlangıç değerleri, deneyim/ödül/NPC doğma çarpanları, etkinlik ve sohbet ayarları, bildirimler, özellik bayrakları (`feature_flags`), sürüm bilgileri.
+Oyun adı, web sitesi, **kayıt açık/kapalı** (✅ `game_settings.registration.enabled` Aşama 1'de API tarafından uygulanıyor ve test edildi), **başlangıç paraları** (✅ `starter.currencies`, Aşama 5), **şirket değiştirme bekleme süresi ve ücreti** (✅ `company.change`, Aşama 5), sunucu seçimi, başlangıç değerleri, deneyim/ödül/NPC doğma çarpanları, etkinlik ve sohbet ayarları, bildirimler, özellik bayrakları (`feature_flags`), sürüm bilgileri.
 
 ### 15.12 Yetki sistemi
 8 personel rolü + oyuncu (uygulandı). Rol atama Aşama 1'de **yalnızca sunucu tarafı CLI** ile yapılabiliyor. Aşama 14'te panelden atama eklenecek. Bu atama `roles.assign` yetkisi ister. Bir yönetici kendi rütbesinden yüksek bir rolü atayamaz (`ROLE_RANK`). `super_admin` ataması iki yetkili onayı ister.
