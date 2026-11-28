@@ -10,6 +10,7 @@
  * Ortam:     E2E_DATABASE_URL, E2E_REDIS_URL, E2E_API_PORT, E2E_SMTP_PORT
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,13 +64,17 @@ async function waitForMail(to, subjectPart, timeoutMs = 5000) {
 const tokenOf = (mail) => mail.text.match(/token=([A-Za-z0-9_-]+)/)[1];
 
 // ------------------------------------------------------------------ HTTP istemcisi
+// Aşama 15: mobil uygulama her istekte sürümünü de gönderir (apps/client/package.json); eski sürüm 426 alır
+const APP_VERSION = JSON.parse(readFileSync(new URL('../apps/client/package.json', import.meta.url), 'utf8')).version;
 class Client {
-  constructor(name, { ua = UA.pc, ip = '85.105.10.20', platform } = {}) {
-    Object.assign(this, { name, ua, ip, platform, cookie: null, csrf: null, bearer: null });
+  constructor(name, { ua = UA.pc, ip = '85.105.10.20', platform, version } = {}) {
+    const v = version ?? (platform === 'android' || platform === 'ios' ? APP_VERSION : undefined);
+    Object.assign(this, { name, ua, ip, platform, version: v, cookie: null, csrf: null, bearer: null });
   }
   async req(method, url, body) {
     const headers = { 'user-agent': this.ua, origin: WEB, 'x-forwarded-for': this.ip };
     if (this.platform) headers['x-client-platform'] = this.platform;
+    if (this.version) headers['x-client-version'] = this.version;
     if (this.cookie) headers.cookie = this.cookie;
     if (this.csrf && method !== 'GET') headers['x-csrf-token'] = this.csrf;
     if (this.bearer) headers.authorization = `Bearer ${this.bearer}`;
@@ -96,6 +101,7 @@ class Client {
 async function rawUpload(client, url, name, bytes) {
   const headers = { 'user-agent': client.ua, origin: WEB, 'x-forwarded-for': client.ip, 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(name) };
   if (client.platform) headers['x-client-platform'] = client.platform;
+  if (client.version) headers['x-client-version'] = client.version;
   if (client.cookie) headers.cookie = client.cookie;
   if (client.csrf) headers['x-csrf-token'] = client.csrf;
   if (client.bearer) headers.authorization = `Bearer ${client.bearer}`;
@@ -283,6 +289,12 @@ async function main() {
     expect(JSON.stringify(r.json.user.roles) === '["player"]', `roller: ${r.json.user.roles}`);
     expect(!('sessionToken' in r.json), 'web yanıtında oturum anahtarı olmamalı');
     pc.csrf = r.json.csrfToken;
+  });
+  await step('Aşama 15: eski Android uygulama sürümü 426 CLIENT_OUTDATED alır (güncelleme zorunluluğu); web etkilenmez', async () => {
+    const old = new Client('Eski uygulama', { ua: UA.android, ip: '176.88.40.13', platform: 'android', version: '0.14.0' });
+    const r = await old.req('POST', '/auth/login', { identifier: bMail, password: 'Yildiz_Tozu_Avcisi_9', transport: 'token', device: { platform: 'android' } });
+    expect(r.status === 426 && r.json?.error?.code === 'CLIENT_OUTDATED' && r.json.error.minVersion === APP_VERSION, JSON.stringify(r.json));
+    expect((await pc.req('GET', '/auth/me')).status === 200, 'web oturumu etkilenmemeli');
   });
   await step('Pilot B Android uygulama girişi: Bearer anahtar', async () => {
     const r = await app.req('POST', '/auth/login', { identifier: bMail, password: 'Yildiz_Tozu_Avcisi_9', transport: 'token', device: { platform: 'android', name: 'Pixel 8' } });

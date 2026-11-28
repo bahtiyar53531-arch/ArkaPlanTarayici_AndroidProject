@@ -168,6 +168,10 @@ Ek dosyaların kendisi `UPLOAD_DIR` altındaki dosya deposundadır (bkz. [Aşama
 
 Ayarlar: `maintenance` (bakım modu) ve `admin` (onay eşikleri, onay süresi). Oyun sunucusu süreç nabzı tablo yerine Redis'te (`game:node:*`, K-100).
 
+## 1l. Aşama 15 (yeni tablo yok, 0011)
+
+Ayar: `client`: Android/iOS uygulamasının desteklenen en düşük sürümü, mağaza bağlantıları ve oyuncuya gösterilen mesaj. API eski sürüme 426 `CLIENT_OUTDATED` döner (K-105). Taslaktaki `client_releases` tablosu yerine bu ayar kullanıldı; Yönetim Merkezi'nin taslak/yayın/geri alma akışıyla düzenlenir. Mobil oturumlar `sessions` tablosunda (`transport = 'token'`, `platform`, `device_name`, `app_version`).
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
@@ -186,7 +190,7 @@ Ayarlar: `maintenance` (bakım modu) ve `admin` (onay eşikleri, onay süresi). 
 | Forum | ✅ 0009'da uygulandı (6 tablo) | 13 ✅ |
 | Destek | ✅ 0009'da uygulandı (3 tablo + `support_ticket_seq`) | 13 ✅ |
 | Moderasyon | ✅ `sanctions` 0010'da uygulandı; taslakta `anticheat_events` | 14 ✅ / 16 |
-| Sistem/platform | `feature_flags, client_releases, maintenance_windows, server_nodes, client_error_reports, backups` | 14-15 |
+| Sistem/platform | En düşük istemci sürümü ✅ `game_settings.client` (0011, K-105); bakım modu ✅ `game_settings.maintenance` (0010); taslakta `feature_flags, client_error_reports, backups` | 15 ✅ / 16 |
 
 ## 3. Tasarım kuralları
 

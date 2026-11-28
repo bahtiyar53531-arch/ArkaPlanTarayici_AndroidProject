@@ -21,8 +21,8 @@ apps/client  (React + Phaser + TypeScript)
 | Platform | Oturum taşıma | Saklama | CSRF |
 |---|---|---|---|
 | Web / PWA | `__Host-to_sid` çerezi (HttpOnly, Secure, SameSite=Strict) | Tarayıcı, JS erişemez | `X-CSRF-Token` + Origin denetimi |
-| Android (Capacitor) | `Authorization: Bearer <anahtar>` (`transport: "token"`) | Android Keystore (güvenli depolama eklentisi) | Gerekmez (tarayıcı otomatik eklemez) |
-| iOS (Capacitor) | `Authorization: Bearer <anahtar>` | iOS Keychain | Gerekmez |
+| Android (Capacitor) | `Authorization: Bearer <anahtar>` (`transport: "token"`) | Android Keystore: uygulamanın kendi eklentisi, AES-256-GCM (Aşama 15 ✅) | Gerekmez (tarayıcı otomatik eklemez) |
+| iOS (Capacitor) | `Authorization: Bearer <anahtar>` | iOS Keychain, `AfterFirstUnlockThisDeviceOnly` (Aşama 15, derlenmedi: macOS gerekir) | Gerekmez |
 | Masaüstü sarmalayıcı | Bearer | İşletim sistemi anahtar zinciri | Gerekmez |
 
 - Her oturum `platform`, cihaz adı ve uygulama sürümüyle kaydedilir. Kullanıcı "Hesap güvenliği" ekranında tüm cihazlarını görür ve herhangi birini uzaktan kapatabilir. Bu akış uçtan uca testte doğrulandı: PC'den kapatılan Android oturumu anında geçersiz oldu.
@@ -90,8 +90,8 @@ Ayarlar `player_settings` tablosunda **cihaz sınıfına göre** (masaüstü/tel
 
 ## 6. Sürüm yönetimi (Yönetim Merkezi 16.7)
 
-- İstemci her istekte `X-Client-Platform` ve `X-Client-Version` gönderir.
-- `client_releases` tablosundaki **minimum desteklenen sürümün** altındaki istemcilere API `426 Upgrade Required` döner ve ilgili mağaza bağlantısı gösterilir.
+- İstemci her istekte `X-Client-Platform` ve `X-Client-Version` gönderir (Aşama 15 ✅; sürüm `apps/client/package.json`'dan, Android/iOS sürümleriyle aynı).
+- `game_settings.client` ayarındaki **en düşük desteklenen sürümün** altındaki Android/iOS istemcilerine API `426 CLIENT_OUTDATED` döner; uygulama "Güncelleme gerekli" ekranını ve mağaza bağlantısını gösterir (Aşama 15 ✅). Ayar Yönetim Merkezi → İçerik → Ayarlar → "Mobil uygulama sürümü" ile taslak/yayın/geri alma akışıyla değiştirilir (K-105). Web etkilenmez.
 - Platform bazlı oyuncu sayısı, cihaz/işletim sistemi dağılımı ve hata raporları (`client_error_reports`) Yönetim Merkezi'nde gösterilir.
 
 ## 7. Derleme ve dağıtım (Aşama 15)
@@ -99,8 +99,9 @@ Ayarlar `player_settings` tablosunda **cihaz sınıfına göre** (masaüstü/tel
 | Hedef | Nasıl | Gereksinim |
 |---|---|---|
 | Web/PWA | `npm run build -w @turkorbit/client` → `apps/client/dist` → nginx | Linux sunucu |
-| Android APK/AAB | `npx cap sync android` → `./gradlew assembleRelease bundleRelease` (GitHub Actions'ta da çalışır) | JDK 17, Android SDK, imzalama anahtarı (keystore) |
-| iOS | `npx cap sync ios` → Xcode → Archive | **macOS + Xcode**, **Apple Developer Program üyeliği (yıllık ücretli)**, sertifika + provisioning profile. TestFlight ve App Store için zorunludur. |
+| Android test APK | `npm run mobile:test-apk` (Aşama 15 ✅ derlendi) | JDK 21, Android SDK 36 (`ANDROID_HOME`) |
+| Android APK/AAB (mağaza) | `npm run mobile:release` = `vite build --mode mobile` → `cap sync android` → `./gradlew assembleRelease bundleRelease` (Aşama 15 ✅ geçici anahtarla derlenip imzası doğrulandı) | JDK 21, Android SDK 36, imzalama anahtarı (`TURKORBIT_KEYSTORE…` ortam değişkenleri), `VITE_SERVER_URL=https://…` |
+| iOS | `npm run mobile:ios` → `npx cap open ios` → Xcode → Archive (Aşama 15: proje hazır, **derlenmedi**) | **macOS + Xcode 16+**, **Apple Developer Program üyeliği (yıllık ücretli)**, sertifika + provisioning profile. TestFlight ve App Store için zorunludur. |
 | Masaüstü (isteğe bağlı) | Tauri/Electron paketleme | Windows için kod imzalama sertifikası önerilir |
 
 ## 8. Gerçek cihaz test matrisi (Aşama 15-16)
@@ -114,4 +115,4 @@ Ayarlar `player_settings` tablosunda **cihaz sınıfına göre** (masaüstü/tel
 | Bağlantı kopması | Wi-Fi ↔ mobil veri geçişi | 30 sn içinde kayıpsız yeniden bağlanma |
 | Uzun oyun | 60 dk | Bellek artışı < %10, FPS düşüşü yok, pil tüketimi ölçümü |
 
-> **Not:** Bu oturumda gerçek telefon/tablet ve macOS bulunmadığından mobil yalnızca **tarayıcı emülasyonuyla** (Chromium "iPhone 13" profili) test edildi. Gerçek cihaz testleri yapılmış gibi raporlanmamıştır.
+> **Not:** Bu oturumda gerçek telefon/tablet, Android emülatörü (KVM yok) ve macOS bulunmadığından mobil yalnızca **tarayıcıda** test edildi: Chromium "iPhone 13" ve "Pixel 7" profilleri; Aşama 15'te ayrıca derlenmiş mobil paket + Capacitor'ın gerçek Android köprü betiği + Node'da yerel eklenti taklidi (K-108). APK ve AAB derlendi ve doğrulandı ama **telefonda çalıştırılmadı**. Gerçek cihaz testleri yapılmış gibi raporlanmamıştır; cihaz test listesi: [Asama-15-Mobil/Mobil-Derleme-ve-Cihaz-Testi.md](Asama-15-Mobil/Mobil-Derleme-ve-Cihaz-Testi.md) §3.

@@ -50,11 +50,14 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
     │   │   └── test/                     entegrasyon testleri (gerçek PostgreSQL + Redis)
     │   │
-    │   ├── client/                       @turkorbit/client — oyun istemcisi (web/PWA, Aşama 15'te Android/iOS)
-    │   │   ├── index.html, vite.config.ts
+    │   ├── client/                       @turkorbit/client — oyun istemcisi: web/PWA + Android/iOS (Capacitor, Aşama 15)
+    │   │   ├── index.html, vite.config.ts (--mode mobile → dist-mobile/), capacitor.config.ts
     │   │   ├── public/                   favicon.svg (logo), manifest.webmanifest
+    │   │   ├── android/                  Android projesi (Gradle): MainActivity, SecureStore + SecureStorePlugin (Keystore), manifest, simgeler, test/ ve androidTest/
+    │   │   ├── ios/                      iOS projesi (Xcode, SPM): SecureStorePlugin.swift (Keychain), MainViewController.swift, simgeler
     │   │   └── src/
-    │   │       ├── api/client.ts         API istemcisi (CSRF, hata yönetimi)
+    │   │       ├── platform/             yerel/web tespiti, güvenli depo arayüzü, sunucu kökü, Android geri tuşu ve ön plan/arka plan (Aşama 15)
+    │   │       ├── api/client.ts         API istemcisi (web: çerez + CSRF; mobil: Bearer; 426 → güncelleme ekranı)
     │   │       ├── auth/AuthContext.tsx  oturum durumu
     │   │       ├── components/           Layout, form bileşenleri, parola gücü göstergesi
     │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot, hangar, mağaza, pazar, görevler, klan, sosyal, forum, destek ve destek masası, oyun
@@ -84,9 +87,11 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   ├── Asama-06-Hangar-Ekipman/      API referansı, güncelleme rehberi
     │   ├── Asama-07-Harita-Oyun-Motoru/  API referansı, güncelleme rehberi
     │   ├── Asama-08-Multiplayer/         ağ protokolü, güncelleme ve sunucu kurulum rehberi
+    │   ├── Asama-09…14/                  aşama başına API/kurallar ve kurulum rehberi
+    │   ├── Asama-15-Mobil/               mobil derleme ve gerçek cihaz test rehberi, kurulum rehberi
     │   └── DevelopmentNotes/             aşama raporları, karar günlüğü, ekran görüntüleri
     │
     └── Deliveries/                       aşama ZIP paketleri
 ```
 
-**Aşama 15'te eklenecek:** `apps/client/android/` ve `apps/client/ios/` (Capacitor yerel projeleri), `TurkOrbit/.github`'a değil depo köküne, yalnızca `TurkOrbit/**` değişikliklerinde çalışan Android derleme workflow'u.
+**Aşama 15'te eklendi:** `apps/client/android/` ve `apps/client/ios/` (Capacitor yerel projeleri), `scripts/mobile.mjs` (test APK / imzalı sürüm / iOS eşitleme), `scripts/mobile-assets.mjs` (simge ve açılış görselleri), `Documentation/Asama-15-Mobil/`. Mobil derleme çıktıları (`dist-mobile/`, `android/build`, `android/app/build`, `assets/public`) ve imza anahtarları (`*.jks`, `*.keystore`) depoya girmez. GitHub Actions ile Android derleme iş akışı eklenmedi (bu ortamda çalıştırılıp doğrulanamazdı); `npm run mobile:release` aynı adımları yerelde yapar.
