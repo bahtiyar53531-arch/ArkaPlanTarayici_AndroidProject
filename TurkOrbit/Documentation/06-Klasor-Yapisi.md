@@ -44,6 +44,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   │   ├── social/           klan (rütbe, hazine, diplomasi), arkadaş, engel, gizlilik, bildirim, şikâyet, sohbet geçmişi, Redis grup deposu (Aşama 12)
     │   │   │   │   ├── forum/            bölümler, konu/yanıt/alıntı, beğeni, takip, arama, moderasyon, şikâyet (Aşama 13)
     │   │   │   │   ├── support/          destek talepleri, ek dosyalar, destek masası, yanıt e-postası (Aşama 13)
+    │   │   │   │   ├── admin/            Yönetim Merkezi API: rota tablosu (403 testi buradan), oyuncu ve yaptırımlar, içerik sürümleme, iki yetkili onayı, pano/sistem/şikâyet/denetim (Aşama 14)
     │   │   │   │   └── health/           sağlık uç noktası
     │   │   │   ├── game/                 gerçek zamanlı oyun sunucusu — AYRI SÜREÇ (npm run dev:game): WebSocket, 20 Hz simülasyon, AOI (Aşama 8); NPC yapay zekâsı, savaş, ödül: content.ts + persistence.ts (Aşama 9)
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
@@ -62,10 +63,10 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │       ├── components/social/    şikâyet penceresi, bildirim zili (Aşama 12)
     │   │       └── styles/               global.css (koyu uzay teması), game.css (oyun ekranı)
     │   │
-    │   └── admin/                        (Aşama 14) TÜRK ORBIT YÖNETİM MERKEZİ — şimdilik README
+    │   └── admin/                        @turkorbit/admin — TÜRK ORBIT YÖNETİM MERKEZİ (Aşama 14): React + Vite, üretimde /yonetim/; src/pages (pano, oyuncular, içerik, ekonomi, onaylar, şikâyetler, klanlar, forum, sistem, roller, denetim)
     │
     ├── database/
-    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests, 0007_economy, 0008_social, 0009_forum_support (numaralı, değiştirilmez)
+    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests, 0007_economy, 0008_social, 0009_forum_support, 0010_admin (numaralı, değiştirilmez)
     │   └── schema-draft.sql              tüm oyunun doğrulanmış taslak şeması
     │
     ├── infra/

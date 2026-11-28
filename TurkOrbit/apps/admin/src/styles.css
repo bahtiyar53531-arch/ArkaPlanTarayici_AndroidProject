@@ -60,7 +60,7 @@ h3 { font-size: 15px; margin: 16px 0 8px; }
 .page-actions { display: flex; gap: 8px; align-items: center; }
 
 /* bileşenler */
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; min-width: 0; overflow-x: auto; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .grid-2 > .card { margin-bottom: 0; }
 .grid-2 + .card, .grid-2 + .grid-2 { margin-top: 16px; }

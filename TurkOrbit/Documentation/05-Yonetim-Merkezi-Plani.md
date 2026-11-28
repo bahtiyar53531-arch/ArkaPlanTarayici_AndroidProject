@@ -4,6 +4,23 @@
 **API:** `/api/v1/admin/*`. Her uç nokta `requireAuth` + `requirePermission('<yetki>')` korumasıyla çalışır (koruma Aşama 1'de yazıldı ve test edildi).
 **Altın kural:** Panelde değiştirilen her değer gerçek oyuna yansır. Sahte veya işlevsiz buton bırakılmaz: bir özelliğin backend'i hazır değilse menüde **gösterilmez**.
 
+## 0. Aşama 14 durumu (28.11.2026)
+Kurallar ve uçlar: [Aşama 14 — Yönetim Merkezi Kuralları ve API](Asama-14-Yonetim-Merkezi/Yonetim-Merkezi-Kurallari-ve-API.md)
+
+| Modül | Durum |
+|---|---|
+| 15.1 Pano | ✅ Gerçek sayılar, Redis'ten oyun sunucusu süreç metrikleri (bağlantı, pilot, oda, NPC, tik, bellek), API/DB/Redis gecikmesi, platform başına oturum, kuyruklar. Zaman serisi grafikleri ve hata kayıtları: Aşama 16 |
+| 15.2 Oyuncu yönetimi | ✅ Arama (ad, e-posta, ID, pilot, IP), ayrıntı, uyarı/susturma/askı/kalıcı ban (onaylı)/kilit/kaldırma, oturum kapatma, anında oyundan atma. Envanter düzenleme: yalnızca para/eşya verme (silme Aşama 16) |
+| 15.3–15.7 Gemi, NPC, harita, görev | ✅ Taban değerler, NPC değerleri (canlı), harita giriş/PvP/kapatma, görev metni/yayın/tarih + yeni etkinlik görevi. Eşya istatistikleri, NPC doğma noktaları ve görsel harita düzenleyici, görsel yükleme: gösterilmez (K-101) |
+| 15.8 Ekonomi ve mağaza | ✅ Mağaza fiyat/indirim/satış, para/eşya verme + eşik üstü iki yetkili onayı. Paket içeriği, tarifler ve açık artırma programı düzenleme: sonraki sürüm |
+| 15.9 Klan, forum, destek | ✅ Şikâyet kuyruğu, forum bölümleri ve moderatör atama, destek masasına bağlantı, klanlar (salt okunur) |
+| 15.10 Sunucu ve sistem | ✅ Süreç durumu, bakım modu, oyun içi duyuru. Yedekleme, geri yükleme ve sunucu başlat/durdur: gösterilmez (Aşama 16–17) |
+| 15.11 Oyun ayarları | ✅ 14 ayar grubu sürümlü (yayın/geri alma). Özellik bayrakları ve sürüm bilgisi: Aşama 15 |
+| 15.12 Yetki sistemi | ✅ Panelden rol atama, rütbe kuralı, Süper Yönetici ataması onaylı |
+| 15.13 Yayınla / geri al | ✅ Taslak, fark, etki, yayın, geri alma, iyimser kilit |
+| 15.14 İşlem geçmişi | ✅ Süzme ve sayfalama; iki yetkili onayı (`approval_requests`, veritabanı CHECK) |
+| 16.7 Platform | Kısmen: panoda platform başına oturum. Sürüm yönetimi: Aşama 15 |
+
 ## 1. Rol → yetki matrisi (uygulandı: `packages/shared/src/roles.ts` + veritabanı tohumu)
 
 | Yetki grubu | Süper | Sistem | Oyun | Topluluk | Moderatör | Destek | İçerik | Salt okunur |

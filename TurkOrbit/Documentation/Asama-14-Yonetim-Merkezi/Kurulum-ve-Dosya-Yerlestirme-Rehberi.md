@@ -25,7 +25,7 @@ Bu paket (`Deliveries/TurkOrbit-Asama-14-Yonetim-Merkezi.zip`) **Aşama 1–13'�
 | `apps/api/src/game/server.ts` | `game:admin` olayları (canlı içerik, atma, susturma, bakım, duyuru), nabız |
 | `apps/api/src/modules/{game/bridge,game/routes,auth/service,forum/service,quest/service}.ts`, `app.ts` | Yönetim kanalı ve nabız anahtarları, bakımda bilet engeli, tüm oturumları iptal, forumda susturma, görev önbelleği sürüm denetimi, bağlantılar |
 | `apps/admin/` | **Yeni:** Yönetim Merkezi arayüzü |
-| `apps/client/src/{game/controller.ts, components/game/GameHud.tsx}` | Gerekçeli atma/bakım mesajı, hedef panelinde NPC azami canı |
+| `apps/client/src/{game/controller.ts, components/game/GameHud.tsx, styles/game.css}` | Gerekçeli atma/bakım mesajı, hedef panelinde NPC azami canı, üst üste dizilen bildirimler |
 | `infra/nginx/turkorbit.conf.example` | `/yonetim/` konumu |
 | `package.json`, `package-lock.json`, `.env.example` | Çalışma alanı, `dev:admin`, izinli kaynak |
 

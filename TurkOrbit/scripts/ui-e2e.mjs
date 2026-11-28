@@ -554,8 +554,13 @@ try {
   await step('B hareket eder → A\'nın ekranında anlık güncellenir (10 Hz anlık görüntü + enterpolasyon)', async () => {
     const d0 = await nearbyDistance(pc, B.username);
     await pc2.keyboard.down('KeyD');
-    await sleep(2000);
-    const d1 = await nearbyDistance(pc, B.username);
+    // Sunucu gemiyi istemcinin gönderdiği girdi kadar ilerletir (hız hilesi koruması); yazılımsal çizimde yük altında
+    // kare hızı düştüğünden süre değil SONUÇ beklenir: A'nın gördüğü mesafe 8 sn içinde 300 birimden fazla artmalı.
+    let d1 = d0;
+    for (let i = 0; i < 80 && !(d1 > d0 + 300); i++) {
+      await sleep(100);
+      d1 = (await nearbyDistance(pc, B.username)) ?? d1;
+    }
     if (!(d1 > d0 + 300)) throw new Error(`A'nın gördüğü mesafe artmadı: ${d0} → ${d1}`);
   });
   await step('B radar menzilinden çıkınca A\'nın listesinden ve haritasından düşer (sunucu artık göndermez)', async () => {

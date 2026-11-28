@@ -220,18 +220,41 @@ export function PortalPrompt({ c }: { c: GameController }) {
 }
 
 // ====================================================================== bildirim
+const TOAST_MS = 4500;
+const TOAST_MAX = 3;
+type ToastItem = NonNullable<GameController['state']['toast']>;
+
+/**
+ * Bildirimler üst üste dizilir (en fazla 3): art arda gelen bildirim öncekini silmez
+ * (ör. "G-2 bölgesine geçtin" ile hemen ardından gelen "Görev tamamlandı").
+ * Aynı metin yeniden gelirse ikinci kopya açılmaz, süresi tazelenir.
+ */
 export function Toast({ c }: { c: GameController }) {
   useController(c);
-  const [visible, setVisible] = useState<number | null>(null);
+  const [items, setItems] = useState<ToastItem[]>([]);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const t = c.state.toast;
   useEffect(() => {
     if (!t) return;
-    setVisible(t.id);
-    const timer = setTimeout(() => setVisible(null), 4500);
-    return () => clearTimeout(timer);
+    setItems((prev) => [...prev.filter((x) => x.text !== t.text), t].slice(-TOAST_MAX));
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
+      setItems((prev) => prev.filter((x) => x.id !== t.id));
+    }, TOAST_MS);
+    timers.current.add(timer);
   }, [t?.id]);
-  if (!t || visible !== t.id) return null;
-  return <div className={`hud-toast ${t.kind}`} role="status">{t.text}</div>;
+  useEffect(() => {
+    const set = timers.current;
+    return () => set.forEach(clearTimeout);
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <div className="hud-toasts">
+      {items.map((x) => (
+        <div key={x.id} className={`hud-toast ${x.kind}`} role="status">{x.text}</div>
+      ))}
+    </div>
+  );
 }
 
 // ====================================================================== sanal joystick

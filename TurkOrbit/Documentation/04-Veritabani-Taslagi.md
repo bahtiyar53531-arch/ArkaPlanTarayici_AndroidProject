@@ -13,7 +13,8 @@
 | [database/migrations/0007_economy.sql](../database/migrations/0007_economy.sql) | ✅ **Uygulanan migration** (Aşama 11). |
 | [database/migrations/0008_social.sql](../database/migrations/0008_social.sql) | ✅ **Uygulanan migration** (Aşama 12). |
 | [database/migrations/0009_forum_support.sql](../database/migrations/0009_forum_support.sql) | ✅ **Uygulanan migration** (Aşama 13). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 14–17). 0001 → 0009 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 100 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0010_admin.sql](../database/migrations/0010_admin.sql) | ✅ **Uygulanan migration** (Aşama 14). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 15–17). 0001 → 0010 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 100 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -156,12 +157,23 @@ Gruplar (party) tablo değildir: canlı durum Redis'te (`party:*`). Grup mesajla
 
 Ek dosyaların kendisi `UPLOAD_DIR` altındaki dosya deposundadır (bkz. [Aşama 13 kuralları](Asama-13-Forum-Destek/Forum-ve-Destek-Kurallari-ve-API.md)).
 
+## 1k. Aşama 14'te uygulanan tablolar (0010)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `sanctions` | Yaptırım geçmişi (uyarı, susturma, askı, ban, kilit) | Süreli olanlarda bitiş zorunlu, banda süre yok (CHECK); veren ve kaldıran kişi + gerekçe; kaynak şikâyet; etkin susturma için kısmi dizin. Hesap durumu `users` alanlarında |
+| `content_revisions` | İçerik sürümleri (NPC, gemi, mağaza, görev, harita, ayar) | Kayıt başına tek taslak ve tek yayın (kısmi benzersiz dizinler); `base_version` ile iyimser kilit; tam veri JSON |
+| `approval_requests` | İki yetkili onayı | `approval_two_person` CHECK: onaylayan ≠ talep eden; işlem türü CHECK; süre; sonuç JSON |
+| `reports.resolution_note` | Şikâyet kararı notu | ≤ 500 karakter |
+
+Ayarlar: `maintenance` (bakım modu) ve `admin` (onay eşikleri, onay süresi). Oyun sunucusu süreç nabzı tablo yerine Redis'te (`game:node:*`, K-100).
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
 |---|---|---|
 | Evren ve profil | ✅ 0002'de uygulandı; taslakta yalnızca `player_settings` ve sonraki aşamaların ekleyeceği sütunlar (`active_loadout`, `reward_table_id`, `max_players`); klan üyeliği `players.clan_id` yerine `clan_members` ile tutuldu | 5 ✅ / 6, 9 |
-| İçerik sürümleme | `content_revisions, approval_requests` | 14 (tasarım şimdiden) |
+| İçerik sürümleme | ✅ `content_revisions, approval_requests` 0010'da uygulandı | 14 ✅ |
 | Eşya, envanter, konfigürasyon, PET | ✅ 0003'te uygulandı | 6 ✅ |
 | Yetenekler | `skill_nodes, player_skills` | 9 |
 | Harita | ✅ `map_portals, map_zones` 0004'te, `resource_nodes` 0007'de uygulandı | 7 ✅ / 11 ✅ |
@@ -173,7 +185,7 @@ Ek dosyaların kendisi `UPLOAD_DIR` altındaki dosya deposundadır (bkz. [Aşama
 | Etkinlik/sıralama | `events, leaderboard_snapshots` | 14 (07'deki Aşama 12 kapsamında değil) |
 | Forum | ✅ 0009'da uygulandı (6 tablo) | 13 ✅ |
 | Destek | ✅ 0009'da uygulandı (3 tablo + `support_ticket_seq`) | 13 ✅ |
-| Moderasyon | `sanctions, anticheat_events` | 14 |
+| Moderasyon | ✅ `sanctions` 0010'da uygulandı; taslakta `anticheat_events` | 14 ✅ / 16 |
 | Sistem/platform | `feature_flags, client_releases, maintenance_windows, server_nodes, client_error_reports, backups` | 14-15 |
 
 ## 3. Tasarım kuralları

@@ -1,12 +1,9 @@
 # apps/admin — TÜRK ORBIT YÖNETİM MERKEZİ (Aşama 14)
 
-Bu klasör **henüz kod içermez**. İşlevsiz buton bırakmamak için panel arayüzü, ilgili backend modülleri hazır olduğunda yazılacak.
+Yetki tabanlı yönetim paneli. Ayrı bir uygulamadır ama **ayrı bir hesap sistemi yoktur**: oyuncu hesabıyla aynı oturum ve aynı API (`/api/v1/admin/*`) kullanılır. Yetkiler yalnızca sunucuda denetlenir; arayüz menüyü gizlemek için `/auth/me` yetkilerini kullanır.
 
-Hazır olan altyapı (Aşama 1):
-- Rol/yetki kataloğu ve veritabanı eşlemesi (9 rol, 48 yetki)
-- Sunucu tarafı yetki koruması: `requirePermission('<yetki>')` (testli)
-- Değiştirilemez yönetici işlem geçmişi: `admin_audit_log` (testli)
-- Kayıt açma/kapama ayarı: `game_settings.registration.enabled` (testli)
-- Sunucu tarafı rol atama aracı: `npm run admin:grant-role`
+- Geliştirme: `npm run dev:admin` → http://localhost:5175/yonetim/ (API 4000; `ALLOWED_ORIGINS` içinde `http://localhost:5175` olmalı)
+- Üretim: `npm run build` → `apps/admin/dist` → nginx `location /yonetim/` (bkz. `infra/nginx/turkorbit.conf.example`)
+- İlk Süper Yönetici: `npm run admin:grant-role -- --user <ad> --role super_admin --reason "İlk kurulum"`
 
-Modül planı: [Documentation/05-Yonetim-Merkezi-Plani.md](../../Documentation/05-Yonetim-Merkezi-Plani.md)
+Kurallar, modüller ve uçlar: [Documentation/Asama-14-Yonetim-Merkezi/Yonetim-Merkezi-Kurallari-ve-API.md](../../Documentation/Asama-14-Yonetim-Merkezi/Yonetim-Merkezi-Kurallari-ve-API.md)
