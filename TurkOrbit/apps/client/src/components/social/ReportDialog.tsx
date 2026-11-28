@@ -4,14 +4,25 @@ import { useState } from 'react';
 import { api, ApiError } from '../../api/client';
 
 export interface ReportTarget {
-  type: 'player' | 'chat_message' | 'clan';
+  type: 'player' | 'chat_message' | 'clan' | 'forum_post' | 'forum_thread';
   /** mesaj kimliği, pilot adı veya klan etiketi */
   id: string;
   /** pencerede gösterilecek açıklama (ör. mesajın kendisi) */
   label: string;
 }
 
-export function ReportDialog({ target, onClose, onDone }: { target: ReportTarget; onClose: () => void; onDone: (text: string) => void }) {
+export function ReportDialog({
+  target,
+  onClose,
+  onDone,
+  send,
+}: {
+  target: ReportTarget;
+  onClose: () => void;
+  onDone: (text: string) => void;
+  /** Aşama 13: forum şikâyetleri kendi ucuna gider */
+  send?: (reason: ReportReason, details: string | undefined) => Promise<unknown>;
+}) {
   const [reason, setReason] = useState<ReportReason>(target.type === 'chat_message' ? 'insult' : 'other');
   const [details, setDetails] = useState('');
   const [busy, setBusy] = useState(false);
@@ -20,7 +31,8 @@ export function ReportDialog({ target, onClose, onDone }: { target: ReportTarget
     setBusy(true);
     setError(null);
     try {
-      await api('POST', '/reports', { serverCode: 'TR1', targetType: target.type, target: target.id, reason, ...(details.trim() ? { details: details.trim() } : {}) });
+      if (send) await send(reason, details.trim() || undefined);
+      else await api('POST', '/reports', { serverCode: 'TR1', targetType: target.type, target: target.id, reason, ...(details.trim() ? { details: details.trim() } : {}) });
       onDone('Şikâyetin kaydedildi; moderasyon ekibi inceleyecek.');
       onClose();
     } catch (e) {

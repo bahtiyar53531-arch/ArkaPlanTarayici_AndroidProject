@@ -1,11 +1,11 @@
 import { BRAND, SUSPICIOUS_REASON_LABELS_TR } from '@turkorbit/shared';
 import type { MailMessage } from '../../lib/mailer.js';
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-function layout(title: string, bodyHtml: string): string {
+export function layout(title: string, bodyHtml: string): string {
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
 <body style="margin:0;background:#060a18;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#e6ecff">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#060a18;padding:24px 0">
@@ -22,7 +22,7 @@ Yardım için: ${BRAND.supportEmail}
 </td></tr></table></td></tr></table></body></html>`;
 }
 
-function button(url: string, label: string): string {
+export function button(url: string, label: string): string {
   return `<p style="margin:24px 0"><a href="${escapeHtml(url)}" style="display:inline-block;background:#e30a17;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:8px">${escapeHtml(label)}</a></p>
 <p style="font-size:12px;color:#7f8bb8;word-break:break-all">Buton çalışmazsa bu bağlantıyı tarayıcına yapıştır:<br>${escapeHtml(url)}</p>`;
 }

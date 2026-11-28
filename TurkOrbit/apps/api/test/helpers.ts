@@ -3,6 +3,8 @@
  * Bağlantılar TEST_DATABASE_URL / TEST_REDIS_URL ile değiştirilebilir.
  */
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
+import os from 'node:os';
+import path from 'node:path';
 import { buildApp, type BuiltApp } from '../src/app.js';
 import { loadConfig } from '../src/config/env.js';
 import { runMigrations } from '../src/db/migrate.js';
@@ -39,6 +41,8 @@ export async function createTestContext(
     ARGON2_MEMORY_KIB: '8192',
     ARGON2_TIME_COST: '2',
     MAIL_TRANSPORT: 'memory',
+    // Aşama 13: destek ekleri testlerde geçici klasöre yazılır
+    UPLOAD_DIR: path.join(os.tmpdir(), 'turkorbit-test-uploads'),
   });
   const mailer = new MemoryMailer();
   const rt = createRuntime(config, { mailer });
@@ -90,7 +94,9 @@ export async function resetDatabase(rt: Runtime) {
          ('quests', '{"daily_count": 3, "weekly_count": 3, "daily_rerolls": 1, "weekly_rerolls": 1, "reset_hour_tr": 5, "max_active": 10, "kill_credit_min_share": 0.2}'::jsonb),
          ('clan', '{"create_cost": {"currency": "KREDI", "amount": 50000}, "create_min_level": 5, "max_members": 50, "invitation_days": 7, "max_relations": 10}'::jsonb),
          ('social', '{"max_friends": 200, "max_blocks": 500, "party_max": 8, "party_invite_seconds": 60, "notification_keep": 200}'::jsonb),
-         ('chat', '{"max_length": 300, "rate_count": 5, "rate_window_seconds": 10, "history": 50, "mute_seconds": 60, "banned_words": ["amk", "aq", "orospu", "siktir", "yarrak", "pezevenk", "şerefsiz"]}'::jsonb)
+         ('chat', '{"max_length": 300, "rate_count": 5, "rate_window_seconds": 10, "history": 50, "mute_seconds": 60, "banned_words": ["amk", "aq", "orospu", "siktir", "yarrak", "pezevenk", "şerefsiz"]}'::jsonb),
+         ('forum', '{"threads_per_page": 20, "posts_per_page": 20, "edit_window_minutes": 1440, "max_body": 20000}'::jsonb),
+         ('support', '{"max_attachment_bytes": 5242880, "max_attachments_per_message": 3, "attach_window_minutes": 30, "max_open_tickets": 5, "auto_close_days": 7}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

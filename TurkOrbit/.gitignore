@@ -12,3 +12,5 @@ playwright-report/
 # Mobil derleme çıktıları (Aşama 15'te oluşacak)
 apps/client/android/app/build/
 apps/client/ios/App/Pods/
+# Aşama 13: yerel destek ekleri (UPLOAD_DIR varsayılanı)
+var/

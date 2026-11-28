@@ -15,6 +15,8 @@ import { PilotPage, PublicPilotPage } from './pages/PilotPages';
 import { QuestsPage } from './pages/QuestPages';
 import { ClanPage, PublicClanPage } from './pages/ClanPages';
 import { SocialPage } from './pages/SocialPages';
+import { ForumCategoryPage, ForumIndexPage, ForumSearchPage, ForumThreadPage } from './pages/ForumPages';
+import { SupportDeskPage, SupportDeskTicketPage, SupportPage, SupportTicketPage } from './pages/SupportPages';
 import { MarketPage } from './pages/MarketPages';
 
 // Oyun ekranı (Phaser dahil) ayrı parça olarak yalnızca /oyna açılınca indirilir.
@@ -66,6 +68,14 @@ export function App() {
           <Route path="/klan" element={<RequireAuth><ClanPage /></RequireAuth>} />
           <Route path="/klan/:server/:tag" element={<PublicClanPage />} />
           <Route path="/sosyal" element={<RequireAuth><SocialPage /></RequireAuth>} />
+          <Route path="/forum" element={<ForumIndexPage />} />
+          <Route path="/forum/ara" element={<ForumSearchPage />} />
+          <Route path="/forum/konu/:id" element={<ForumThreadPage />} />
+          <Route path="/forum/:slug" element={<ForumCategoryPage />} />
+          <Route path="/destek" element={<RequireAuth><SupportPage /></RequireAuth>} />
+          <Route path="/destek/masa" element={<RequireAuth><SupportDeskPage /></RequireAuth>} />
+          <Route path="/destek/masa/:no" element={<RequireAuth><SupportDeskTicketPage /></RequireAuth>} />
+          <Route path="/destek/:no" element={<RequireAuth><SupportTicketPage /></RequireAuth>} />
           <Route path="/oyna" element={<RequireAuth><Suspense fallback={<Splash />}><GamePage /></Suspense></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

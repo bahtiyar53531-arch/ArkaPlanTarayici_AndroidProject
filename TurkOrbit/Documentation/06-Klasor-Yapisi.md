@@ -31,7 +31,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   ├── runtime.ts            PostgreSQL/Redis/e-posta/hız sınırı bağımlılıkları
     │   │   │   ├── config/env.ts         ortam değişkeni doğrulama
     │   │   │   ├── db/                   bağlantı havuzu, migration çalıştırıcı
-    │   │   │   ├── lib/                  crypto, Argon2id, e-posta, hız sınırı, cihaz bilgisi, hatalar
+    │   │   │   ├── lib/                  crypto, Argon2id, e-posta, hız sınırı, cihaz bilgisi, hatalar; storage.ts: dosya deposu (yerel disk, Aşama 13)
     │   │   │   ├── modules/
     │   │   │   │   ├── auth/             kayıt, giriş, oturum, parola, güvenlik (Aşama 1)
     │   │   │   │   ├── player/           pilot oluşturma, profil, şirket değişimi, açık profil (Aşama 5)
@@ -42,6 +42,8 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   │   ├── quest/            görev servisi ve uçları: liste, kabul, yeniden çekme, ödül, olay kaydı (Aşama 10)
     │   │   │   │   ├── market/           Pazar: üretim kuyruğu, günlük ödül, açık artırma + zamanlayıcı (Aşama 11)
     │   │   │   │   ├── social/           klan (rütbe, hazine, diplomasi), arkadaş, engel, gizlilik, bildirim, şikâyet, sohbet geçmişi, Redis grup deposu (Aşama 12)
+    │   │   │   │   ├── forum/            bölümler, konu/yanıt/alıntı, beğeni, takip, arama, moderasyon, şikâyet (Aşama 13)
+    │   │   │   │   ├── support/          destek talepleri, ek dosyalar, destek masası, yanıt e-postası (Aşama 13)
     │   │   │   │   └── health/           sağlık uç noktası
     │   │   │   ├── game/                 gerçek zamanlı oyun sunucusu — AYRI SÜREÇ (npm run dev:game): WebSocket, 20 Hz simülasyon, AOI (Aşama 8); NPC yapay zekâsı, savaş, ödül: content.ts + persistence.ts (Aşama 9)
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
@@ -54,7 +56,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │       ├── api/client.ts         API istemcisi (CSRF, hata yönetimi)
     │   │       ├── auth/AuthContext.tsx  oturum durumu
     │   │       ├── components/           Layout, form bileşenleri, parola gücü göstergesi
-    │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot, hangar, mağaza, pazar, görevler, klan, sosyal, oyun
+    │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot, hangar, mağaza, pazar, görevler, klan, sosyal, forum, destek ve destek masası, oyun
     │   │       ├── game/                 Phaser sahnesi, ağ kontrolcüsü (tahmin/uzlaştırma/enterpolasyon), dokular, savaş efektleri (Aşama 7-9)
     │   │       ├── components/game/      HUD: pilot paneli, mini harita, radar listesi, galaksi, joystick, ayarlar, bağlantı durumu, hedef paneli, mühimmat çubuğu, savaş butonları, ölüm ekranı, görev izleyici ve çekmecesi; sohbet, grup paneli ve davet kartı (SocialHud, Aşama 12)
     │   │       ├── components/social/    şikâyet penceresi, bildirim zili (Aşama 12)
@@ -63,7 +65,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   └── admin/                        (Aşama 14) TÜRK ORBIT YÖNETİM MERKEZİ — şimdilik README
     │
     ├── database/
-    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests, 0007_economy, 0008_social (numaralı, değiştirilmez)
+    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests, 0007_economy, 0008_social, 0009_forum_support (numaralı, değiştirilmez)
     │   └── schema-draft.sql              tüm oyunun doğrulanmış taslak şeması
     │
     ├── infra/

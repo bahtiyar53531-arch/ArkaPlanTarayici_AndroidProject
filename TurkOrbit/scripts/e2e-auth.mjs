@@ -10,6 +10,7 @@
  * Ortam:     E2E_DATABASE_URL, E2E_REDIS_URL, E2E_API_PORT, E2E_SMTP_PORT
  */
 import { spawn, spawnSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -91,6 +92,19 @@ class Client {
   }
 }
 
+/** Aşama 13: ham gövdeyle ek dosya yükleme (Bearer veya çerez + CSRF) */
+async function rawUpload(client, url, name, bytes) {
+  const headers = { 'user-agent': client.ua, origin: WEB, 'x-forwarded-for': client.ip, 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(name) };
+  if (client.platform) headers['x-client-platform'] = client.platform;
+  if (client.cookie) headers.cookie = client.cookie;
+  if (client.csrf) headers['x-csrf-token'] = client.csrf;
+  if (client.bearer) headers.authorization = `Bearer ${client.bearer}`;
+  const res = await fetch(API + url, { method: 'POST', headers, body: bytes });
+  const text = await res.text();
+  return { status: res.status, json: text ? JSON.parse(text) : null };
+}
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(300, 9)]);
+
 // ------------------------------------------------------------------ test çerçevesi
 const results = [];
 async function step(name, fn) {
@@ -171,12 +185,13 @@ const env = {
   SMTP_URL: `smtp://127.0.0.1:${SMTP_PORT}?ignoreTLS=true`,
   GAME_PORT: String(GAME_PORT),
   GAME_LINGER_SECONDS: '0',
+  UPLOAD_DIR: path.join(os.tmpdir(), 'turkorbit-e2e-uploads'),
 };
 
 let server;
 let game;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 + 5–12 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5–13 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -550,7 +565,9 @@ async function main() {
   await step('Görevler (Aşama 10): A (web) ve B (Android) kendi görev listelerini alır; günlük/haftalık atanır; A görevi kabul eder', async () => {
     const qa = (await pc.req('GET', '/quests?server=TR1')).json.quests;
     const qb = (await app.req('GET', '/quests?server=TR1')).json.quests;
-    const count = (q, cat) => q.quests.filter((x) => x.category === cat && x.status === 'active').length;
+    // Günlük görevler pilota özel tohumla seçilir; seçilen bir görev (ör. "haritaya git") pilotun mevcut
+    // hareketleriyle hemen tamamlanabilir — bu geçerli bir oyun davranışıdır. Atanan görev sayısı sayılır.
+    const count = (q, cat) => q.quests.filter((x) => x.category === cat && (x.status === 'active' || x.status === 'completed')).length;
     expect(count(qa, 'daily') === 3 && count(qa, 'weekly') === 3 && count(qb, 'daily') === 3, JSON.stringify({ a: count(qa, 'daily'), b: count(qb, 'daily') }));
     expect(qa.quests.find((x) => x.code === 'cakal-avcisi-01')?.objectives[0]?.label === 'Çakal yok et (K-1)', 'Kızılelma için {c} → K');
     expect(qb.quests.find((x) => x.code === 'cakal-avcisi-01')?.objectives[0]?.label === 'Çakal yok et (G-1)', 'Gökbörü için {c} → G');
@@ -754,6 +771,41 @@ async function main() {
     const b = (await app.req('GET', '/settings?deviceClass=desktop')).json.settings;
     expect(b.keys.galaxy === 'KeyM', 'ayarlar hesaplar arasında sızdı');
   });
+  // ------------------------------------------------------------------ Aşama 13: forum ve destek
+  let forumThread = 0;
+  let ticketNo = '';
+  await step('Forum (Aşama 13): A (web) rehber konusu açar; B (Android) yanıtlar ve beğenir; oturumsuz okuyucu görür; arama "gemi" ile "gemileri" bulur', async () => {
+    const dn = await pc.req('POST', '/forum/threads', { category: 'duyurular', title: 'Sahte duyuru denemesi', body: 'x' });
+    expect(dn.status === 403, JSON.stringify(dn.json));
+    const t = await pc.req('POST', '/forum/threads', { category: 'rehberler', title: 'Yeni pilotlar için madencilik rehberi', body: 'Kaynak bölgelerinde gemileri ambar dolana kadar gezdir.' });
+    expect(t.status === 201, JSON.stringify(t.json));
+    forumThread = t.json.id;
+    const r = await app.req('POST', `/forum/t/${forumThread}/replies`, { body: 'Çok işime yaradı, teşekkürler!' });
+    expect(r.status === 201, JSON.stringify(r.json));
+    const anon = new Client('Okuyucu (oturumsuz)', { ip: '198.51.100.30' });
+    const view = await anon.req('GET', `/forum/t/${forumThread}`);
+    expect(view.status === 200 && view.json.thread.posts.length === 2 && view.json.thread.canReply === false, JSON.stringify(view.json));
+    const first = view.json.thread.posts[0].id;
+    const like = await app.req('POST', `/forum/posts/${first}/like`, { on: true });
+    expect(like.json.likes === 1, JSON.stringify(like.json));
+    const s = await anon.req('GET', `/forum/search?q=${encodeURIComponent('gemi')}`);
+    expect(s.json.results[0]?.threadId === forumThread && s.json.results[0].snippet.includes('[[gemileri]]'), JSON.stringify(s.json));
+    const n = await pc.req('GET', '/notifications?server=TR1');
+    expect(n.json.items.some((x) => x.kind === 'forum_reply'), 'A takip ettiği konuya yanıt bildirimi almalı');
+  });
+  await step('Destek: B (Android) talep açar → numara TO-YYYY-NNNNNN, platform android; PNG ek kabul, uzantısı .png olan EXE reddedilir; A talebi göremez', async () => {
+    const t = await app.req('POST', '/support/tickets', { category: 'gameplay', subject: 'Görev ödülü gelmedi', body: 'Dünkü görevin ödülü envanterime düşmedi, ekran görüntüsü ekledim.' });
+    expect(t.status === 201 && /^TO-\d{4}-\d{6}$/.test(t.json.ticket.ticketNo) && t.json.ticket.platform === 'android', JSON.stringify(t.json));
+    ticketNo = t.json.ticket.ticketNo;
+    const ok = await rawUpload(app, `/support/tickets/${ticketNo}/messages/${t.json.messageId}/attachments`, 'ekran.png', PNG);
+    expect(ok.status === 201 && ok.json.attachment.mimeType === 'image/png', JSON.stringify(ok.json));
+    const bad = await rawUpload(app, `/support/tickets/${ticketNo}/messages/${t.json.messageId}/attachments`, 'resim.png', Buffer.concat([Buffer.from('MZ'), Buffer.alloc(100)]));
+    expect(bad.status === 415 && bad.json.error.code === 'ATTACHMENT_TYPE', JSON.stringify(bad.json));
+    const other = await pc.req('GET', `/support/tickets/${ticketNo}`);
+    expect(other.status === 404, 'başka oyuncunun talebi görünmemeli');
+    const staff = await pc.req('GET', '/support/staff/tickets');
+    expect(staff.status === 403, 'oyuncu destek masasına giremez');
+  });
   await db.end();
 
   console.log('\nYetki (sunucu tarafı)');
@@ -771,6 +823,30 @@ async function main() {
   await step('Pilot B hâlâ yalnızca player (başkasının yetkisi sızmaz)', async () => {
     const me = await app.req('GET', '/auth/me');
     expect(JSON.stringify(me.json.user.roles) === '["player"]' && me.json.permissions.length === 0, JSON.stringify(me.json));
+  });
+  await step('Moderatör A (rol aracıyla verildi) konuyu kilitler → B\'nin yanıtı THREAD_LOCKED; işlem denetim kaydında', async () => {
+    const lock = await pc.req('POST', `/forum/t/${forumThread}/moderate`, { action: 'lock', reason: 'Rehber tamamlandı' });
+    expect(lock.status === 200, JSON.stringify(lock.json));
+    const r = await app.req('POST', `/forum/t/${forumThread}/replies`, { body: 'kilitten sonra yanıt' });
+    expect(r.status === 409 && r.json.error.code === 'THREAD_LOCKED', JSON.stringify(r.json));
+    const c = new pg.Client({ connectionString: DB_URL });
+    await c.connect();
+    const { rows } = await c.query(`SELECT action, actor_label FROM admin_audit_log WHERE target_type = 'forum_thread'`);
+    await c.end();
+    expect(rows.length === 1 && rows[0].action === 'forum.thread.lock' && rows[0].actor_label === 'AnadoluKartali', JSON.stringify(rows));
+  });
+  await step('Rol aracıyla A\'ya destek personeli rolü; A, B\'nin talebine yanıt verir → B\'ye gerçek SMTP ile e-posta; iç not B\'ye görünmez', async () => {
+    const g = spawnSync(tsx, ['apps/api/src/scripts/role-cli.ts', 'grant', '--user', 'AnadoluKartali', '--role', 'support_staff', '--reason', 'E2E destek'], { cwd: ROOT, env, encoding: 'utf8' });
+    expect(g.status === 0, g.stderr || g.stdout);
+    const q = await pc.req('GET', '/support/staff/tickets');
+    expect(q.status === 200 && q.json.tickets.some((t) => t.ticketNo === ticketNo), JSON.stringify(q.json));
+    await pc.req('POST', `/support/staff/tickets/${ticketNo}/replies`, { body: 'Ödül kayıtlarını inceliyorum.', internal: true });
+    const r = await pc.req('POST', `/support/staff/tickets/${ticketNo}/replies`, { body: 'Ödülün hesabına eklendi, iyi oyunlar!' });
+    expect(r.status === 201 && r.json.ticket.status === 'waiting_player', JSON.stringify(r.json));
+    const mail = await waitForMail(bMail, ticketNo);
+    expect(mail.text.includes(`/destek/${ticketNo}`) && !mail.text.includes('Ödülün hesabına'), mail.text);
+    const v = await app.req('GET', `/support/tickets/${ticketNo}`);
+    expect(v.json.ticket.messages.length === 2 && v.json.ticket.messages[1].author === 'Türk Orbit Destek', JSON.stringify(v.json.ticket.messages));
   });
   await step('Çıkış: oturum sunucuda iptal edilir', async () => {
     const r = await pc.req('POST', '/auth/logout', {});

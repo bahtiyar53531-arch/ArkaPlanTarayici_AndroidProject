@@ -59,3 +59,34 @@ export async function api<T>(
   }
   return json as T;
 }
+
+/** Ek dosya yükleme (Aşama 13): ham gövde, dosya adı başlıkta. Türü sunucu içerikten belirler. */
+export async function uploadFile<T>(path: string, file: File): Promise<T> {
+  const headers: Record<string, string> = {
+    'X-Client-Platform': CLIENT_PLATFORM,
+    'Content-Type': 'application/octet-stream',
+    'X-File-Name': encodeURIComponent(file.name),
+  };
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + path, { method: 'POST', headers, body: file, credentials: 'include' });
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Sunucuya ulaşılamıyor. İnternet bağlantını kontrol et.');
+  }
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    /* JSON değil */
+  }
+  if (!res.ok) {
+    const err = (json as ApiErrorBody | null)?.error;
+    throw new ApiError(res.status, err?.code ?? 'INTERNAL_ERROR', err?.message ?? (res.status === 413 ? 'Dosya çok büyük.' : 'Dosya yüklenemedi.'));
+  }
+  return json as T;
+}
+
+/** Ek dosyanın indirme adresi (çerezli oturumla aynı kökten; dosya her zaman "indirme" olarak gelir). */
+export const attachmentUrl = (id: number) => `${API_BASE}/support/attachments/${id}`;

@@ -535,6 +535,8 @@ export class GameServer {
       p.cargoUsed = await this.store.resourceLoad(p.playerId);
       p.shield = p.maxShield;
       await this.loadSocial(p);
+      // Oda pilot listeye eklenmeden önce yüklenir: periyodik işler (kayıt, grup, bakım) odası olmayan pilot görmez.
+      await this.ensureRoom(map);
       this.byPlayer.set(p.playerId, p);
       await this.joinRoom(p, map);
       await this.o.db.query('UPDATE players SET last_online_at = now() WHERE id = $1', [p.playerId]);
@@ -1799,6 +1801,7 @@ export class GameServer {
   }
 
   private async writePresence(p: Player) {
+    if (!p.room) return; // odaya girişi henüz tamamlanmadı
     const presence: Presence = { map: p.room.code, station: p.station, instance: this.instanceId, at: Date.now() };
     await this.o.redis.set(GAME_KEYS.presence(p.playerId), JSON.stringify(presence), 'EX', PRESENCE_TTL_SECONDS).catch((err: unknown) => {
       this.o.log.warn({ err, playerId: p.playerId }, 'çevrimiçi durum yazılamadı');
@@ -1894,6 +1897,7 @@ export class GameServer {
     await this.loadSocialConfig().catch(() => undefined);
     const occupied = new Map<string, Player[]>();
     for (const p of this.byPlayer.values()) {
+      if (!p.room) continue;
       const list = occupied.get(p.room.code);
       if (list) list.push(p);
       else occupied.set(p.room.code, [p]);
@@ -2210,7 +2214,7 @@ export class GameServer {
 
   private async partyTickOnce() {
     try {
-      const list = [...this.byPlayer.values()];
+      const list = [...this.byPlayer.values()].filter((p) => p.room);
       const ids = await this.parties.partiesOf(list.map((p) => p.playerId));
       list.forEach((p, i) => (p.partyId = ids[i] ?? null));
       const partied = list.filter((p) => p.partyId);

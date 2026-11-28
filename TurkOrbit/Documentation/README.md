@@ -22,6 +22,7 @@
 - [Asama-10-Gorev-Sistemi/](Asama-10-Gorev-Sistemi/): görev kuralları, içerik, API, güncelleme rehberi
 - [Asama-11-Ekonomi/](Asama-11-Ekonomi/): kaynaklar, madencilik, üretim, açık artırma, günlük ödül, paketler, API, güncelleme rehberi
 - [Asama-12-Klan-Sosyal/](Asama-12-Klan-Sosyal/): klan, rütbe, hazine, diplomasi, grup, sohbet kanalları, arkadaşlık, engelleme, bildirimler, şikâyet, protokol ve API, güncelleme rehberi
+- [Asama-13-Forum-Destek/](Asama-13-Forum-Destek/): forum (bölümler, konu, alıntı, beğeni, takip, arama, moderasyon), destek talepleri (numara, ek dosya, durum akışı, destek masası), API, güncelleme rehberi
 
 ## Geliştirme notları
 - [DevelopmentNotes/Asama-01-Raporu.md](DevelopmentNotes/Asama-01-Raporu.md): Aşama 1–4 raporu ve değişiklik raporu
@@ -33,5 +34,6 @@
 - [DevelopmentNotes/Asama-10-Raporu.md](DevelopmentNotes/Asama-10-Raporu.md): Aşama 10 (görev sistemi) raporu
 - [DevelopmentNotes/Asama-11-Raporu.md](DevelopmentNotes/Asama-11-Raporu.md): Aşama 11 (ekonomi) raporu
 - [DevelopmentNotes/Asama-12-Raporu.md](DevelopmentNotes/Asama-12-Raporu.md): Aşama 12 (klan ve sosyal) raporu
+- [DevelopmentNotes/Asama-13-Raporu.md](DevelopmentNotes/Asama-13-Raporu.md): Aşama 13 (forum ve destek) raporu
 - [DevelopmentNotes/Karar-Gunlugu.md](DevelopmentNotes/Karar-Gunlugu.md): mimari kararlar ve gerekçeleri
 - [DevelopmentNotes/ekran-goruntuleri/](DevelopmentNotes/ekran-goruntuleri/): otomatik arayüz testinin ekran görüntüleri

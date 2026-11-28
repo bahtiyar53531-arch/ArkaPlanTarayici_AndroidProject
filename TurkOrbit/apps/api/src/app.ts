@@ -24,6 +24,11 @@ import { ClanService } from './modules/social/clan.js';
 import { Notifier } from './modules/social/notifications.js';
 import { socialRoutes } from './modules/social/routes.js';
 import { SocialService } from './modules/social/service.js';
+import { forumRoutes } from './modules/forum/routes.js';
+import { ForumService } from './modules/forum/service.js';
+import { supportRoutes } from './modules/support/routes.js';
+import { SupportService } from './modules/support/service.js';
+import { LocalFileStore, type FileStore } from './lib/storage.js';
 import type { Runtime } from './runtime.js';
 
 export interface BuiltApp {
@@ -37,6 +42,9 @@ export interface BuiltApp {
   clans: ClanService;
   social: SocialService;
   notifier: Notifier;
+  forum: ForumService;
+  support: SupportService;
+  files: FileStore;
   guards: AuthGuards;
   bridge: GameBridge;
 }
@@ -45,7 +53,7 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export async function buildApp(
   rt: Runtime,
-  options: { limits?: Partial<AuthLimits>; rng?: Rng; clock?: () => Date } = {},
+  options: { limits?: Partial<AuthLimits>; rng?: Rng; clock?: () => Date; files?: FileStore } = {},
 ): Promise<BuiltApp> {
   const { config } = rt;
   const app = Fastify({
@@ -150,6 +158,9 @@ export async function buildApp(
   const market = new MarketService(rt.db, app.log, { bridge, quests, notifier, ...(options.clock ? { clock: options.clock } : {}) });
   const clans = new ClanService(rt.db, app.log, { bridge, notifier, ...(options.clock ? { clock: options.clock } : {}) });
   const social = new SocialService(rt.db, app.log, notifier, { bridge });
+  const files = options.files ?? new LocalFileStore(config.uploads.dir);
+  const forum = new ForumService(rt.db, app.log, notifier, rt.redis, options.clock);
+  const support = new SupportService(rt.db, app.log, { notifier, store: files, mailer: rt.mailer, publicWebUrl: config.publicWebUrl, ...(options.clock ? { clock: options.clock } : {}) });
   const world = new WorldService(rt.db, app.log);
 
   await app.register(
@@ -163,9 +174,11 @@ export async function buildApp(
       questRoutes(api, { service: quests, guards });
       marketRoutes(api, { service: market, guards });
       socialRoutes(api, { clans, social, guards, limiter: rt.limiter });
+      forumRoutes(api, { service: forum, guards, limiter: rt.limiter });
+      supportRoutes(api, { service: support, guards, limiter: rt.limiter });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, guards, bridge };
+  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, forum, support, files, guards, bridge };
 }

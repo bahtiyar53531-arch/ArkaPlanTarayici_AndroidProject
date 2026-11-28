@@ -230,6 +230,31 @@ describe('mesaj sırası', () => {
       clearInterval(timer);
     }
   });
+
+  it('giriş sırasında periyodik kayıt, bakım ve grup denetimi çalışsa bile sunucu çökmez (odaya henüz girmemiş pilot)', async () => {
+    // Hata (Aşama 13'te tarayıcı testinde yakalandı): pilot listeye eklenip odası atanmadan önce periyodik kayıt
+    // çalışırsa çevrimiçi durum yazılırken "room" null olduğu için süreç çöküyordu.
+    const { client, playerId } = await pilot('AraDurumPilot');
+    const s = server as unknown as { joinRoom(p: unknown, m: unknown): Promise<void>; partyTickOnce(): Promise<void> };
+    const errors: unknown[] = [];
+    let ran = false;
+    const original = s.joinRoom;
+    s.joinRoom = async function (this: unknown, p: unknown, m: unknown) {
+      // Tam bu anda pilot listede, odası henüz atanmamış
+      await Promise.all([server.saveAll(), server.checkMaps(), s.partyTickOnce.call(server)]).catch((e: unknown) => errors.push(e));
+      ran = true;
+      return original.call(this, p, m);
+    };
+    try {
+      await join(client);
+    } finally {
+      delete (s as { joinRoom?: unknown }).joinRoom;
+    }
+    expect(ran).toBe(true);
+    expect(errors).toEqual([]);
+    // Giriş tamamlanınca çevrimiçi durum doğru haritayla yazılır
+    expect(JSON.parse((await ctx.rt.redis!.get(`game:presence:${playerId}`))!)).toMatchObject({ map: 'K-1' });
+  });
 });
 
 describe('sunucu otoriteli hareket', () => {

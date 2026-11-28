@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, openSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -37,6 +38,7 @@ const SHOTS9 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri
 const SHOTS10 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-10');
 const SHOTS11 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-11');
 const SHOTS12 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-12');
+const SHOTS13 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-13');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -53,6 +55,7 @@ mkdirSync(SHOTS9, { recursive: true });
 mkdirSync(SHOTS10, { recursive: true });
 mkdirSync(SHOTS11, { recursive: true });
 mkdirSync(SHOTS12, { recursive: true });
+mkdirSync(SHOTS13, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -95,6 +98,8 @@ const env = {
   // Testte bağlantısı kopan gemi hemen kaldırılır (veritabanından konum yerleştirme adımları için)
   GAME_LINGER_SECONDS: '0',
   VITE_GAME_PROXY: `ws://127.0.0.1:${GAME_PORT}`,
+  // Aşama 13: destek ekleri geçici klasöre
+  UPLOAD_DIR: path.join(os.tmpdir(), 'turkorbit-ui-uploads'),
 };
 
 const results = [];
@@ -892,6 +897,135 @@ try {
     await pcB.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '08-acik-klan-sayfasi.jpg') });
   });
   await desktopB.close();
+
+  console.log('Aşama 13 — Forum ve destek (oturumsuz ziyaretçi + iki masaüstü)');
+  const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
+  const guest = await guestCtx.newPage();
+  guest.on('pageerror', (e) => pageErrors.push(`guest: ${e.message}`));
+  const desktopB2 = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
+  const pcB2 = await desktopB2.newPage();
+  pcB2.on('pageerror', (e) => pageErrors.push(`pcB2: ${e.message}`));
+  let threadUrl = '';
+  let ticketNo = '';
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(400, 11)]);
+  await step('Forum: oturumsuz ziyaretçi bölümleri ve kilitli "Topluluk Kuralları" konusunu okur; yazmak için giriş istenir', async () => {
+    await guest.goto(`${WEB}/forum`);
+    await guest.getByTestId('forum-cat-duyurular').waitFor();
+    await guest.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '01-forum-bolumler.jpg') });
+    await guest.getByTestId('forum-cat-duyurular').getByRole('link', { name: 'Topluluk Kuralları' }).click();
+    await guest.getByTestId('thread-title-h').getByText('Topluluk Kuralları').waitFor();
+    await guest.getByText('Saygılı ol. Hakaret, küfür', { exact: false }).waitFor();
+    await guest.getByTestId('reply-blocked').getByText('Yanıt yazmak için giriş yap.').waitFor();
+  });
+  await step('Forum: A konu açar; B giriş yapıp alıntıyla yanıtlar ve beğenir; A\'nın zilinde "takip ettiğin konuya yanıt"', async () => {
+    await pc.goto(`${WEB}/forum/rehberler`);
+    await pc.getByTestId('new-thread').click();
+    await pc.getByTestId('thread-title').fill('Yeni pilotlar için madencilik rehberi');
+    await pc.getByTestId('thread-body').fill('Kaynak bölgelerinde gemileri ambar dolana kadar gezdirin.\nDolunca Pazar\'da satın veya rafineride işleyin.');
+    await pc.getByTestId('thread-submit').click();
+    await pc.getByTestId('thread-title-h').getByText('Yeni pilotlar için madencilik rehberi').waitFor();
+    threadUrl = pc.url();
+    await pcB2.goto(`${WEB}/giris`);
+    await pcB2.getByLabel('Kullanıcı adı veya e-posta').fill(B.username);
+    await pcB2.getByLabel('Parola', { exact: true }).fill(B.password);
+    await pcB2.getByRole('button', { name: 'Giriş yap' }).click();
+    await pcB2.getByRole('heading', { name: B.username }).waitFor();
+    await pcB2.goto(threadUrl);
+    const first = pcB2.getByTestId('post-list').locator('article').first();
+    await first.getByRole('button', { name: 'Alıntıla' }).click();
+    await pcB2.getByTestId('reply-body').fill('Çok faydalı oldu, teşekkürler! Titanyum için G-1 bulutunu öneririm.');
+    await pcB2.getByTestId('reply-submit').click();
+    await pcB2.getByText('Yanıtın gönderildi.').waitFor();
+    await first.locator('.like-btn').click();
+    await first.locator('.like-btn').getByText('1').waitFor();
+    await pc.reload();
+    await pc.getByTestId('post-list').locator('article').nth(1).getByText(`${A.username} yazdı:`).waitFor();
+    await pc.getByTestId('notif-count').waitFor({ timeout: 8000 });
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '02-forum-konu.jpg'), fullPage: true });
+  });
+  await step('Kilitli konuya yanıt reddedilir: moderatör A kilitler → B\'nin yanıt kutusu yerine kilit sebebi; doğrudan API isteği de 409', async () => {
+    // Test hazırlığı: A'ya moderatör rolü (üretimde yalnızca sunucu tarafı rol aracıyla verilir)
+    await db.query(`INSERT INTO user_roles (user_id, role_key) SELECT id, 'moderator' FROM users WHERE username = $1 ON CONFLICT DO NOTHING`, [A.username]);
+    await pc.reload();
+    await pc.getByTestId('mod-bar').waitFor();
+    await pc.getByTestId('mod-lock').click();
+    await pc.getByText('Konu kilitlendi.').waitFor();
+    await pcB2.reload();
+    await pcB2.getByTestId('reply-blocked').getByText('Bu konu kilitli; yeni yanıt yazılamaz.').waitFor();
+    const id = threadUrl.match(/konu\/(\d+)/)[1];
+    const res = await pcB2.evaluate(async (tid) => {
+      const me = await (await fetch('/api/v1/auth/me', { credentials: 'include' })).json();
+      const r = await fetch(`/api/v1/forum/t/${tid}/replies`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
+        body: JSON.stringify({ body: 'kilide rağmen' }),
+      });
+      return { status: r.status, body: await r.json() };
+    }, id);
+    if (res.status !== 409 || res.body.error.code !== 'THREAD_LOCKED') throw new Error(`kilitli konuya yanıt: ${JSON.stringify(res)}`);
+    await pcB2.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '03-forum-kilitli.jpg'), fullPage: true });
+  });
+  await step('Forum araması: "gemi" kelimesi "gemileri"ni bulur ve vurgular', async () => {
+    await guest.goto(`${WEB}/forum`);
+    await guest.getByTestId('forum-search-input').fill('gemi');
+    await guest.getByTestId('forum-search-input').press('Enter');
+    const res = guest.getByTestId('search-results');
+    await res.getByRole('link', { name: 'Yeni pilotlar için madencilik rehberi' }).waitFor();
+    await res.locator('mark').getByText('gemileri').waitFor();
+    await guest.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '04-forum-arama.jpg') });
+  });
+  await step('Destek: .png uzantılı EXE tarayıcıda reddedilir; B gerçek PNG ekiyle talep açar → TO-YYYY-NNNNNN numarası ve indirilebilir ek', async () => {
+    await pcB2.goto(`${WEB}/destek`);
+    await pcB2.getByTestId('ticket-category').selectOption('gameplay');
+    await pcB2.getByTestId('ticket-subject').fill('Görev ödülü envantere gelmedi');
+    await pcB2.getByTestId('ticket-body').fill('Dünkü günlük görevin ödülünü aldım ama envanterimde göremiyorum. Ekran görüntüsü ekledim.');
+    await pcB2.getByTestId('file-input').setInputFiles({ name: 'resim.png', mimeType: 'image/png', buffer: Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200)]) });
+    await pcB2.getByTestId('ticket-submit').click();
+    await pcB2.getByTestId('file-error').getByText('desteklenmeyen bir dosya türü', { exact: false }).waitFor();
+    await pcB2.getByRole('button', { name: 'resim.png dosyasını kaldır' }).click();
+    await pcB2.getByTestId('file-input').setInputFiles({ name: 'envanter ekranı.png', mimeType: 'image/png', buffer: PNG });
+    await pcB2.getByTestId('ticket-submit').click();
+    await pcB2.getByTestId('ticket-no').waitFor();
+    ticketNo = (await pcB2.getByTestId('ticket-no').innerText()).trim();
+    if (!/^TO-\d{4}-\d{6}$/.test(ticketNo)) throw new Error(`talep numarası: ${ticketNo}`);
+    await pcB2.getByRole('link', { name: 'envanter ekranı.png' }).waitFor();
+    await pcB2.getByTestId('ticket-status').getByText('Ekip yanıtı bekleniyor').waitFor();
+    const [download] = await Promise.all([pcB2.waitForEvent('download'), pcB2.getByRole('link', { name: 'envanter ekranı.png' }).click()]);
+    const p = await download.path();
+    const { readFileSync } = await import('node:fs');
+    if (!readFileSync(p).equals(PNG)) throw new Error('indirilen dosya yüklenenle aynı değil');
+    await pcB2.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '05-destek-talep.jpg'), fullPage: true });
+  });
+  await step('Destek masası: A (destek personeli) iç not ve yanıt yazar; B ekip yanıtını görür, iç notu görmez; B\'ye e-posta (gerçek SMTP)', async () => {
+    await db.query(`INSERT INTO user_roles (user_id, role_key) SELECT id, 'support_staff' FROM users WHERE username = $1 ON CONFLICT DO NOTHING`, [A.username]);
+    await pc.goto(`${WEB}/destek/masa`);
+    await pc.getByTestId('desk-queue').getByRole('link', { name: new RegExp(ticketNo) }).click();
+    await pc.getByTestId('internal-note').check();
+    await pc.getByTestId('reply-text').fill('Ödül kayıtlarını kontrol ettim; envanter senkron sorunu.');
+    await pc.getByTestId('reply-send').click();
+    await pc.getByText('İç not eklendi.').waitFor();
+    await pc.getByTestId('internal-note').uncheck();
+    await pc.getByTestId('reply-text').fill('Merhaba, ödülün envanterine eklendi. İyi uçuşlar!');
+    await pc.getByTestId('reply-send').click();
+    await pc.getByText('Yanıt gönderildi; oyuncuya bildirim ve e-posta gitti.').waitFor();
+    await pc.getByTestId('desk-status').getByText('Oyuncu yanıtı bekleniyor').waitFor();
+    await pc.evaluate(() => window.scrollTo(0, 0));
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '06-destek-masasi.jpg'), fullPage: true });
+    await pcB2.reload();
+    await pcB2.getByTestId('ticket-messages').getByText('Merhaba, ödülün envanterine eklendi. İyi uçuşlar!').waitFor();
+    await pcB2.getByTestId('ticket-messages').getByText('Türk Orbit Destek').waitFor();
+    if ((await pcB2.getByText('envanter senkron sorunu', { exact: false }).count()) !== 0) throw new Error('iç not oyuncuya göründü');
+    let mail = null;
+    for (let i = 0; i < 100 && !mail; i++) {
+      mail = inbox.find((m) => m.to === B.email && m.subject.includes(ticketNo)) ?? null;
+      if (!mail) await sleep(50);
+    }
+    if (!mail) throw new Error('destek yanıt e-postası gelmedi');
+    await pcB2.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '07-destek-yanit.jpg'), fullPage: true });
+  });
+  await desktopB2.close();
+  await guestCtx.close();
   // Telefon adımları G-2'de devam eder
   await teleport(pc, A.username, 2200, 6250, 'G-2');
 
@@ -1048,6 +1182,18 @@ try {
     await phone.getByTestId('recipe-nebulit').waitFor();
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '08-mobil-uretim.jpg') });
   });
+  await step('Telefonda forum konusu ve destek talepleri: okunur, yatay taşma yok', async () => {
+    await phone.goto(threadUrl);
+    await phone.getByTestId('thread-title-h').waitFor();
+    const w = await phone.evaluate(() => document.documentElement.scrollWidth);
+    if (w > 392) throw new Error(`forum sayfası yatay taşıyor: ${w}`);
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '08-mobil-forum.jpg'), fullPage: true });
+    await phone.goto(`${WEB}/destek/masa/${ticketNo}`);
+    await phone.getByTestId('ticket-messages').getByText('İç not (oyuncu görmez)').waitFor();
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS13, '09-mobil-destek-masasi.jpg'), fullPage: true });
+    // Sonraki adımlar için test rolleri geri alınır
+    await db.query(`DELETE FROM user_roles WHERE role_key IN ('moderator', 'support_staff') AND user_id = (SELECT id FROM users WHERE username = $1)`, [A.username]);
+  });
   await step('Telefonda Klan ve Sosyal sayfaları: sekmeler tek satırda kaydırılır; klan bilgileri görünür', async () => {
     await phone.goto(`${WEB}/klan`);
     await phone.getByTestId('my-clan').getByText('[AKN]').waitFor();
@@ -1106,7 +1252,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}, ${path.relative(ROOT, SHOTS13)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

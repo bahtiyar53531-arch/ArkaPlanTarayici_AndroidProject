@@ -12,7 +12,8 @@
 | [database/migrations/0006_quests.sql](../database/migrations/0006_quests.sql) | ✅ **Uygulanan migration** (Aşama 10). |
 | [database/migrations/0007_economy.sql](../database/migrations/0007_economy.sql) | ✅ **Uygulanan migration** (Aşama 11). |
 | [database/migrations/0008_social.sql](../database/migrations/0008_social.sql) | ✅ **Uygulanan migration** (Aşama 12). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 13–17). 0001 → 0008 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 100 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0009_forum_support.sql](../database/migrations/0009_forum_support.sql) | ✅ **Uygulanan migration** (Aşama 13). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 14–17). 0001 → 0009 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 100 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -140,6 +141,21 @@ Görev ödülleri `currency_ledger` / `item_ledger` defterlerine `quest_reward` 
 
 Gruplar (party) tablo değildir: canlı durum Redis'te (`party:*`). Grup mesajları `chat_messages` içinde `group:<id>` kanalıyla saklanır.
 
+## 1j. Aşama 13'te uygulanan tablolar (0009)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `forum_categories` | Bölümler | `slug` biçimi CHECK ve benzersiz; `post_permission` → `permissions(key)` (konuyu kimin açabileceği; ör. Duyurular için `forum.moderate`); arşiv |
+| `forum_moderators` | Bölüm moderatörleri | Birincil anahtar (bölüm, kullanıcı); atayan kaydedilir |
+| `forum_threads` | Konular | Başlık 5–140; sabit/kilitli/silinmiş işaretleri; `reply_count`, `view_count ≥ 0`; yazar silinirse NULL; `search` üretilen sütun (`simple` tsvector, GIN dizini) |
+| `forum_posts` | Mesajlar | Gövde 1–20.000; konu başına tek `is_first` (kısmi benzersiz dizin); alıntı aynı konuda; yumuşak silme (silen ve sebep); `search` üretilen sütun |
+| `forum_likes`, `forum_follows` | Beğeni ve takip | Birincil anahtar (mesaj/konu, kullanıcı) → kişi başına tek |
+| `support_tickets` | Talepler | `ticket_no` CHECK `^TO-[0-9]{4}-[0-9]{6,}$` ve UNIQUE (`support_ticket_seq` dizisinden); konu türü, durum ve öncelik CHECK; platform/sürüm; `resolved_at`, `closed_at` |
+| `support_messages` | Talep mesajları | Gövde 1–5.000; iç not yalnızca personel mesajında (CHECK) |
+| `support_attachments` | Ek dosya kayıtları | İçerik veritabanında **değil**: `storage_key` biçimi CHECK, tür CHECK (5 tür), boyut 1 bayt–10 MB, SHA-256 32 bayt |
+
+Ek dosyaların kendisi `UPLOAD_DIR` altındaki dosya deposundadır (bkz. [Aşama 13 kuralları](Asama-13-Forum-Destek/Forum-ve-Destek-Kurallari-ve-API.md)).
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
@@ -155,8 +171,8 @@ Gruplar (party) tablo değildir: canlı durum Redis'te (`party:*`). Grup mesajla
 | Ekonomi | ✅ Cüzdan/defter/mağaza 0002–0003'te; açık artırma, üretim, günlük ödül, paketler 0007'de uygulandı | 11 ✅ |
 | Sosyal | ✅ 0008'de uygulandı (+ `clan_invitations, clan_wallets, clan_events, player_social_settings`) | 12 ✅ |
 | Etkinlik/sıralama | `events, leaderboard_snapshots` | 14 (07'deki Aşama 12 kapsamında değil) |
-| Forum | `forum_categories, forum_moderators, forum_threads, forum_posts, forum_likes, forum_follows` | 13 |
-| Destek | `support_tickets, support_messages, support_attachments` | 13 |
+| Forum | ✅ 0009'da uygulandı (6 tablo) | 13 ✅ |
+| Destek | ✅ 0009'da uygulandı (3 tablo + `support_ticket_seq`) | 13 ✅ |
 | Moderasyon | `sanctions, anticheat_events` | 14 |
 | Sistem/platform | `feature_flags, client_releases, maintenance_windows, server_nodes, client_error_reports, backups` | 14-15 |
 

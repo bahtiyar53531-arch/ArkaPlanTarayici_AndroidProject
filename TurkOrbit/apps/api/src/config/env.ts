@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { z } from 'zod';
 
 const bool = z
@@ -39,6 +40,9 @@ const EnvSchema = z.object({
   GAME_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   /** Bağlantısı kopan geminin haritada kalma süresi (sn). Savaştan kaçmak için bağlantı kesmeyi önler. */
   GAME_LINGER_SECONDS: z.coerce.number().int().min(0).max(300).default(30),
+
+  /** Aşama 13: destek eklerinin saklandığı klasör (web kökünün DIŞINDA olmalı; dosyalar yalnızca yetkili uçtan indirilir) */
+  UPLOAD_DIR: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -64,6 +68,7 @@ export interface AppConfig {
   argon2: { memoryCost: number; timeCost: number; parallelism: number };
   mail: { transport: 'smtp' | 'console' | 'memory'; smtpUrl: string | undefined; from: string };
   game: { port: number; lingerSeconds: number };
+  uploads: { dir: string };
 }
 
 const DEV_CSRF_SECRET = 'turkorbit-dev-only-csrf-secret-change-me-0000';
@@ -134,5 +139,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       from: e.MAIL_FROM,
     },
     game: { port: e.GAME_PORT, lingerSeconds: e.GAME_LINGER_SECONDS },
+    uploads: { dir: path.resolve(e.UPLOAD_DIR ?? path.join(process.cwd(), 'var', 'uploads')) },
   };
 }

@@ -13,3 +13,4 @@ export * from './combat.js';
 export * from './quests.js';
 export * from './economy.js';
 export * from './social.js';
+export * from './community.js';

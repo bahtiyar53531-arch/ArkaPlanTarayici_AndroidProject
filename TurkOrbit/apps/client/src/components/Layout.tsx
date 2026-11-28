@@ -10,6 +10,10 @@ export function PublicLayout({ children }: { children: ReactNode }) {
       <div className="stars" aria-hidden="true" />
       <header className="topbar">
         <Logo />
+        <nav className="topnav public-nav" aria-label="Site menüsü">
+          <NavLink to="/forum">Forum</NavLink>
+          <NavLink to="/giris">Giriş</NavLink>
+        </nav>
       </header>
       <main className="public-main">{children}</main>
       <Footer />
@@ -35,6 +39,8 @@ export function AccountLayout({ children }: { children: ReactNode }) {
           <NavLink to="/gorevler">Görevler</NavLink>
           <NavLink to="/klan">Klan</NavLink>
           <NavLink to="/sosyal">Sosyal</NavLink>
+          <NavLink to="/forum">Forum</NavLink>
+          <NavLink to="/destek">Destek</NavLink>
           <NavLink to="/oyna" className="nav-play">Oyna</NavLink>
           <NavLink to="/hesap" end>
             Hesabım

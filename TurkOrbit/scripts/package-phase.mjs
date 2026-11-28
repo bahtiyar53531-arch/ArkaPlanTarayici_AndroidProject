@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Aşama teslimat ZIP'i üretir: Deliveries/TurkOrbit-<aşama-adı>.zip
- * node_modules, dist, .env, test çıktıları ve önceki ZIP'ler pakete girmez.
+ * node_modules, dist, .env, test çıktıları, yüklenen dosyalar (var/) ve önceki ZIP'ler pakete girmez.
  *
  * Kullanım: npm run package:phase -- Asama-01-Kayit-Giris
  */
@@ -30,12 +30,15 @@ const excludes = [
   'TurkOrbit/.env',
   'TurkOrbit/test-results/*',
   'TurkOrbit/playwright-report/*',
+  // Destek ekleri gibi yüklenen dosyalar (UPLOAD_DIR varsayılanı: <çalışma klasörü>/var/uploads)
+  'TurkOrbit/var/*',
+  'TurkOrbit/*/*/var/*',
 ];
 const parent = path.dirname(ROOT);
 let r = spawnSync('zip', ['-r', '-q', '-X', out, 'TurkOrbit', '-x', ...excludes], { cwd: parent, stdio: 'inherit' });
 if (r.error) {
   // zip yoksa (ör. Windows) bsdtar ile dene
-  const tarExcludes = ['node_modules', 'dist', 'Deliveries', '.env', 'test-results', 'playwright-report'].flatMap((e) => [
+  const tarExcludes = ['node_modules', 'dist', 'Deliveries', '.env', 'test-results', 'playwright-report', 'var'].flatMap((e) => [
     '--exclude',
     e,
   ]);
