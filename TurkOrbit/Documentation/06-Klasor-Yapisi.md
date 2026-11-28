@@ -39,6 +39,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   │   ├── hangar/           hangar, ekipman, yükseltme, tamir, PET, mağaza (Aşama 6)
     │   │   │   │   ├── world/            galaksi, harita, geçit kuralları, oyuncu ayarları (Aşama 7)
     │   │   │   │   ├── game/             oyun bileti + Redis köprüsü: çevrimiçi durum, tek oturum, canlı değişiklik (Aşama 8)
+    │   │   │   │   ├── quest/            görev servisi ve uçları: liste, kabul, yeniden çekme, ödül, olay kaydı (Aşama 10)
     │   │   │   │   └── health/           sağlık uç noktası
     │   │   │   ├── game/                 gerçek zamanlı oyun sunucusu — AYRI SÜREÇ (npm run dev:game): WebSocket, 20 Hz simülasyon, AOI (Aşama 8); NPC yapay zekâsı, savaş, ödül: content.ts + persistence.ts (Aşama 9)
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
@@ -53,13 +54,13 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │       ├── components/           Layout, form bileşenleri, parola gücü göstergesi
     │   │       ├── pages/                giriş, kayıt, doğrulama, şifre sıfırlama, hesap, güvenlik, pilot, hangar, mağaza, oyun
     │   │       ├── game/                 Phaser sahnesi, ağ kontrolcüsü (tahmin/uzlaştırma/enterpolasyon), dokular, savaş efektleri (Aşama 7-9)
-    │   │       ├── components/game/      HUD: pilot paneli, mini harita, radar listesi, galaksi, joystick, ayarlar, bağlantı durumu, hedef paneli, mühimmat çubuğu, savaş butonları, ölüm ekranı
+    │   │       ├── components/game/      HUD: pilot paneli, mini harita, radar listesi, galaksi, joystick, ayarlar, bağlantı durumu, hedef paneli, mühimmat çubuğu, savaş butonları, ölüm ekranı, görev izleyici ve çekmecesi
     │   │       └── styles/               global.css (koyu uzay teması), game.css (oyun ekranı)
     │   │
     │   └── admin/                        (Aşama 14) TÜRK ORBIT YÖNETİM MERKEZİ — şimdilik README
     │
     ├── database/
-    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat (numaralı, değiştirilmez)
+    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests (numaralı, değiştirilmez)
     │   └── schema-draft.sql              tüm oyunun doğrulanmış taslak şeması
     │
     ├── infra/

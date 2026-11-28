@@ -19,6 +19,7 @@
 - [Asama-07-Harita-Oyun-Motoru/](Asama-07-Harita-Oyun-Motoru/): dünya/geçit/ayar API referansı, güncelleme rehberi, kontroller
 - [Asama-08-Multiplayer/](Asama-08-Multiplayer/): gerçek zamanlı oyun protokolü, oyun sunucusu kurulumu (nginx, systemd)
 - [Asama-09-NPC-Savas/](Asama-09-NPC-Savas/): savaş kuralları, NPC yapay zekâsı, protokol v2 ekleri, güncelleme rehberi
+- [Asama-10-Gorev-Sistemi/](Asama-10-Gorev-Sistemi/): görev kuralları, içerik, API, güncelleme rehberi
 
 ## Geliştirme notları
 - [DevelopmentNotes/Asama-01-Raporu.md](DevelopmentNotes/Asama-01-Raporu.md): Aşama 1–4 raporu ve değişiklik raporu
@@ -27,5 +28,6 @@
 - [DevelopmentNotes/Asama-07-Raporu.md](DevelopmentNotes/Asama-07-Raporu.md): Aşama 7 (harita ve oyun motoru) raporu
 - [DevelopmentNotes/Asama-08-Raporu.md](DevelopmentNotes/Asama-08-Raporu.md): Aşama 8 (çok oyunculu) raporu
 - [DevelopmentNotes/Asama-09-Raporu.md](DevelopmentNotes/Asama-09-Raporu.md): Aşama 9 (NPC ve savaş) raporu
+- [DevelopmentNotes/Asama-10-Raporu.md](DevelopmentNotes/Asama-10-Raporu.md): Aşama 10 (görev sistemi) raporu
 - [DevelopmentNotes/Karar-Gunlugu.md](DevelopmentNotes/Karar-Gunlugu.md): mimari kararlar ve gerekçeleri
 - [DevelopmentNotes/ekran-goruntuleri/](DevelopmentNotes/ekran-goruntuleri/): otomatik arayüz testinin ekran görüntüleri

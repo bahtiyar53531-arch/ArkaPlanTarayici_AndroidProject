@@ -2,60 +2,21 @@
  * Savaşın kalıcı sonuçları (Aşama 9). Anlık durum (can, kalkan, konum) bellekte tutulur; kalıcı sonuçlar
  * transaction içinde ve idempotency anahtarıyla yazılır: ağ tekrarı veya çift işleme ÇİFT ÖDÜL üretmez.
  */
-import { levelForXp, type RolledReward } from '@turkorbit/shared';
-import { withTransaction, type Db, type DbClient } from '../db/pool.js';
-import { applyCurrencyChange } from '../modules/economy/wallet.js';
-import { grantItem, removeItem } from '../modules/economy/inventory.js';
+import type { RolledReward } from '@turkorbit/shared';
+import { withTransaction, type Db } from '../db/pool.js';
+import { grantRewards, lockPlayer, type GrantResult } from '../modules/economy/rewards.js';
+import { removeItem } from '../modules/economy/inventory.js';
 import type { GameContent } from './content.js';
 
-export interface GrantResult {
-  experience: number;
-  levelBefore: number;
-  level: number;
-  currencies: Array<{ code: string; amount: number }>;
-  items: Array<{ code: string; name: string; amount: number }>;
-  honor: number;
-}
-
-const lockPlayer = (c: DbClient, playerId: string) =>
-  c.query<{ experience: string }>('SELECT experience FROM players WHERE id = $1 FOR UPDATE', [playerId]);
-
-async function grantAll(c: DbClient, content: GameContent, playerId: string, rewards: RolledReward[], key: string, reason: string, refType: string): Promise<GrantResult> {
-  const locked = await lockPlayer(c, playerId);
-  const xpBefore = Number(locked.rows[0]?.experience ?? 0);
-  let xp = 0;
-  let honor = 0;
-  const currencies: GrantResult['currencies'] = [];
-  const items: GrantResult['items'] = [];
-  for (const r of rewards) {
-    if (r.type === 'experience') xp += r.amount;
-    else if (r.type === 'honor') honor += r.amount;
-    else if (r.type === 'currency') {
-      await applyCurrencyChange(c, { playerId, currency: r.code, delta: r.amount, reason, refType, refId: key.split(':')[1], idempotencyKey: `${key}:${r.code}` });
-      currencies.push({ code: r.code, amount: r.amount });
-    } else if (r.type === 'item') {
-      const it = content.items.get(r.code);
-      if (!it) continue;
-      await grantItem(c, playerId, { id: it.id, stackable: it.stackable }, r.amount, { reason, refType, refId: key.split(':')[1], idempotencyKey: `${key}:${r.code}` });
-      items.push({ code: r.code, name: it.name, amount: r.amount });
-    }
-  }
-  let xpAfter = xpBefore;
-  if (xp > 0 || honor !== 0) {
-    const u = await c.query<{ experience: string }>(
-      'UPDATE players SET experience = experience + $2, honor = honor + $3 WHERE id = $1 RETURNING experience',
-      [playerId, xp, honor],
-    );
-    xpAfter = Number(u.rows[0]!.experience);
-  }
-  return { experience: xp, levelBefore: levelForXp(xpBefore), level: levelForXp(xpAfter), currencies, items, honor };
-}
+export type { GrantResult } from '../modules/economy/rewards.js';
 
 export class CombatStore {
   constructor(
     private readonly db: Db,
     private readonly content: GameContent,
   ) {}
+
+  private readonly items = (code: string) => this.content.items.get(code);
 
   /**
    * NPC öldürme: kayıt (kill_id benzersiz) + katkıya göre bölünmüş doğrudan ödüller + istatistik, tek transaction.
@@ -71,7 +32,7 @@ export class CombatStore {
       if ((ins.rowCount ?? 0) === 0) return null;
       const out = new Map<string, GrantResult>();
       for (const g of [...grants].sort((a, b) => (a.playerId < b.playerId ? -1 : 1))) {
-        out.set(g.playerId, await grantAll(c, this.content, g.playerId, g.rewards, `npc:${killId}:${g.playerId}`, 'npc_reward', 'npc_kill'));
+        out.set(g.playerId, await grantRewards(c, this.items, g.playerId, g.rewards, { key: `npc:${killId}:${g.playerId}`, reason: 'npc_reward', refType: 'npc_kill', refId: killId }));
       }
       await c.query(
         `INSERT INTO player_stats (player_id, npc_kills) VALUES ($1, 1)
@@ -85,7 +46,7 @@ export class CombatStore {
   /** Kargo kutusu toplama: eşyalar envantere (defterli). Aynı kutu ikinci kez verilemez. */
   async collectCargo(cargoId: string, playerId: string, rewards: RolledReward[]): Promise<GrantResult> {
     return withTransaction(this.db, async (c) => {
-      const res = await grantAll(c, this.content, playerId, rewards, `cargo:${cargoId}`, 'cargo_loot', 'cargo');
+      const res = await grantRewards(c, this.items, playerId, rewards, { key: `cargo:${cargoId}`, reason: 'cargo_loot', refType: 'cargo', refId: cargoId });
       await c.query(
         `INSERT INTO player_stats (player_id, cargo_collected) VALUES ($1, 1)
          ON CONFLICT (player_id) DO UPDATE SET cargo_collected = player_stats.cargo_collected + 1, updated_at = now()`,

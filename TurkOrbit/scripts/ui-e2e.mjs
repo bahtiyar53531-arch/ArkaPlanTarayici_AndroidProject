@@ -34,6 +34,7 @@ const SHOTS6 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri
 const SHOTS7 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-07');
 const SHOTS8 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-08');
 const SHOTS9 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-09');
+const SHOTS10 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-10');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -47,6 +48,7 @@ mkdirSync(SHOTS6, { recursive: true });
 mkdirSync(SHOTS7, { recursive: true });
 mkdirSync(SHOTS8, { recursive: true });
 mkdirSync(SHOTS9, { recursive: true });
+mkdirSync(SHOTS10, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -121,7 +123,7 @@ let browser;
 let db;
 const fpsReadings = {};
 try {
-  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8, 9)\n');
+  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8, 9, 10)\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   const c = new pg.Client({ connectionString: DB_URL });
   await c.connect();
@@ -151,6 +153,29 @@ try {
       `INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds) VALUES
        ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM npc_types WHERE code = 'test-cakal'), '{"type":"circle","x":14000,"y":4000,"r":1}', 1, 600),
        ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM npc_types WHERE code = 'test-akrep'), '{"type":"circle","x":6000,"y":9000,"r":1}', 1, 600)`,
+    );
+    // Aşama 10: görev adımları için G-1'de bir Eğitim Kurdu ve "Eğitim Avı" görevi
+    await s.query(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-ui-kurt', 'Eğitim'), ('quest.test-ui-av', 'Görev: Eğitim Avı')`);
+    await s.query(
+      `INSERT INTO npc_types (code, name, family, level, sprite_key, scale, color_hex, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id) VALUES
+       ('test-ui-kurt', 'Eğitim Kurdu', 'cakal', 1, 'npc-cakal', 0.9, '#E0A93B', 120, 0, 0, 0, 1000, 450, 200, '{"behavior":"passive","patrol_radius":1}', 100, (SELECT id FROM reward_tables WHERE code = 'npc.test-ui-kurt'))`,
+    );
+    await s.query(
+      `INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds) VALUES
+       ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM npc_types WHERE code = 'test-ui-kurt'), '{"type":"circle","x":13600,"y":5300,"r":1}', 1, 600)`,
+    );
+    await s.query(
+      `INSERT INTO reward_entries (reward_table_id, reward_type, ref_code, min_amount, max_amount, chance) VALUES
+       ((SELECT id FROM reward_tables WHERE code = 'quest.test-ui-av'), 'experience', 'XP', 500, 500, 1),
+       ((SELECT id FROM reward_tables WHERE code = 'quest.test-ui-av'), 'currency', 'KREDI', 1000, 1000, 1)`,
+    );
+    await s.query(
+      `INSERT INTO quests (code, category, title, description, reward_table_id, sort_order)
+       VALUES ('test-ui-av', 'main', 'Eğitim Avı', 'Görev panelinden kabul et ve bir Eğitim Kurdu avla.', (SELECT id FROM reward_tables WHERE code = 'quest.test-ui-av'), 0)`,
+    );
+    await s.query(
+      `INSERT INTO quest_objectives (quest_id, sort_order, objective_type, params, target, label)
+       VALUES ((SELECT id FROM quests WHERE code = 'test-ui-av'), 1, 'kill_npc', '{"family":["cakal"],"maps":["{c}-1"]}', 1, 'Çakal ailesinden NPC yok et ({c}-1)')`,
     );
     await s.end();
   }
@@ -561,6 +586,67 @@ try {
     if (d.rows[0].n !== 1) throw new Error('ölüm kaydı yok');
     await sleep(900);
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS9, '04-istasyonda-yeniden-dogus.jpg') });
+  });
+
+  console.log('Aşama 10 — görevler (masaüstü)');
+  await step('Görev izleyici günlük görevleri gösterir; Q ile görev çekmecesi açılır; zincir görevi kabul edilir', async () => {
+    await teleport(pc, A.username, 13600, 5000, 'G-1');
+    const tracker = pc.getByTestId('quest-tracker');
+    await tracker.waitFor({ timeout: 8000 });
+    if ((await tracker.locator('.hud-quest').count()) !== 3) throw new Error('izleyicide 3 görev bekleniyordu');
+    await pc.keyboard.press('q');
+    const drawer = pc.getByTestId('quest-drawer');
+    await drawer.waitFor();
+    const card = drawer.getByTestId('quest-test-ui-av');
+    await card.getByText('Alınabilir').waitFor();
+    await card.getByRole('button', { name: 'Kabul et' }).click();
+    await card.getByText('Devam ediyor').waitFor();
+    await drawer.getByText('"Eğitim Avı" görev listene eklendi.').waitFor();
+    await drawer.getByTestId('quest-buyuk-sicrama-01').waitFor(); // gerçek içerik: Büyük Sıçrama zinciri
+    await sleep(400);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '01-gorev-cekmecesi.jpg') });
+    await pc.keyboard.press('Escape');
+    await drawer.waitFor({ state: 'detached' });
+    await pc.getByTestId('track-test-ui-av').waitFor({ timeout: 6000 });
+  });
+  await step('Görev canlı ilerler: NPC yok edilince izleyicide ✔ ve "Görev tamamlandı"; ödül çekmeceden alınır (defterli)', async () => {
+    await sleep(800);
+    await pc.keyboard.press('Tab');
+    await pc.getByTestId('target-panel').getByText('Eğitim Kurdu').waitFor({ timeout: 6000 });
+    await pc.keyboard.press('Space');
+    await pc.getByText('Görev tamamlandı: Eğitim Avı. Ödülünü görev listesinden al.').waitFor({ timeout: 15000 });
+    const tracked = pc.getByTestId('track-test-ui-av');
+    await tracked.getByText('Ödülünü al').waitFor({ timeout: 6000 });
+    await sleep(300);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '02-gorev-tamamlandi-izleyici.jpg') });
+    await tracked.click();
+    const drawer = pc.getByTestId('quest-drawer');
+    await drawer.getByTestId('quest-test-ui-av').getByRole('button', { name: 'Ödülü al' }).click();
+    await drawer.getByText('Ödül alındı: +500 deneyim · +1.000 Kredi').waitFor({ timeout: 6000 });
+    await sleep(300);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '03-gorev-odulu-alindi.jpg') });
+    const l = await db.query(
+      `SELECT l.delta FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id
+       WHERE u.username = $1 AND l.reason = 'quest_reward'`,
+      [A.username],
+    );
+    if (l.rows.length !== 1 || Number(l.rows[0].delta) !== 1000) throw new Error(`görev ödülü defteri: ${JSON.stringify(l.rows)}`);
+    await pc.keyboard.press('Escape');
+  });
+  await step('Görevler sayfası: sekmeler, günlük yenilenme süresi, etkinlik sekmesi (gerçek tarihle)', async () => {
+    await pc.goto(`${WEB}/gorevler`);
+    await pc.getByRole('heading', { name: 'Görevler' }).waitFor();
+    await pc.getByTestId('quest-tab-daily').click();
+    await pc.getByText(/Günlük görevler .+ sonra yenilenir \(05:00 TSİ\)\./).waitFor();
+    if ((await pc.getByTestId('quest-list-daily').locator('.quest').count()) !== 3) throw new Error('3 günlük görev bekleniyordu');
+    await sleep(300);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '04-gorevler-sayfasi-gunluk.jpg') });
+    await pc.getByTestId('quest-tab-event').click();
+    const t = Date.now();
+    if (t >= Date.parse('2026-11-27T21:00:00Z') && t < Date.parse('2027-01-01T02:00:00Z')) await pc.getByText('Açılış Şenliği: Hoş Geldin').waitFor();
+    else await pc.getByTestId('quest-list-event').waitFor();
+    await pc.getByTestId('quest-tab-main').click();
+    await pc.getByText('Tamamlanan görevler (1)').waitFor();
     // Telefon adımları G-2'de devam eder
     await teleport(pc, A.username, 2200, 6250, 'G-2');
   });
@@ -658,10 +744,44 @@ try {
     await sleep(2500);
     fpsReadings.phone = await phone.getByTestId('hud-fps').innerText();
   });
+  await step('Telefonda görev çekmecesi: 📜 ile açılır; uzun liste kaydırılır', async () => {
+    await phone.getByTestId('hud-quests-btn').click();
+    const drawer = phone.getByTestId('quest-drawer');
+    await drawer.getByTestId('quest-buyuk-sicrama-01').waitFor({ timeout: 8000 });
+    const m = await drawer.evaluate((el) => ({ sh: el.scrollHeight, ch: el.clientHeight, w: el.getBoundingClientRect().width }));
+    if (!(m.sh > m.ch + 100)) throw new Error(`liste kaydırılacak kadar uzun değil: ${JSON.stringify(m)}`);
+    if (m.w < 380) throw new Error(`çekmece telefonda tam genişlikte değil: ${m.w}`);
+    await sleep(300);
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '05-mobil-gorev-cekmecesi.jpg') });
+    await drawer.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await sleep(300);
+    const top = await drawer.evaluate((el) => el.scrollTop);
+    if (top <= 0) throw new Error('çekmece kaydırılamadı');
+    const last = drawer.locator('.quest-list').first().locator('.quest').last();
+    const box = await last.boundingBox();
+    if (!box || box.y + box.height > 844 + 2) throw new Error(`son görev görünmüyor: ${JSON.stringify(box)}`);
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '06-mobil-gorev-cekmecesi-kaydirildi.jpg') });
+    await drawer.getByRole('button', { name: 'Kapat (Esc)' }).click();
+    await drawer.waitFor({ state: 'detached' });
+  });
   await step('PC oyuna dönünce telefon "başka cihaz" uyarısı alır (iki yönde de tek oturum)', async () => {
     await pc.goto(`${WEB}/oyna`);
     await pc.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
     await phone.getByTestId('conn-ended').getByText('Başka bir cihazda oyundasın').waitFor({ timeout: 8000 });
+  });
+  await step('Telefonda görevler sayfası: sayfa kaydırılır; ödülü alınan görev "Tamamlanan görevler" altında', async () => {
+    await phone.goto(`${WEB}/gorevler`);
+    await phone.getByRole('heading', { name: 'Görevler' }).waitFor();
+    await phone.getByTestId('quest-buyuk-sicrama-01').waitFor();
+    const h = await phone.evaluate(() => ({ sh: document.documentElement.scrollHeight, ih: window.innerHeight }));
+    if (!(h.sh > h.ih + 200)) throw new Error(`sayfa kaydırılacak kadar uzun değil: ${JSON.stringify(h)}`);
+    const done = phone.getByText('Tamamlanan görevler (1)');
+    await done.scrollIntoViewIfNeeded();
+    await done.click();
+    await phone.getByTestId('quest-test-ui-av').getByText('Tamamlandı').waitFor();
+    const y = await phone.evaluate(() => window.scrollY);
+    if (y <= 0) throw new Error('sayfa kaydırılmadı');
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '07-mobil-gorevler-sayfasi.jpg'), fullPage: true });
   });
   await step('Oyun ekranlarında JavaScript hatası oluşmadı', async () => {
     if (pageErrors.length) throw new Error(pageErrors.join(' | '));
@@ -712,7 +832,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

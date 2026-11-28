@@ -15,8 +15,8 @@
 | 7 | Harita ve oyun motoru | ✅ **Tamamlandı (tek oyunculu)** | Phaser 3.90 sahnesi, 21 harita + 60 geçit + 51 bölge, sunucu hız denetimli konum, geçit geçişi, galaksi haritası, mini harita, joystick, cihaz sınıfına göre ayarlar. Rapor: [Aşama 7](DevelopmentNotes/Asama-07-Raporu.md) |
 | 8 | Multiplayer | ✅ **Tamamlandı (hareket katmanı)** | WebSocket oyun sunucusu, oyun bileti, 20 Hz sunucu otoriteli hareket, tahmin/uzlaştırma/enterpolasyon, radar menzili (AOI), tek aktif oturum, yeniden bağlanma, istasyon kuralı. Rapor: [Aşama 8](DevelopmentNotes/Asama-08-Raporu.md) |
 | 9 | NPC ve savaş | ✅ **Tamamlandı (Yıldız Kapıları hariç)** | Hedef seçme, lazer/roket, sunucu tarafı hasar, 11 NPC türü (2 kadim), yapay zekâ, ölüm/yeniden doğma, katkıya göre bölünen ödül, kargo kutusu, PvP kuralları. Yıldız Kapıları Aşama 10-11'e, canlı içerik güncelleme Aşama 14'e kaldı. Rapor: [Aşama 9](DevelopmentNotes/Asama-09-Raporu.md) |
-| 10 | Görev sistemi | ⏭ Sıradaki | ~300 görev |
-| 11 | Ekonomi | ⏳ | |
+| 10 | Görev sistemi | ✅ **Tamamlandı** | 300 görev (120 ana/zincir, 90 günlük, 60 haftalık, 30 etkinlik), olay tabanlı sunucu ilerlemesi, 05:00 TSİ sıfırlama (zaman taklidiyle testli), yeniden çekme, defterli ödül, oyun içi izleyici ve çekmece, anında başarımlar. Maden ve kapı hedefleri ilgili sistemlerle gelecek. Rapor: [Aşama 10](DevelopmentNotes/Asama-10-Raporu.md) |
+| 11 | Ekonomi | ⏭ Sıradaki | |
 | 12 | Klan ve sosyal | ⏳ | |
 | 13 | Forum ve destek | ⏳ | |
 | 14 | Yönetim Merkezi | ⏳ | RBAC altyapısı Aşama 4'te hazır |
@@ -46,10 +46,10 @@
 
 | Katman | Araç | Kapsam | Aşama 1 durumu |
 |---|---|---|---|
-| Birim | Vitest | Saf fonksiyonlar (parola politikası, şemalar, seviye/rütbe, eşya/slot kuralları, konfigürasyon istatistikleri, harita giriş koşulları, ayar şeması, ağ protokolü ve ortak hareket simülasyonu, savaş kuralları: hasar, saldırı izni, ödül zarı ve paylaşımı) | ✅ 59 test |
-| Entegrasyon | Vitest + `fastify.inject` + **gerçek PostgreSQL + Redis** + gerçek WebSocket | API uç noktaları, veritabanı kısıtları, tetikleyiciler, eşzamanlı harcama/satın alma, geçitler, oyun sunucusu (bilet, mesaj sırası, hareket, hız hilesi, AOI, tek oturum, kopma, ağ bütçesi), savaş (atış hızı, menzil, ödül ve paylaşımı, kargo, NPC yapay zekâsı, ölüm, PvP, roket, canlı envanter) | ✅ 148 test |
-| API uçtan uca | `scripts/e2e-auth.mjs` (gerçek API + oyun sunucusu süreçleri + gerçek SMTP) | Çoklu hesap, çoklu platform, WebSocket senaryoları, NPC öldürme ve ödül | ✅ 36/36 adım |
-| Arayüz uçtan uca | Playwright (Chromium; 2 masaüstü + iPhone dikey/yatay emülasyonu) | Gerçek tarayıcıda kullanıcı akışları, oyun ekranı, iki pilotun birbirini görmesi, sunucu yeniden başlatma, tek oturum, savaş (hedef, ateş, ödül, kargo, ölüm, yeniden doğma) + ekran görüntüleri | ✅ 45/45 adım |
+| Birim | Vitest | Saf fonksiyonlar (parola politikası, şemalar, seviye/rütbe, eşya/slot kuralları, konfigürasyon istatistikleri, harita giriş koşulları, ayar şeması, ağ protokolü ve ortak hareket simülasyonu, savaş kuralları: hasar, saldırı izni, ödül zarı ve paylaşımı; görev döngüleri, hedef eşleme, tohumlu seçim) | ✅ 67 test |
+| Entegrasyon | Vitest + `fastify.inject` + **gerçek PostgreSQL + Redis** + gerçek WebSocket | API uç noktaları, veritabanı kısıtları, tetikleyiciler, eşzamanlı harcama/satın alma, geçitler, oyun sunucusu (bilet, mesaj sırası, hareket, hız hilesi, AOI, tek oturum, kopma, ağ bütçesi), savaş (atış hızı, menzil, ödül ve paylaşımı, kargo, NPC yapay zekâsı, ölüm, PvP, roket, canlı envanter), görevler (zaman taklidiyle sıfırlama, zincir, ödül, eşzamanlı ödül isteği, hangar olayları, oyun sunucusu olayları, anında başarım) | ✅ 162 test |
+| API uçtan uca | `scripts/e2e-auth.mjs` (gerçek API + oyun sunucusu süreçleri + gerçek SMTP) | Çoklu hesap, çoklu platform, WebSocket senaryoları, NPC öldürme ve ödül, görev ilerlemesi ve ödülü | ✅ 38/38 adım |
+| Arayüz uçtan uca | Playwright (Chromium; 2 masaüstü + iPhone dikey/yatay emülasyonu) | Gerçek tarayıcıda kullanıcı akışları, oyun ekranı, iki pilotun birbirini görmesi, sunucu yeniden başlatma, tek oturum, savaş (hedef, ateş, ödül, kargo, ölüm, yeniden doğma), görevler (izleyici, Q çekmecesi, canlı ilerleme, ödül, görevler sayfası, telefonda kaydırma) + ekran görüntüleri | ✅ 50/50 adım |
 | Multiplayer | Başsız bot istemcileri (Node) + iki gerçek tarayıcı | Senkronizasyon, gecikme, paket kaybı, yük | Aşama 8 |
 | Gerçek cihaz | Android/iOS telefon + tablet | Bkz. [03 §8](03-Platform-Mimarisi.md) | Aşama 15 |
 | Güvenlik | Bağımlılık taraması (`npm audit`), statik analiz, sızma testi kontrol listesi | — | `npm audit`: 0 açık |

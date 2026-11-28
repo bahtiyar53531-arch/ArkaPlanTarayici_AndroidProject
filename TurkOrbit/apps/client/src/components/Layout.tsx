@@ -30,6 +30,7 @@ export function AccountLayout({ children }: { children: ReactNode }) {
           </NavLink>
           <NavLink to="/hangar">Hangar</NavLink>
           <NavLink to="/magaza">Mağaza</NavLink>
+          <NavLink to="/gorevler">Görevler</NavLink>
           <NavLink to="/oyna" className="nav-play">Oyna</NavLink>
           <NavLink to="/hesap" end>
             Hesabım

@@ -9,7 +9,8 @@
 | [database/migrations/0003_hangar.sql](../database/migrations/0003_hangar.sql) | ✅ **Uygulanan migration** (Aşama 6). |
 | [database/migrations/0004_world.sql](../database/migrations/0004_world.sql) | ✅ **Uygulanan migration** (Aşama 7). |
 | [database/migrations/0005_combat.sql](../database/migrations/0005_combat.sql) | ✅ **Uygulanan migration** (Aşama 9). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 10–17). 0001 → 0005 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 93 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0006_quests.sql](../database/migrations/0006_quests.sql) | ✅ **Uygulanan migration** (Aşama 10). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 11–17). 0001 → 0006 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 94 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -91,6 +92,18 @@ Aşama 8'de veritabanı şeması değişmedi. Anlık oyun durumu bellekte (oyun 
 
 Ödüller mevcut defterlere yazılır: `currency_ledger` (`npc_reward`), `item_ledger` (`cargo_loot`, `ammo_used`), `players.experience/honor`, `player_stats` (`npc_kills`, `player_kills`, `deaths`, `cargo_collected`).
 
+## 1g. Aşama 10'da uygulanan tablolar (0006)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `quests` | 300 görev: 120 ana/zincir, 90 günlük, 60 haftalık, 30 etkinlik | Kategori CHECK; etkinlikte `starts_at/ends_at` zorunlu ve `ends_at > starts_at`; zincir `prerequisite_quest_id`; günlük/haftalık havuzda `min_level–max_level` bandı; `reward_table_id` (0005 ödül tabloları) |
+| `quest_objectives` | 338 hedef | 11 hedef türü (CHECK); `params` JSON nesnesi (`{c}` şirket öneki); `target > 0`; Türkçe etiket |
+| `player_quests` | Oyuncu görev durumu | Benzersiz (oyuncu, görev, döngü); durum `active/completed/claimed/rerolled/abandoned`; tamamlananda `completed_at`, ödülü alınanda `claimed_at` zorunlu; ilerlemeyi yalnızca sunucu yazar |
+| `player_quest_cycles` | Günlük/haftalık atama + yeniden çekme hakkı | Birincil anahtar (oyuncu, kategori, döngü) → döngü başına tek atama; `rerolls_used >= 0` |
+| `game_settings.quests` | Görev kuralları | Günlük/haftalık adet, yeniden çekme, 05:00 TSİ, etkin görev sınırı, öldürme payı eşiği |
+
+Görev ödülleri `currency_ledger` / `item_ledger` defterlerine `quest_reward` gerekçesiyle, idempotent anahtarla yazılır.
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
@@ -102,7 +115,7 @@ Aşama 8'de veritabanı şeması değişmedi. Anlık oyun durumu bellekte (oyun 
 | Harita | ✅ `map_portals, map_zones` 0004'te uygulandı; taslakta `resource_nodes` (madencilik) | 7 ✅ / 11 |
 | NPC ve kapılar | ✅ `npc_types, npc_spawns` 0005'te uygulandı; taslakta `gates, gate_waves, player_gates` (Yıldız Kapıları) | 9 ✅ / 10-11 |
 | Ödüller | ✅ `reward_tables, reward_entries` 0005'te uygulandı | 9 ✅ |
-| Görevler | `quests, quest_objectives, player_quests` | 10 |
+| Görevler | ✅ `quests, quest_objectives, player_quests` + `player_quest_cycles` 0006'da uygulandı | 10 ✅ |
 | Ekonomi | `currencies, wallets, currency_ledger, item_ledger, shop_categories, shop_offers, auctions, auction_bids, crafting_recipes, daily_login_rewards, player_daily_logins` | 11 |
 | Sosyal | `clans, clan_ranks, clan_members, clan_applications, clan_diplomacy, clan_treasury_ledger, friendships, player_blocks, chat_messages, reports, notifications` | 12 |
 | Etkinlik/sıralama | `events, leaderboard_snapshots` | 12 |

@@ -6,7 +6,7 @@ const DEVICE_LABELS: Record<DeviceClass, string> = { desktop: 'bilgisayar', phon
 const KEY_LABELS: Record<keyof PlayerSettings['keys'], string> = {
   up: 'Yukarı', down: 'Aşağı', left: 'Sol', right: 'Sağ', jump: 'Geçitten atla', galaxy: 'Galaksi haritası',
   zoomIn: 'Yakınlaştır', zoomOut: 'Uzaklaştır', fullscreen: 'Tam ekran',
-  attack: 'Ateş aç / kapa', rocket: 'Roket at', nextTarget: 'En yakın hedef',
+  attack: 'Ateş aç / kapa', rocket: 'Roket at', nextTarget: 'En yakın hedef', quests: 'Görevler',
 };
 
 export function SettingsPanel({ initial, deviceClass, onSave, onClose }: {

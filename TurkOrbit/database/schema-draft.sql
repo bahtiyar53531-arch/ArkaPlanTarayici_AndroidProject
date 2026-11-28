@@ -141,49 +141,8 @@ CREATE TABLE player_gates (
 ALTER TABLE gates ADD CONSTRAINT gates_reward_fk FOREIGN KEY (completion_reward_table_id) REFERENCES reward_tables(id);
 ALTER TABLE achievements ADD COLUMN reward_table_id integer REFERENCES reward_tables(id);
 
--- ============================================================ 10. GÖREVLER (Aşama 10)
-CREATE TABLE quests (
-  id             serial PRIMARY KEY,
-  code           text NOT NULL UNIQUE,
-  category       text NOT NULL CHECK (category IN ('main', 'daily', 'weekly', 'event')),
-  title          text NOT NULL,
-  description    text NOT NULL,
-  min_level      smallint NOT NULL DEFAULT 1,
-  company_id     smallint REFERENCES companies(id),
-  prerequisite_quest_id integer REFERENCES quests(id),   -- görev zinciri
-  chain_code     text,
-  chain_order    smallint,
-  time_limit_seconds integer,
-  reward_table_id integer REFERENCES reward_tables(id),
-  starts_at      timestamptz,
-  ends_at        timestamptz,
-  is_published   boolean NOT NULL DEFAULT false,
-  is_archived    boolean NOT NULL DEFAULT false
-);
-
-CREATE TABLE quest_objectives (
-  id          serial PRIMARY KEY,
-  quest_id    integer NOT NULL REFERENCES quests(id) ON DELETE CASCADE,
-  sort_order  smallint NOT NULL,
-  objective_type text NOT NULL CHECK (objective_type IN (
-                'kill_npc', 'kill_player', 'collect_resource', 'collect_cargo', 'visit_map', 'complete_gate',
-                'upgrade_item', 'survive', 'deal_damage', 'travel_distance')),
-  -- {"npc_family":"akrep","map_codes":["K-2","K-3"]} / {"seconds":600,"map_type":"pvp"}
-  params      jsonb NOT NULL DEFAULT '{}'::jsonb,
-  target      bigint NOT NULL CHECK (target > 0)
-);
-
-CREATE TABLE player_quests (
-  player_id   uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  quest_id    integer NOT NULL REFERENCES quests(id),
-  cycle_key   text NOT NULL DEFAULT 'once',    -- günlük: '2026-11-27', haftalık: '2026-W48'
-  status      text NOT NULL CHECK (status IN ('active', 'completed', 'claimed', 'failed', 'abandoned')),
-  progress    jsonb NOT NULL DEFAULT '{}'::jsonb, -- {"<objective_id>": 12}
-  accepted_at timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz,
-  claimed_at  timestamptz,
-  PRIMARY KEY (player_id, quest_id, cycle_key)
-);
+-- ============================================================ 10. GÖREVLER (0006'da uygulandı)
+-- (Aşama 10 → 0006_quests.sql: quests, quest_objectives, player_quests, player_quest_cycles.)
 
 -- ============================================================ 11. EKONOMİ (Aşama 11)
 

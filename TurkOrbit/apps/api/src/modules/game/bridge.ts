@@ -25,7 +25,8 @@ export const GAME_CHANNELS = {
   kick: 'game:kick',
 };
 
-export type PlayerUpdateReason = 'stats' | 'ship' | 'repair' | 'inventory';
+/** quests: görev listesi değişti (kabul, ödül, hangar olayı) → oyun sunucusu izleyiciyi, seviyeyi ve envanteri yeniler */
+export type PlayerUpdateReason = 'stats' | 'ship' | 'repair' | 'inventory' | 'quests';
 
 export interface TicketPayload {
   userId: string;

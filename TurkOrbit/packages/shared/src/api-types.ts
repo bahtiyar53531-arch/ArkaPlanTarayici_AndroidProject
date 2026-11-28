@@ -49,6 +49,12 @@ export const ERROR_CODES = [
   'MAP_CLOSED',
   'GAME_UNAVAILABLE',
   'NOT_IN_STATION',
+  'QUEST_NOT_FOUND',
+  'QUEST_UNAVAILABLE',
+  'QUEST_LIMIT',
+  'QUEST_NOT_ACTIVE',
+  'QUEST_NOT_COMPLETED',
+  'REROLL_LIMIT',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -26,7 +26,7 @@ export async function createTestContext(
   /** app.ready() öncesi ek (yalnızca test) rotaları kaydetmek için. */
   setup?: (built: BuiltApp) => void,
   /** Yükseltme zarı gibi rastgeleliği testte belirlemek için. */
-  extra: { rng?: (max: number) => number } = {},
+  extra: { rng?: (max: number) => number; clock?: () => Date } = {},
 ): Promise<TestContext> {
   const config = loadConfig({
     NODE_ENV: 'test',
@@ -46,6 +46,7 @@ export async function createTestContext(
   const built = await buildApp(rt, {
     limits: { registerPerIp: [1000, 3600], loginPerIp: [1000, 900], forgotPerIp: [1000, 3600], ...limits },
     ...(extra.rng ? { rng: extra.rng } : {}),
+    ...(extra.clock ? { clock: extra.clock } : {}),
   });
   setup?.(built);
   await built.app.ready();
@@ -85,7 +86,8 @@ export async function resetDatabase(rt: Runtime) {
          ('inventory', '{"max_items": 300}'::jsonb),
          ('movement', '{"tolerance": 1.25, "slack": 300, "max_elapsed_seconds": 10}'::jsonb),
          ('portal', '{"jump_radius": 450}'::jsonb),
-         ('combat', '{"respawn_hp_ratio": 0.1, "shield_regen_delay_ms": 4000, "shield_regen_ratio_per_sec": 0.08, "repair_delay_ms": 5000, "loot_owner_ms": 15000, "loot_ttl_ms": 60000, "loot_pickup_radius": 90, "pvp_honor": 100, "damage_variance": 0.1, "out_of_combat_ms": 5000}'::jsonb)
+         ('combat', '{"respawn_hp_ratio": 0.1, "shield_regen_delay_ms": 4000, "shield_regen_ratio_per_sec": 0.08, "repair_delay_ms": 5000, "loot_owner_ms": 15000, "loot_ttl_ms": 60000, "loot_pickup_radius": 90, "pvp_honor": 100, "damage_variance": 0.1, "out_of_combat_ms": 5000}'::jsonb),
+         ('quests', '{"daily_count": 3, "weekly_count": 3, "daily_rerolls": 1, "weekly_rerolls": 1, "reset_hour_tr": 5, "max_active": 10, "kill_credit_min_share": 0.2}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

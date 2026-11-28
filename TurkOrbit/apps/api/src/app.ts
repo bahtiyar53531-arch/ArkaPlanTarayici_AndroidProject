@@ -16,6 +16,8 @@ import { GameBridge } from './modules/game/bridge.js';
 import { gameRoutes } from './modules/game/routes.js';
 import { WorldService } from './modules/world/service.js';
 import { PlayerService } from './modules/player/service.js';
+import { questRoutes } from './modules/quest/routes.js';
+import { QuestService } from './modules/quest/service.js';
 import type { Runtime } from './runtime.js';
 
 export interface BuiltApp {
@@ -24,6 +26,7 @@ export interface BuiltApp {
   players: PlayerService;
   hangar: HangarService;
   world: WorldService;
+  quests: QuestService;
   guards: AuthGuards;
   bridge: GameBridge;
 }
@@ -32,7 +35,7 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export async function buildApp(
   rt: Runtime,
-  options: { limits?: Partial<AuthLimits>; rng?: Rng } = {},
+  options: { limits?: Partial<AuthLimits>; rng?: Rng; clock?: () => Date } = {},
 ): Promise<BuiltApp> {
   const { config } = rt;
   const app = Fastify({
@@ -131,7 +134,8 @@ export async function buildApp(
   const guards = createAuthGuards(auth, config.session.cookieName);
   const players = new PlayerService(rt.db, app.log);
   const bridge = new GameBridge(rt.redis, app.log);
-  const hangar = new HangarService(rt.db, app.log, options.rng, bridge);
+  const quests = new QuestService(rt.db, app.log, { bridge, ...(options.clock ? { clock: options.clock } : {}) });
+  const hangar = new HangarService(rt.db, app.log, options.rng, bridge, quests);
   const world = new WorldService(rt.db, app.log);
 
   await app.register(
@@ -142,9 +146,10 @@ export async function buildApp(
       hangarRoutes(api, { service: hangar, guards });
       worldRoutes(api, { service: world, guards });
       gameRoutes(api, { bridge, guards, limiter: rt.limiter, db: rt.db });
+      questRoutes(api, { service: quests, guards });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, guards, bridge };
+  return { app, auth, players, hangar, world, quests, guards, bridge };
 }

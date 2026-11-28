@@ -16,6 +16,9 @@ import {
   CLOSE_CODES,
   DETECTION,
   IDLE_INPUT,
+  levelForXp,
+  objectiveMatches,
+  questCycles,
   PROTOCOL_VERSION,
   ROCKET_CODES,
   ROCKET_LABELS,
@@ -34,6 +37,8 @@ import {
   type Fx,
   type MapResponse,
   type MoveInput,
+  type ObjectiveType,
+  type QuestEvent,
   type RocketCode,
   type RolledReward,
   type ServerMessage,
@@ -47,6 +52,8 @@ import type { Logger } from '../modules/auth/service.js';
 import { GAME_CHANNELS, GAME_KEYS, GameBridge, PRESENCE_TTL_SECONDS, type PlayerUpdateReason, type Presence } from '../modules/game/bridge.js';
 import { activeShipStats } from '../modules/hangar/stats.js';
 import { WorldService } from '../modules/world/service.js';
+import { syncAchievements } from '../modules/player/achievements.js';
+import { QuestService, type QuestInterest } from '../modules/quest/service.js';
 import { GameContent, type NpcSpawn, type NpcType } from './content.js';
 import { CombatStore, type GrantResult } from './persistence.js';
 
@@ -61,6 +68,8 @@ const MAX_DEBT = 4;
 /** Bağlantı başına saniyede en fazla mesaj (istemci 20 girdi + ping + savaş niyetleri gönderir) */
 const MAX_MESSAGES_PER_SECOND = 60;
 const AOI_CELL = 2000;
+/** Görev olayları bu kadar tikte bir toplu yazılır (1 sn) */
+const QUEST_FLUSH_TICKS = 20;
 /** NPC lazer efekti için mühimmat sırası yerine kullanılan değer */
 const NPC_BEAM = 9;
 
@@ -83,6 +92,20 @@ export interface GameServerOptions {
   mapCheckMs?: number;
   /** Hasar varyansı, ödül zarı ve NPC dolaşımı için (testlerde sabitlenir) */
   rng?: Rng;
+  /** Görev döngüleri (günlük/haftalık sıfırlama) için duvar saati (testlerde ayarlanır) */
+  clock?: () => Date;
+}
+
+/** Pilotun görev durumu: yalnızca etkin hedeflerle eşleşen olaylar biriktirilir ve saniyede bir yazılır. */
+interface QuestState {
+  interests: QuestInterest[];
+  types: Set<ObjectiveType>;
+  cycle: string;
+  resetHour: number;
+  killMinShare: number;
+  pending: Map<string, QuestEvent>;
+  dist: number;
+  loaded: boolean;
 }
 
 interface QueuedInput {
@@ -105,6 +128,7 @@ interface SpawnState {
 
 interface Room {
   code: string;
+  mapType: string;
   width: number;
   height: number;
   pvp: boolean;
@@ -210,6 +234,8 @@ interface Player {
   taken: number;
   csDirty: boolean;
   noticeAt: Map<string, number>;
+  // --- görevler (Aşama 10)
+  quest: QuestState;
 }
 
 const send = (ws: WebSocket | null, msg: ServerMessage) => {
@@ -224,7 +250,9 @@ export class GameServer {
   private readonly bridge: GameBridge;
   private readonly content = new GameContent();
   private readonly store: CombatStore;
+  private readonly quests: QuestService;
   private readonly rng: Rng;
+  private readonly clock: () => Date;
   private http: Server | null = null;
   private wss: WebSocketServer | null = null;
   private rooms = new Map<string, Room>();
@@ -251,6 +279,8 @@ export class GameServer {
     this.world = new WorldService(o.db, o.log);
     this.bridge = new GameBridge(o.redis, o.log);
     this.store = new CombatStore(o.db, this.content);
+    this.clock = o.clock ?? (() => new Date());
+    this.quests = new QuestService(o.db, o.log, { clock: this.clock });
     this.rng = o.rng ?? Math.random;
   }
 
@@ -446,6 +476,9 @@ export class GameServer {
     if (p.dead) send(ws, { t: 'dead', by: null, kind: 'other' });
     p.map = { ...p.map, notice: null };
     this.o.log.info({ playerId: p.playerId, map: p.room.code, entityId: p.entityId }, 'oyuna girdi');
+    // Görevler: etkin hedefler yüklenir, bulunulan harita "ziyaret" sayılır
+    const entered = p;
+    void this.loadQuests(entered).then(() => this.questEvent(entered, { type: 'visit_map', amount: 1, map: entered.room.code, mapType: entered.room.mapType }));
 
     const player = p;
     ws.on('message', (data) => this.onMessage(player, ws, data.toString()));
@@ -518,6 +551,7 @@ export class GameServer {
       taken: 0,
       csDirty: true,
       noticeAt: new Map(),
+      quest: { interests: [], types: new Set(), cycle: '', resetHour: 5, killMinShare: 0.2, pending: new Map(), dist: 0, loaded: false },
     };
   }
 
@@ -620,6 +654,7 @@ export class GameServer {
 
   private async removePlayer(p: Player) {
     if (this.byPlayer.get(p.playerId) !== p) return;
+    this.flushQuests([p]);
     this.byPlayer.delete(p.playerId);
     this.leaveRoom(p);
     p.dirty = true;
@@ -640,6 +675,7 @@ export class GameServer {
         const spawns = await this.content.spawnsFor(this.o.db, map.map.code);
         const room: Room = {
           code: map.map.code,
+          mapType: map.map.mapType,
           width: map.map.width,
           height: map.map.height,
           pvp: map.map.pvpEnabled,
@@ -757,6 +793,7 @@ export class GameServer {
       this.cargoTick(room);
     }
     if (this.tickNo % SNAPSHOT_EVERY === 0) this.broadcast();
+    if (this.tickNo % QUEST_FLUSH_TICKS === 0) this.flushQuests([...this.byPlayer.values()]);
   }
 
   private effectiveSpeed(p: Player) {
@@ -797,6 +834,7 @@ export class GameServer {
     stepShip(p.state, p.lastInput, DT, this.effectiveSpeed(p), p.room.width, p.room.height);
     if (p.state.x !== bx || p.state.y !== by) {
       p.dirty = true;
+      if (p.quest.types.has('travel_distance')) p.quest.dist += Math.hypot(p.state.x - bx, p.state.y - by);
       const st = this.inStation(p);
       if (st !== p.station) {
         p.station = st;
@@ -937,6 +975,7 @@ export class GameServer {
     p.lastCombatAt = now;
     p.csDirty = true;
     this.fx(p.room, ['r', p.entityId, p.target, ROCKET_CODES.indexOf(p.rocket)], p.state.x, p.state.y);
+    this.questEvent(p, { type: 'fire_rockets', amount: 1, rocket: p.rocket });
     const hit = (target: NonNullable<ReturnType<GameServer['findTarget']>>) => {
       const amount = rollDamage(r.damage, this.content.combat.damage_variance, this.rng);
       if (target.kind === 'npc') {
@@ -971,6 +1010,10 @@ export class GameServer {
     n.lastHitAt = this.now();
     n.aggro.set(attacker.playerId, (n.aggro.get(attacker.playerId) ?? 0) + r.hull + r.shield);
     attacker.dealt += r.hull + r.shield;
+    const dealt = Math.round(r.hull + r.shield);
+    if (dealt > 0 && attacker.quest.types.has('deal_damage')) {
+      this.questEvent(attacker, { type: 'deal_damage', amount: dealt, target: 'npc', npc: n.type.code, family: n.type.family, map: attacker.room.code, mapType: attacker.room.mapType });
+    }
     this.fx(attacker.room, ['d', n.entityId, r.hull + r.shield, r.hull === 0 ? 1 : 0], n.state.x, n.state.y);
     // Saldırılan NPC karşılık verir; sürü üyeleri de saldırgana yönelir.
     if (!n.target || n.returning) {
@@ -995,7 +1038,13 @@ export class GameServer {
     p.hpDirty = true;
     p.lastCombatAt = this.now();
     p.taken += r.hull + r.shield;
-    if (source.kind === 'player') source.player.dealt += r.hull + r.shield;
+    if (source.kind === 'player') {
+      source.player.dealt += r.hull + r.shield;
+      const dealt = Math.round(r.hull + r.shield);
+      if (dealt > 0 && source.player.quest.types.has('deal_damage')) {
+        this.questEvent(source.player, { type: 'deal_damage', amount: dealt, target: 'player', map: p.room.code, mapType: p.room.mapType });
+      }
+    }
     this.fx(p.room, ['d', p.entityId, r.hull + r.shield, r.hull === 0 ? 1 : 0], p.state.x, p.state.y);
     if (r.killed) this.killPlayer(p, source);
     return r.shield;
@@ -1118,6 +1167,12 @@ export class GameServer {
     const top = shares.find((s) => s.top);
     if (!top) return;
     const killer = this.byPlayer.get(top.id)!;
+    // Görev: öldürme, en çok hasar verene ve payı yeterli olan (varsayılan %20) pilotlara sayılır
+    for (const s of shares) {
+      const pl = this.byPlayer.get(s.id);
+      if (!pl || (!s.top && s.share < pl.quest.killMinShare)) continue;
+      this.questEvent(pl, { type: 'kill_npc', amount: 1, npc: n.type.code, family: n.type.family, boss: n.type.isBoss, map: room.code, mapType: room.mapType });
+    }
     if (rolled.cargo.length) {
       const entityId = this.nextEntityId++;
       const c = this.content.combat;
@@ -1144,11 +1199,14 @@ export class GameServer {
         if (!p || !r) continue;
         const solo = shares.length === 1 && s.share >= 0.999;
         this.sendReward(p, solo ? `${n.type.name} yok edildi` : `${n.type.name} yok edildi (katkın %${Math.round(s.share * 100)})`, r, solo ? undefined : s.share);
+        // Başarımlar anında: öldürme sayısı (en çok hasar veren) veya seviye değiştiyse
+        if (s.top || r.level > r.levelBefore) await this.checkAchievements(p);
       }
     });
   }
 
   private sendReward(p: Player, source: string, r: GrantResult, share?: number) {
+    if (r.level > r.levelBefore) this.questEvent(p, { type: 'reach_level', amount: 1, level: r.level });
     if (r.level !== p.info.l) {
       p.info = { ...p.info, l: r.level };
       p.map = { ...p.map, pilot: { ...p.map.pilot, level: r.level } };
@@ -1194,6 +1252,7 @@ export class GameServer {
       o.csDirty = true;
     }
     const by = source.kind === 'npc' ? source.npc.type.name : source.player.info.n;
+    if (source.kind === 'player') this.questEvent(source.player, { type: 'kill_player', amount: 1, map: p.room.code, mapType: p.room.mapType });
     send(p.ws, { t: 'dead', by, kind: source.kind === 'npc' ? 'npc' : 'player' });
     const victim = { playerId: p.playerId, shipId: p.shipId, mapCode: p.room.code, x: p.state.x, y: p.state.y, name: p.info.n };
     void this.job('death', async () => {
@@ -1218,6 +1277,7 @@ export class GameServer {
           level: source.player.info.l,
           levelUp: false,
         });
+        await this.checkAchievements(source.player);
       }
     });
   }
@@ -1257,9 +1317,11 @@ export class GameServer {
         }
         room.cargo.delete(box.entityId); // tek alıcı: önce bellekten kalkar
         const picker = p;
+        this.questEvent(picker, { type: 'collect_cargo', amount: 1, map: room.code, mapType: room.mapType });
         void this.job('cargo', async () => {
           const res = await this.store.collectCargo(box.uuid, picker.playerId, box.items);
           this.sendReward(picker, 'Kargo kutusu toplandı', res);
+          await this.checkAchievements(picker);
         });
         break;
       }
@@ -1367,6 +1429,7 @@ export class GameServer {
   }
 
   private async moveToMap(p: Player, map: MapResponse, reason: 'portal' | 'map_closed' | 'respawn') {
+    this.takeTravel(p); // eski haritada kat edilen yol eski haritaya sayılır
     this.leaveRoom(p);
     p.state = { x: map.position.x, y: map.position.y, vx: 0, vy: 0, h: p.state.h };
     if (p.queue.length) p.lastSeq = p.queue[p.queue.length - 1]!.seq;
@@ -1382,9 +1445,102 @@ export class GameServer {
     p.radar = map.rules.detection.radar;
     await this.joinRoom(p, map);
     send(p.ws, { t: 'map', tick: this.tickNo, map, you: selfState(p.state), reason });
+    this.questEvent(p, { type: 'visit_map', amount: 1, map: p.room.code, mapType: p.room.mapType });
+    if (reason === 'portal') this.questEvent(p, { type: 'jump_portal', amount: 1, map: p.room.code, mapType: p.room.mapType });
     if (map.notice) send(p.ws, { t: 'notice', kind: 'info', text: map.notice });
     p.map = { ...map, notice: null };
     this.bg(this.writePresence(p));
+  }
+
+  // ================================================================== görevler (Aşama 10)
+  /** Olay, pilotun etkin bir hedefiyle eşleşiyorsa biriktirilir (aynı türden olaylar toplanır). */
+  private questEvent(p: Player, e: QuestEvent) {
+    const q = p.quest;
+    if (!q.types.has(e.type)) return;
+    if (!q.interests.some((i) => i.type === e.type && objectiveMatches(i.type, i.params, e))) return;
+    const key = [e.type, e.npc, e.family, e.boss ? 1 : 0, e.map, e.mapType, e.target, e.category, e.rocket, e.type === 'upgrade_item' ? e.level : ''].join('|');
+    const prev = q.pending.get(key);
+    if (!prev) q.pending.set(key, { ...e });
+    else if (e.type === 'reach_level') prev.level = Math.max(prev.level ?? 0, e.level ?? 0);
+    else prev.amount += e.amount;
+  }
+
+  private takeTravel(p: Player) {
+    if (p.quest.dist < 1 || !p.room) return;
+    const n = Math.floor(p.quest.dist);
+    p.quest.dist -= n;
+    this.questEvent(p, { type: 'travel_distance', amount: n, map: p.room.code, mapType: p.room.mapType });
+  }
+
+  private async applyInterests(p: Player, hint: boolean) {
+    const r = await this.quests.interests(p.playerId);
+    if (!r) return;
+    p.quest.interests = r.objectives;
+    p.quest.types = new Set(r.objectives.map((o) => o.type));
+    p.quest.cycle = r.cycle;
+    p.quest.resetHour = r.resetHour;
+    p.quest.killMinShare = r.killMinShare;
+    p.quest.loaded = true;
+    if (!p.quest.types.has('travel_distance')) p.quest.dist = 0;
+    if (hint) send(p.ws, { t: 'quests' });
+  }
+
+  /** Etkin hedefleri yükler (iş kuyruğunda; görev yazımlarıyla sırası korunur). */
+  private loadQuests(p: Player, hint = false) {
+    return this.job('quest-load', () => this.applyInterests(p, hint));
+  }
+
+  /** Biriken görev olaylarını yazar (saniyede bir, çıkışta ve kapanışta). */
+  private flushQuests(list: Player[]) {
+    for (const p of list) {
+      if (!p.quest.loaded) continue;
+      this.takeTravel(p);
+      // Yeni günlük/haftalık döngü: görevler yeniden atanır ve istemci listeyi yeniler
+      const c = questCycles(this.clock(), p.quest.resetHour);
+      const key = `${c.daily}|${c.weekly}`;
+      if (key !== p.quest.cycle) {
+        p.quest.cycle = key;
+        void this.loadQuests(p, true);
+      }
+      if (!p.quest.pending.size) continue;
+      const events = [...p.quest.pending.values()];
+      p.quest.pending.clear();
+      const player = p;
+      void this.job('quests', async () => {
+        const updates = await this.quests.record(player.playerId, events);
+        if (!updates.length) return;
+        send(player.ws, { t: 'qp', u: updates });
+        for (const u of updates) {
+          if (u.status === 'completed') send(player.ws, { t: 'notice', kind: 'success', text: `Görev tamamlandı: ${u.title}. Ödülünü görev listesinden al.` });
+        }
+        // Tamamlanan hedefler artık izlenmez
+        if (updates.some((u) => u.objectives.some((o) => o.current >= o.target))) await this.applyInterests(player, false);
+      });
+    }
+  }
+
+  /** Testler için: biriken görev olaylarını hemen yazar. */
+  async flushQuestEvents() {
+    this.flushQuests([...this.byPlayer.values()]);
+    await this.idle();
+  }
+
+  /** API'de görev listesi değişti (kabul, ödül, yeniden çekme, hangar olayı). */
+  private async onQuestsChanged(p: Player) {
+    await this.reloadInventory(p);
+    const r = await this.o.db.query<{ experience: string }>('SELECT experience FROM players WHERE id = $1', [p.playerId]);
+    const level = levelForXp(Number(r.rows[0]?.experience ?? 0));
+    if (level !== p.info.l) {
+      p.info = { ...p.info, l: level };
+      p.map = { ...p.map, pilot: { ...p.map.pilot, level } };
+    }
+    await this.loadQuests(p, true);
+  }
+
+  /** Başarımlar anında değerlendirilir; yeni kazanılan bildirilir. */
+  private async checkAchievements(p: Player) {
+    const r = await syncAchievements(this.o.db, p.playerId);
+    for (const a of r.newlyEarned) send(p.ws, { t: 'notice', kind: 'success', text: `Başarım kazanıldı: ${a.name}` });
   }
 
   // ================================================================== canlı değişiklikler (Redis)
@@ -1406,6 +1562,7 @@ export class GameServer {
       } else if (channel === GAME_CHANNELS.playerUpdated) {
         const reason = data.reason ?? 'stats';
         if (reason === 'inventory') this.bg(this.reloadInventory(p));
+        else if (reason === 'quests') this.bg(this.onQuestsChanged(p));
         else this.bg(this.reloadStats(p, reason, true));
       }
     });
@@ -1415,7 +1572,7 @@ export class GameServer {
    * Hangarda ekipman/gemi/konfigürasyon değişince hız, can, kalkan, lazer ve radar canlı güncellenir.
    * Can yalnızca tamirde veya gemi değişiminde veritabanından okunur (oyundaki güncel can korunur).
    */
-  private async reloadStats(p: Player, reason: Exclude<PlayerUpdateReason, 'inventory'>, notify: boolean) {
+  private async reloadStats(p: Player, reason: Exclude<PlayerUpdateReason, 'inventory' | 'quests'>, notify: boolean) {
     const ship = await activeShipStats(this.o.db, p.playerId);
     if (!ship) return;
     const s = ship.stats;
@@ -1463,6 +1620,7 @@ export class GameServer {
   // ================================================================== kalıcılık ve periyodik denetimler
   /** Konum, can, hasar istatistiği ve harcanan mühimmat toplu yazılır (varsayılan 5 sn; çıkışta hemen). */
   async saveAll() {
+    this.flushQuests([...this.byPlayer.values()]);
     await this.savePlayers([...this.byPlayer.values()].filter((p) => p.dirty));
     await this.flushCombat([...this.byPlayer.values()]);
     await Promise.all([...this.byPlayer.values()].map((p) => this.writePresence(p)));

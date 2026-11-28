@@ -18,6 +18,8 @@ import {
   NearbyPanel,
   PilotPanel,
   PortalPrompt,
+  QuestDrawer,
+  QuestTracker,
   TargetPanel,
   Toast,
   TopBar,
@@ -95,7 +97,7 @@ export function GamePage() {
 function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: DeviceClass; touch: boolean }) {
   useController(c);
   const host = useRef<HTMLDivElement>(null);
-  const [overlay, setOverlay] = useState<'none' | 'galaxy' | 'settings'>('none');
+  const [overlay, setOverlay] = useState<'none' | 'galaxy' | 'settings' | 'quests'>('none');
   const [portraitHint, setPortraitHint] = useState(false);
   const { quality, fpsLimit } = c.settings.graphics;
 
@@ -139,6 +141,7 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
       } else if (/^Digit[1-5]$/.test(e.code)) c.selectAmmo(AMMO_CODES[Number(e.code.slice(5)) - 1]!);
       else if (e.code === k.jump) c.jump();
       else if (e.code === k.galaxy) setOverlay('galaxy');
+      else if (e.code === k.quests) setOverlay('quests');
       else if (e.code === k.zoomIn) c.zoomDelta = 0.15;
       else if (e.code === k.zoomOut) c.zoomDelta = -0.15;
       else if (e.code === k.fullscreen) void toggleFullscreen();
@@ -164,12 +167,13 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
       <div className="hud-layer">
         <div className="hud-corner tl">
           <PilotPanel c={c} />
+          <QuestTracker c={c} max={deviceClass === 'phone' ? 2 : 3} onOpen={() => setOverlay('quests')} />
           {!touch && overlay === 'none' && (
-            <div className="hud-help muted small">WASD: hareket · Tıkla: hedef seç / git · Boşluk: ateş · 1–5: mühimmat · R: roket · Tab: en yakın hedef · {s.keys.jump.replace(/^Key/, '')}: geçit · {s.keys.galaxy.replace(/^Key/, '')}: galaksi</div>
+            <div className="hud-help muted small">WASD: hareket · Tıkla: hedef seç / git · Boşluk: ateş · 1–5: mühimmat · R: roket · Tab: en yakın hedef · {s.keys.jump.replace(/^Key/, '')}: geçit · {s.keys.galaxy.replace(/^Key/, '')}: galaksi · {s.keys.quests.replace(/^Key/, '')}: görevler</div>
           )}
         </div>
         <div className="hud-corner tr">
-          <TopBar c={c} touch={touch} onGalaxy={() => setOverlay('galaxy')} onSettings={() => setOverlay('settings')} />
+          <TopBar c={c} touch={touch} onGalaxy={() => setOverlay('galaxy')} onSettings={() => setOverlay('settings')} onQuests={() => setOverlay('quests')} />
           <Minimap c={c} />
           <NearbyPanel c={c} max={deviceClass === 'phone' ? 3 : 5} />
         </div>
@@ -190,6 +194,7 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
         )}
       </div>
       {overlay === 'galaxy' && <GalaxyOverlay onClose={() => setOverlay('none')} />}
+      {overlay === 'quests' && <QuestDrawer c={c} onClose={() => setOverlay('none')} />}
       {overlay === 'settings' && (
         <SettingsPanel initial={s} deviceClass={deviceClass} onClose={() => setOverlay('none')} onSave={(next) => c.saveSettings(next, deviceClass)} />
       )}

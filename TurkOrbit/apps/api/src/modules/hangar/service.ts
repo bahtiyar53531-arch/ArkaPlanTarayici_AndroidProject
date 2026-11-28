@@ -27,6 +27,7 @@ import {
   type SlotType,
 } from '@turkorbit/shared';
 import type { GameBridge, PlayerUpdateReason } from '../game/bridge.js';
+import type { QuestService } from '../quest/service.js';
 import { withTransaction, type Db, type DbClient, type Queryable } from '../../db/pool.js';
 import { AppError } from '../../lib/errors.js';
 import { getSetting } from '../auth/repository.js';
@@ -84,6 +85,8 @@ export class HangarService {
     private readonly rng: Rng = (max) => randomInt(max),
     /** Aşama 8: oyun sunucusu köprüsü (istasyon kuralı + canlı istatistik bildirimi) */
     private readonly bridge: GameBridge | null = null,
+    /** Aşama 10: yükseltme ve satın alma görev ilerlemesi (aynı transaction) */
+    private readonly quests: QuestService | null = null,
   ) {}
 
   // ================================================================== ortak yardımcılar
@@ -550,7 +553,8 @@ export class HangarService {
   // ================================================================== yükseltme
   async upgrade(owner: Owner, itemId: string, input: unknown) {
     const d = upgradeSchema.parse(input);
-    return this.mutate(owner, d.serverCode, async (c, pilot) => {
+    let questsChanged = '';
+    const out = await this.mutate(owner, d.serverCode, async (c, pilot) => {
       const key = `upgrade:${pilot.id}:${d.requestId}`;
       const prev = await c.query<{ success: boolean; from_level: number; to_level: number; chance: string; roll: number }>(
         'SELECT success, from_level, to_level, chance, roll FROM item_upgrade_log WHERE idempotency_key = $1',
@@ -580,7 +584,11 @@ export class HangarService {
       const roll = this.rng(1_000_000);
       const success = roll < Math.round(chance * 1_000_000);
       const toLevel = success ? nextLevel : item.upgrade_level;
-      if (success) await c.query('UPDATE player_items SET upgrade_level = $2 WHERE id = $1', [item.id, toLevel]);
+      if (success) {
+        await c.query('UPDATE player_items SET upgrade_level = $2 WHERE id = $1', [item.id, toLevel]);
+        const u = await this.quests?.recordTx(c, pilot.id, [{ type: 'upgrade_item', amount: 1, level: toLevel, category: item.category }]);
+        if (u?.length) questsChanged = pilot.id;
+      }
       await c.query(
         `INSERT INTO item_upgrade_log (player_id, player_item_id, item_type_id, from_level, to_level, success, chance, roll,
            cost_currency, cost_amount, idempotency_key)
@@ -590,6 +598,8 @@ export class HangarService {
       this.log.info({ playerId: pilot.id, item: item.id, success, toLevel }, 'ekipman yükseltme');
       return { success, fromLevel: item.upgrade_level, toLevel, chance, replay: false };
     });
+    if (questsChanged) await this.bridge?.notifyPlayerUpdated(questsChanged, 'quests');
+    return out;
   }
 
   // ================================================================== PET
@@ -772,11 +782,13 @@ export class HangarService {
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [pilot.id, o.id, d.packs, unit, total, o.currency_code, key],
       );
+      await this.quests?.recordTx(c, pilot.id, [{ type: 'buy_item', amount: 1, category: o.item_category ?? 'ship' }]);
       this.log.info({ playerId: pilot.id, offer: o.id, packs: d.packs, total }, 'mağaza satın alma');
       return { offerId: o.id, packs: d.packs, total, currency: o.currency_code, replay: false };
     });
     // Oyundaysa mühimmat/roket sayıları canlı güncellenir.
-    if (!result.replay) await this.bridge?.notifyPlayerUpdated(buyerId, 'inventory');
+    // ('quests' gerekçesi envanteri de yeniler; görev ilerlemesi de oyuna yansır)
+    if (!result.replay) await this.bridge?.notifyPlayerUpdated(buyerId, 'quests');
     const currencies = (await this.hangar(owner, d.serverCode)).currencies;
     return { purchase: result, currencies };
   }

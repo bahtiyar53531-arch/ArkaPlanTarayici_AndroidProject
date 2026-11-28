@@ -1,9 +1,10 @@
-import { AMMO_CODES, AMMO_COLORS, AMMO_LABELS, ROCKET_LABELS, type GalaxyResponse, type PlayerSettings } from '@turkorbit/shared';
+import { AMMO_CODES, AMMO_COLORS, AMMO_LABELS, ROCKET_LABELS, type GalaxyResponse, type PlayerSettings, type QuestView } from '@turkorbit/shared';
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as RPointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../../api/client';
 import { SERVER, type GameController } from '../../game/controller';
 import { fmt } from '../../lib/format';
+import { QuestBoard } from '../quests/QuestBoard';
 
 export function useController(c: GameController) {
   // Kontrolcü durumu nesnesi yerinde değişir; sürüm sayacıyla React'e bildirilir.
@@ -500,10 +501,75 @@ export function GalaxyOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ====================================================================== görevler (Aşama 10)
+const TRACK_ORDER: Record<QuestView['category'], number> = { main: 0, event: 1, daily: 2, weekly: 3 };
+
+/** HUD görev izleyicisi: ödülü hazır olanlar, sonra etkin görevler (ana → etkinlik → günlük → haftalık). */
+export function QuestTracker({ c, max = 3, onOpen }: { c: GameController; max?: number; onOpen: () => void }) {
+  const list = c.state.quests
+    .filter((q) => q.status === 'active' || q.status === 'completed')
+    .sort((a, b) => (a.status === b.status ? TRACK_ORDER[a.category] - TRACK_ORDER[b.category] : a.status === 'completed' ? -1 : 1))
+    .slice(0, max);
+  if (list.length === 0) return null;
+  return (
+    <button type="button" className="hud-quests" onClick={onOpen} data-testid="quest-tracker" aria-label="Görevleri aç">
+      {list.map((q) => {
+        const o = q.objectives.find((x) => x.current < x.target) ?? q.objectives[0]!;
+        return (
+          <div key={`${q.code}:${q.cycle}`} className={`hud-quest${q.status === 'completed' ? ' done' : ''}`} data-testid={`track-${q.code}`}>
+            <div className="hud-quest-title">{q.status === 'completed' ? '✔ ' : ''}{q.title}</div>
+            <div className="hud-quest-obj">
+              {q.status === 'completed' ? (
+                <span>Ödülünü al</span>
+              ) : (
+                <>
+                  <span>{o.label}</span>
+                  <b>
+                    {fmt(o.current)}/{fmt(o.target)}
+                  </b>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </button>
+  );
+}
+
+/** Oyun içi görev çekmecesi (Q). Mobilde ekranın tamamını kaplar ve kaydırılır. */
+export function QuestDrawer({ c, onClose }: { c: GameController; onClose: () => void }) {
+  return (
+    <div className="hud-drawer-backdrop" onClick={onClose}>
+      <aside className="hud-drawer" role="dialog" aria-label="Görevler" data-testid="quest-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="panel-head">
+          <h2>Görevler</h2>
+          <button type="button" className="btn btn-ghost btn-small" onClick={onClose}>Kapat (Esc)</button>
+        </div>
+        <QuestBoard
+          compact
+          reloadKey={c.state.questsVersion}
+          onChange={(q) => c.setQuests(q)}
+          onReward={(text, level, levelUp) => {
+            c.toast('success', text);
+            c.applyLevel(level);
+            if (levelUp) setTimeout(() => c.toast('success', `Seviye atladın! Artık seviye ${level}.`), 1500);
+          }}
+        />
+      </aside>
+    </div>
+  );
+}
+
 // ====================================================================== üst çubuk
-export function TopBar({ onGalaxy, onSettings, touch, c }: { onGalaxy: () => void; onSettings: () => void; touch: boolean; c: GameController }) {
+export function TopBar({ onGalaxy, onSettings, onQuests, touch, c }: { onGalaxy: () => void; onSettings: () => void; onQuests: () => void; touch: boolean; c: GameController }) {
+  const ready = c.state.quests.filter((q) => q.status === 'completed').length;
   return (
     <div className="hud-topbar">
+      <button type="button" className="hud-btn" onClick={onQuests} title="Görevler (Q)" aria-label="Görevler" data-testid="hud-quests-btn">
+        📜<span>Görevler</span>
+        {ready > 0 && <span className="quest-ready-dot" aria-label={`${ready} ödül hazır`}>{ready}</span>}
+      </button>
       <button type="button" className="hud-btn" onClick={onGalaxy} title="Galaksi haritası" aria-label="Galaksi haritası">🗺️<span>Galaksi</span></button>
       <button type="button" className="hud-btn" onClick={onSettings} title="Ayarlar" aria-label="Ayarlar">⚙️<span>Ayarlar</span></button>
       {document.fullscreenEnabled && (

@@ -182,7 +182,11 @@ export type ServerMessage =
   | { t: 'pong'; c: number; s: number }
   | ({ t: 'cs' } & CombatState)
   | RewardMessage
-  | { t: 'dead'; by: string | null; kind: 'npc' | 'player' | 'other' };
+  | { t: 'dead'; by: string | null; kind: 'npc' | 'player' | 'other' }
+  /** Aşama 10: görev ilerlemesi (yalnızca değişen görevler) */
+  | { t: 'qp'; u: import('./quests.js').QuestProgressUpdate[] }
+  /** Aşama 10: görev listesi değişti (kabul, ödül, yeni döngü) — istemci listeyi yeniden ister */
+  | { t: 'quests' };
 
 /** WebSocket kapanış kodları (4000–4999 uygulamaya ayrılmıştır) */
 export const CLOSE_CODES = {

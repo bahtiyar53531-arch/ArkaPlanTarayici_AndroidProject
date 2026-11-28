@@ -2,7 +2,7 @@
  * Savaş entegrasyon testleri (Aşama 9): GERÇEK WebSocket + PostgreSQL + Redis.
  * Her test kendi NPC türünü/doğma noktasını ekler; tik elle ilerletilir; rastgelelik sabittir (rng = 0.5).
  */
-import { PROTOCOL_VERSION, type ServerMessage } from '@turkorbit/shared';
+import { PROTOCOL_VERSION, xpForLevel, type ServerMessage } from '@turkorbit/shared';
 import { Redis } from 'ioredis';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -38,6 +38,9 @@ afterEach(async () => {
 });
 
 async function cleanupContent() {
+  await ctx.rt.db.query(`DELETE FROM player_quests WHERE quest_id IN (SELECT id FROM quests WHERE code LIKE 'test-%')`);
+  await ctx.rt.db.query(`DELETE FROM quests WHERE code LIKE 'test-%'`);
+  await ctx.rt.db.query(`DELETE FROM reward_tables WHERE code LIKE 'quest.test-%'`);
   await ctx.rt.db.query(`DELETE FROM npc_spawns WHERE npc_type_id IN (SELECT id FROM npc_types WHERE code LIKE 'test-%')`);
   await ctx.rt.db.query(`DELETE FROM npc_kill_log WHERE npc_type_id IN (SELECT id FROM npc_types WHERE code LIKE 'test-%')`);
   await ctx.rt.db.query(`DELETE FROM combat_deaths WHERE killer_npc_type_id IN (SELECT id FROM npc_types WHERE code LIKE 'test-%')`);
@@ -84,6 +87,26 @@ async function addNpc(s: NpcSpec) {
     [s.map, t, JSON.stringify({ type: 'circle', x: s.x, y: s.y, r: 1 }), s.count ?? 1, s.respawn ?? 1],
   );
 }
+
+/** Test görevi (ana görev, ön koşulsuz). İçerik önbellekleri tazelenir. */
+async function addQuest(code: string, objectives: Array<{ type: string; params?: Record<string, unknown>; target: number }>, xp = 100) {
+  const rt = (await ctx.rt.db.query(`INSERT INTO reward_tables (code, name) VALUES ($1, 'Test') RETURNING id`, [`quest.${code}`])).rows[0].id;
+  await ctx.rt.db.query(`INSERT INTO reward_entries (reward_table_id, reward_type, ref_code, min_amount, max_amount, chance) VALUES ($1, 'experience', 'XP', $2, $2, 1)`, [rt, xp]);
+  const q = (await ctx.rt.db.query(
+    `INSERT INTO quests (code, category, title, description, reward_table_id, sort_order) VALUES ($1, 'main', $2, 'Test görevi', $3, 9999) RETURNING id`,
+    [code, `Test ${code}`, rt],
+  )).rows[0].id;
+  for (const [i, o] of objectives.entries()) {
+    await ctx.rt.db.query(`INSERT INTO quest_objectives (quest_id, sort_order, objective_type, params, target, label) VALUES ($1, $2, $3, $4, $5, 'Test hedefi')`, [
+      q, i + 1, o.type, JSON.stringify(o.params ?? {}), o.target,
+    ]);
+  }
+  ctx.quests.catalog.invalidate();
+}
+const accept = async (client: Client, code: string) => {
+  const r = await call(ctx.app, client, 'POST', '/quests/accept', { serverCode: 'TR1', code });
+  if (r.statusCode !== 200) throw new Error(r.body);
+};
 
 async function start() {
   sub = ctx.rt.redis!.duplicate();
@@ -546,5 +569,110 @@ describe('roketler ve canlı envanter', () => {
     expect(upd.ship.hitpoints).toBe(4000);
     await run(again.c, 2);
     expect(again.c.last('snap')!.st[0]).toBe(4000);
+  });
+});
+
+describe('görevler (oyun sunucusu, Aşama 10)', () => {
+  it('NPC öldürme görevi canlı ilerler (qp mesajı + veritabanı) ve tamamlanınca bildirilir; şirket haritası ({c}) uygulanır', async () => {
+    await addNpc({ code: 'test-kurt', map: 'K-1', x: 5300, y: 5000, hp: 40, count: 2 });
+    await addQuest('test-gorev-av', [{ type: 'kill_npc', params: { family: ['cakal'], maps: ['{c}-1'] }, target: 2 }]);
+    await start();
+    const { playerId, client } = await pilot('GorevAvcisi'); // Kızılelma → K-1
+    await accept(client, 'test-gorev-av');
+    await place(playerId, 5000, 5000);
+    const { c } = await join(client);
+    await server!.idle(); // etkin hedefler yüklendi
+    const [n1, n2] = server!.npcsOn('K-1');
+    c.send({ t: 'target', id: n1!.id });
+    c.send({ t: 'attack', on: true });
+    await run(c, 4);
+    await server!.flushQuestEvents();
+    await c.flush();
+    const qp = await c.waitFor('qp', (m) => m.u.some((x) => x.code === 'test-gorev-av'));
+    expect(qp.u.find((x) => x.code === 'test-gorev-av')).toMatchObject({ status: 'active', objectives: [{ current: 1, target: 2 }] });
+    c.send({ t: 'target', id: n2!.id });
+    c.send({ t: 'attack', on: true });
+    await run(c, 24); // lazer bekleme süresi (1 sn)
+    await server!.flushQuestEvents();
+    await c.flush();
+    await c.waitFor('qp', (m) => m.u.some((x) => x.code === 'test-gorev-av' && x.status === 'completed'));
+    await c.waitFor('notice', (m) => m.text === 'Görev tamamlandı: Test test-gorev-av. Ödülünü görev listesinden al.');
+    const row = await ctx.rt.db.query(`SELECT status FROM player_quests WHERE player_id = $1 AND quest_id = (SELECT id FROM quests WHERE code = 'test-gorev-av')`, [playerId]);
+    expect(row.rows[0].status).toBe('completed');
+  });
+
+  it('bağlanınca bulunulan harita "ziyaret" sayılır; payı %20\'nin altındaki pilota öldürme sayılmaz', async () => {
+    await addNpc({ code: 'test-ortak-gorev', map: 'K-2', x: 5300, y: 5000, hp: 400 });
+    await addQuest('test-gorev-ziyaret', [{ type: 'visit_map', params: { maps: ['{c}-2'] }, target: 1 }]);
+    await addQuest('test-gorev-ortak', [{ type: 'kill_npc', params: { family: ['cakal'] }, target: 1 }]);
+    await start();
+    const a = await pilot('GorevA');
+    const b = await pilot('GorevB');
+    for (const x of [a, b]) {
+      await accept(x.client, 'test-gorev-ziyaret');
+      await accept(x.client, 'test-gorev-ortak');
+    }
+    await place(a.playerId, 5000, 5000, 'K-2');
+    await place(b.playerId, 5000, 5050, 'K-2');
+    const ca = (await join(a.client)).c;
+    const cb = (await join(b.client)).c;
+    await server!.idle();
+    await server!.flushQuestEvents();
+    await ca.flush();
+    await ca.waitFor('qp', (m) => m.u.some((x) => x.code === 'test-gorev-ziyaret' && x.status === 'completed'));
+    // B bir atış (%10) yapar, A öldürür
+    const npc = server!.npcsOn('K-2')[0]!;
+    cb.send({ t: 'target', id: npc.id });
+    cb.send({ t: 'attack', on: true });
+    await run(cb, 2);
+    cb.send({ t: 'attack', on: false });
+    ca.send({ t: 'target', id: npc.id });
+    ca.send({ t: 'attack', on: true });
+    for (let i = 0; i < 20 && server!.npcsOn('K-2').length > 0; i++) await run(ca, 10);
+    await server!.idle();
+    await server!.flushQuestEvents();
+    await ca.flush();
+    await cb.flush();
+    await ca.waitFor('qp', (m) => m.u.some((x) => x.code === 'test-gorev-ortak' && x.status === 'completed'));
+    expect(cb.all('qp').some((m) => m.u.some((x) => x.code === 'test-gorev-ortak'))).toBe(false);
+    const rows = await ctx.rt.db.query(`SELECT player_id, status FROM player_quests WHERE quest_id = (SELECT id FROM quests WHERE code = 'test-gorev-ortak')`);
+    expect(Object.fromEntries(rows.rows.map((r) => [r.player_id, r.status]))).toEqual({ [a.playerId]: 'completed', [b.playerId]: 'active' });
+  });
+
+  it('oyundayken API\'de kabul edilen görev anında izlenir ("quests" mesajı); yol görevi hareketle ilerler', async () => {
+    await addQuest('test-gorev-yol', [{ type: 'travel_distance', target: 100000 }]);
+    await start();
+    const { playerId, client } = await pilot('GorevYolcu');
+    await place(playerId, 5000, 5000);
+    const { c } = await join(client);
+    await server!.idle();
+    await accept(client, 'test-gorev-yol'); // API → Redis → oyun sunucusu hedefleri yeniden yükler
+    await c.waitFor('quests');
+    await server!.idle();
+    for (let i = 1; i <= 40; i++) c.send({ t: 'in', i: [[i, 1, 1, 0]] });
+    await run(c, 40); // ~2 sn sağa uçuş
+    await server!.flushQuestEvents();
+    await c.flush();
+    const u = (await c.waitFor('qp', (m) => m.u.some((x) => x.code === 'test-gorev-yol'))).u.find((x) => x.code === 'test-gorev-yol')!;
+    expect(u.objectives[0]!.current).toBeGreaterThan(150); // ~2 sn, hızlanma dahil
+    expect(u.objectives[0]!.current).toBeLessThan(800);
+  });
+
+  it('başarımlar anında: seviye atlatan öldürme "Başarım kazanıldı" bildirimi gönderir', async () => {
+    await addNpc({ code: 'test-dev', map: 'K-1', x: 5300, y: 5000, hp: 40, xp: xpForLevel(5) + 10 });
+    await start();
+    const { playerId, client } = await pilot('BasarimPilot');
+    await place(playerId, 5000, 5000);
+    const { c } = await join(client);
+    const npc = await npcEntity(c);
+    c.send({ t: 'target', id: npc.id });
+    c.send({ t: 'attack', on: true });
+    await run(c, 4);
+    await server!.idle();
+    await c.flush();
+    expect(await c.waitFor('reward')).toMatchObject({ level: 5, levelUp: true });
+    await c.waitFor('notice', (m) => m.text === 'Başarım kazanıldı: Kanatlandın');
+    const ach = await ctx.rt.db.query(`SELECT a.code FROM player_achievements pa JOIN achievements a ON a.id = pa.achievement_id WHERE pa.player_id = $1 ORDER BY a.code`, [playerId]);
+    expect(ach.rows.map((r) => r.code)).toEqual(expect.arrayContaining(['level_5', 'pilot_created']));
   });
 });

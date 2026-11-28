@@ -6,7 +6,6 @@ import {
   rankFor,
   rankPoints,
   updatePilotSchema,
-  type AchievementProgress,
   type CompanyInfo,
   type GameServerInfo,
   type LedgerEntry,
@@ -19,6 +18,7 @@ import type { Logger } from '../auth/service.js';
 import { getSetting } from '../auth/repository.js';
 import { applyCurrencyChange, getBalances, listLedger } from '../economy/wallet.js';
 import { ensureStarterKit } from '../hangar/starter-kit.js';
+import { syncAchievements } from './achievements.js';
 import * as repo from './repository.js';
 
 export interface PilotOwner {
@@ -230,38 +230,10 @@ export class PlayerService {
     };
   }
 
-  /**
-   * Başarım ilerlemesini istatistiklerden hesaplar; hedefe ulaşılmış ama henüz verilmemiş başarımları verir.
-   * (Aşama 9'da istatistik değiştiren oyun olayları da aynı fonksiyonu çağıracak.) İşlem idempotenttir.
-   */
-  private async syncAchievements(
-    playerId: string,
-    values: Record<string, number>,
-  ): Promise<PilotProfile['achievements']> {
-    const rows = await repo.listAchievementsForPlayer(this.db, playerId);
-    const toAward: number[] = [];
-    const items: AchievementProgress[] = rows.map((a) => {
-      const target = Number(a.target);
-      const statKey = { npc_kills: 'npcKills', player_kills: 'playerKills', gates_completed: 'gatesCompleted',
-        cargo_collected: 'cargoCollected', playtime_seconds: 'playtimeSeconds', level: 'level' }[a.stat_key];
-      const raw = a.completed_at ? target : statKey ? (values[statKey] ?? 0) : 0;
-      let completedAt = a.completed_at?.toISOString() ?? null;
-      if (!completedAt && statKey && raw >= target) {
-        toAward.push(a.id);
-        completedAt = new Date().toISOString();
-      }
-      return {
-        code: a.code,
-        name: a.name,
-        description: a.description,
-        category: a.category,
-        target,
-        progress: Math.min(target, raw),
-        completedAt,
-      };
-    });
-    await repo.awardAchievements(this.db, playerId, toAward);
-    return { earned: items.filter((i) => i.completedAt).length, total: items.length, items };
+  /** Başarımlar (ortak değerlendirme: achievements.ts; oyun olayları da aynı fonksiyonu çağırır). */
+  private async syncAchievements(playerId: string, values: Record<string, number>): Promise<PilotProfile['achievements']> {
+    const r = await syncAchievements(this.db, playerId, values);
+    return { earned: r.earned, total: r.total, items: r.items };
   }
 
   // ================================================================== Profil güncelleme

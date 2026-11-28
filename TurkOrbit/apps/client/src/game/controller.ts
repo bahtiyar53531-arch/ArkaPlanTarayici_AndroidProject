@@ -26,6 +26,9 @@ import {
   type MoveInput,
   type PlayerSettings,
   type PortalInfo,
+  type QuestProgressUpdate,
+  type QuestsResponse,
+  type QuestView,
   type ServerMessage,
   type ShipState,
 } from '@turkorbit/shared';
@@ -72,6 +75,10 @@ export interface HudState {
   maxShield: number;
   combat: CombatState;
   dead: { by: string | null; kind: 'npc' | 'player' | 'other' } | null;
+  // --- Aşama 10: görevler (HUD izleyici + çekmece)
+  quests: QuestView[];
+  /** Sunucu "quests" bildirdikçe artar: açık görev çekmecesi listeyi yeniden ister */
+  questsVersion: number;
 }
 
 export interface RemoteShip {
@@ -163,6 +170,8 @@ export class GameController {
       maxShield: 0,
       combat: { target: null, attacking: false, ammo: 'ammo.isk1', rocket: 'rocket.yildirim', counts: {}, rocketCooldownMs: 0, laserRange: 0 },
       dead: null,
+      quests: [],
+      questsVersion: 0,
     };
   }
 
@@ -292,6 +301,7 @@ export class GameController {
           this.firstWelcome = null;
         } else if (wasReconnect) this.toast('success', 'Yeniden bağlandın.');
         this.emit();
+        void this.refreshQuests();
         break;
       }
       case 'map':
@@ -314,6 +324,13 @@ export class GameController {
       }
       case 'reward':
         this.onReward(m);
+        break;
+      case 'qp':
+        this.onQuestProgress(m.u);
+        break;
+      case 'quests':
+        this.state.questsVersion++;
+        void this.refreshQuests();
         break;
       case 'dead':
         this.state.dead = { by: m.by, kind: m.kind };
@@ -518,6 +535,50 @@ export class GameController {
   }
 
   // ================================================================== savaş komutları (niyet; karar sunucuda)
+  // ================================================================== görevler
+  /** HUD izleyicisi için görev listesi (oyun sunucusu ilerlemeyi 'qp' ile anlık bildirir). */
+  async refreshQuests() {
+    try {
+      const r = await api<{ quests: QuestsResponse }>('GET', `/quests?server=${SERVER}`);
+      if (this.disposed) return;
+      this.state.quests = r.quests.quests;
+      this.emit();
+    } catch {
+      /* görev listesi alınamazsa izleyici boş kalır; oyun etkilenmez */
+    }
+  }
+
+  setQuests(q: QuestsResponse) {
+    this.state.quests = q.quests;
+    this.emit();
+  }
+
+  /** Görev ödülüyle seviye değişince HUD güncellenir (oyun sunucusu da 'quests' ile yeniler). */
+  applyLevel(level: number) {
+    if (level === this.map.pilot.level) return;
+    this.map = { ...this.map, pilot: { ...this.map.pilot, level } };
+    this.emit();
+  }
+
+  private onQuestProgress(updates: QuestProgressUpdate[]) {
+    let missing = false;
+    for (const u of updates) {
+      const q = this.state.quests.find((x) => x.code === u.code && x.cycle === u.cycle);
+      if (!q) {
+        missing = true;
+        continue;
+      }
+      q.status = u.status;
+      for (const o of u.objectives) {
+        const obj = q.objectives.find((x) => x.id === o.id);
+        if (obj) obj.current = o.current;
+      }
+    }
+    this.state.quests = [...this.state.quests];
+    this.emit();
+    if (missing) void this.refreshQuests();
+  }
+
   private onReward(m: RewardMessage) {
     const parts: string[] = [];
     if (m.xp) parts.push(`+${fmtN(m.xp)} deneyim`);

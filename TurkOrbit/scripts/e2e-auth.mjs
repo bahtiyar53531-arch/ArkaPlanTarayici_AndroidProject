@@ -197,6 +197,15 @@ async function main() {
                    VALUES ((SELECT id FROM reward_tables WHERE code = 'npc.test-e2e'), 'currency', 'KREDI', 300, 300, 1, 'direct')`);
     await c.query(`INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds)
                    VALUES ((SELECT id FROM maps WHERE code = 'K-1'), (SELECT id FROM npc_types WHERE code = 'test-e2e'), '{"type":"circle","x":8000,"y":8000,"r":1}', 1, 600)`);
+    // Aşama 10: savaş adımında tamamlanacak bir görev (Çakal ailesi, şirketin 1. haritası)
+    await c.query(`INSERT INTO reward_tables (code, name) VALUES ('quest.test-e2e-av', 'Görev: E2E')`);
+    await c.query(`INSERT INTO reward_entries (reward_table_id, reward_type, ref_code, min_amount, max_amount, chance) VALUES
+                   ((SELECT id FROM reward_tables WHERE code = 'quest.test-e2e-av'), 'experience', 'XP', 200, 200, 1),
+                   ((SELECT id FROM reward_tables WHERE code = 'quest.test-e2e-av'), 'currency', 'KREDI', 400, 400, 1)`);
+    await c.query(`INSERT INTO quests (code, category, title, description, reward_table_id) VALUES
+                   ('test-e2e-av', 'main', 'Deneme Avı', 'E2E görevi', (SELECT id FROM reward_tables WHERE code = 'quest.test-e2e-av'))`);
+    await c.query(`INSERT INTO quest_objectives (quest_id, sort_order, objective_type, params, target, label) VALUES
+                   ((SELECT id FROM quests WHERE code = 'test-e2e-av'), 1, 'kill_npc', '{"family":["cakal"],"maps":["{c}-1"]}', 1, 'Çakal ailesinden NPC yok et ({c}-1)')`);
     await c.end();
   }
   const redisFlush = spawnSync('redis-cli', ['-u', REDIS_URL, 'FLUSHDB'], { encoding: 'utf8' });
@@ -532,6 +541,18 @@ async function main() {
     const t = await db.query(`SELECT reason FROM map_transitions ORDER BY id DESC LIMIT 1`);
     expect(t.rows[0].reason === 'map_closed', JSON.stringify(t.rows));
   });
+  await step('Görevler (Aşama 10): A (web) ve B (Android) kendi görev listelerini alır; günlük/haftalık atanır; A görevi kabul eder', async () => {
+    const qa = (await pc.req('GET', '/quests?server=TR1')).json.quests;
+    const qb = (await app.req('GET', '/quests?server=TR1')).json.quests;
+    const count = (q, cat) => q.quests.filter((x) => x.category === cat && x.status === 'active').length;
+    expect(count(qa, 'daily') === 3 && count(qa, 'weekly') === 3 && count(qb, 'daily') === 3, JSON.stringify({ a: count(qa, 'daily'), b: count(qb, 'daily') }));
+    expect(qa.quests.find((x) => x.code === 'cakal-avcisi-01')?.objectives[0]?.label === 'Çakal yok et (K-1)', 'Kızılelma için {c} → K');
+    expect(qb.quests.find((x) => x.code === 'cakal-avcisi-01')?.objectives[0]?.label === 'Çakal yok et (G-1)', 'Gökbörü için {c} → G');
+    const r = await pc.req('POST', '/quests/accept', { serverCode: 'TR1', code: 'test-e2e-av' });
+    expect(r.status === 200 && r.json.quests.quests.find((x) => x.code === 'test-e2e-av')?.status === 'active', JSON.stringify(r.json));
+    const bad = await pc.req('POST', '/quests/progress', { serverCode: 'TR1', code: 'test-e2e-av', amount: 1 });
+    expect(bad.status === 404, 'ilerleme yazan uç olmamalı');
+  });
   await step('Savaş: A (web) WebSocket ile NPC\'yi hedefler ve vurur; sunucu NPC\'yi yok eder, ödül defterli verilir (Aşama 9)', async () => {
     await place('AnadoluKartali', 7700, 8000, 'K-1');
     const g = await GameConn.open(pc);
@@ -547,8 +568,21 @@ async function main() {
     await g.wait('snap', (m) => (m.fx ?? []).some((f) => f[0] === 'x' && f[1] === npc.id), 3000);
     const fx = g.msgs.filter((m) => m.t === 'snap').flatMap((m) => m.fx ?? []);
     expect(fx.some((f) => f[0] === 'l' && f[2] === npc.id), 'lazer efekti gelmeli');
+    // Aşama 10: görev ilerlemesi oyun sunucusundan canlı gelir
+    const qp = await g.wait('qp', (m) => m.u.some((x) => x.code === 'test-e2e-av' && x.status === 'completed'), 5000);
+    expect(qp.u.find((x) => x.code === 'test-e2e-av').objectives[0].current === 1, JSON.stringify(qp));
     await g.close();
     await waitOffline('AnadoluKartali');
+  });
+  await step('Görev ödülü: A tamamlanan görevin ödülünü alır (defterli); ikinci istek yeniden ödül vermez; B alamaz', async () => {
+    const r1 = await pc.req('POST', '/quests/claim', { serverCode: 'TR1', code: 'test-e2e-av' });
+    expect(r1.status === 200 && r1.json.replay === false && r1.json.reward.xp === 200, JSON.stringify(r1.json));
+    const r2 = await pc.req('POST', '/quests/claim', { serverCode: 'TR1', code: 'test-e2e-av' });
+    expect(r2.status === 200 && r2.json.replay === true, JSON.stringify(r2.json));
+    const rb = await app.req('POST', '/quests/claim', { serverCode: 'TR1', code: 'test-e2e-av' });
+    expect(rb.status === 409, `B: ${rb.status}`);
+    const l = await db.query(`SELECT l.delta FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id WHERE u.username = 'AnadoluKartali' AND l.reason = 'quest_reward'`);
+    expect(l.rows.length === 1 && Number(l.rows[0].delta) === 400, JSON.stringify(l.rows));
   });
   await step('Ayarlar cihaz sınıfına göre ayrı saklanır; geçersiz değer reddedilir; B, A\'nın ayarını görmez', async () => {
     const d = (await pc.req('GET', '/settings?deviceClass=desktop')).json.settings;

@@ -136,6 +136,8 @@ export const settingsSchema = z.strictObject({
     attack: keyCode,
     rocket: keyCode,
     nextTarget: keyCode,
+    /** Aşama 10: görev çekmecesi */
+    quests: keyCode,
   }),
   graphics: z.strictObject({
     quality: z.enum(['low', 'medium', 'high']),
@@ -174,6 +176,7 @@ export function defaultSettings(device: DeviceClass): PlayerSettings {
       attack: 'Space',
       rocket: 'KeyR',
       nextTarget: 'Tab',
+      quests: 'KeyQ',
     },
     graphics: { quality: device === 'phone' ? 'medium' : 'high', fpsLimit: 60, showFps: false },
     hud: { scale: device === 'phone' ? 0.9 : 1, minimapSize: touch ? 'small' : 'medium', showCoordinates: true },

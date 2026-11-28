@@ -488,3 +488,34 @@ select, .motto-form input {
 
 .topnav a.nav-play { color: #fff; background: var(--accent); font-weight: 700; }
 .topnav a.nav-play:hover, .topnav a.nav-play.active { background: var(--accent-hover); }
+
+/* ================================================================== Görevler (Aşama 10) */
+.badge-info { color: #bae6fd; border-color: #0284c7; background: #0c4a6e40; }
+.badge-muted { color: var(--muted); border-color: var(--border-strong); background: #ffffff08; }
+.btn-claim { background: linear-gradient(180deg, #f5b700, #d48f00); color: #1a1200; border-color: #f5b700; font-weight: 800; }
+.btn-claim:hover:not(:disabled) { filter: brightness(1.08); }
+.quest-board .tabs { margin-top: 0; }
+.quest-ready-dot { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #f5b700; color: #1a1200; font-size: 12px; font-weight: 800; }
+.quest-info { margin: 0 0 10px; }
+.quest-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.quest { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: #0a1129; display: flex; flex-direction: column; gap: 6px; }
+.quest-completed { border-color: #b45309; background: linear-gradient(180deg, #2a1f0a, #0a1129 70%); }
+.quest-locked, .quest-claimed { opacity: 0.75; }
+.quest-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.quest-title { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
+.quest-chain { color: var(--cyan); }
+.quest-desc { margin: 0; color: #cfd7f5; font-size: 14px; }
+.quest-objectives { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.quest-obj-row { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.quest-obj-row .mono { flex: none; color: #dbe4ff; }
+.quest-objectives .bar { margin-top: 3px; height: 6px; }
+.quest-rewards { display: flex; flex-wrap: wrap; gap: 6px; }
+.quest-reward { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: #ffffff0d; border: 1px solid var(--border-strong); color: #dbe4ff; }
+.quest-reward.reward-akce, .quest-reward.reward-design { color: #f5b700; border-color: #b45309; }
+.quest-reward.reward-xp { color: #7fdcff; }
+.quest-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.quest-actions:empty { display: none; }
+.quest-done { margin-top: 12px; }
+.quest-done summary { cursor: pointer; color: var(--muted); font-weight: 700; padding: 6px 0; min-height: var(--tap); display: flex; align-items: center; }
+.quest-board.compact .quest { padding: 10px 12px; }
+.quest-board.compact .quest-title { font-size: 15px; }
