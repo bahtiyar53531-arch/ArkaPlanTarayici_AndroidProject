@@ -66,9 +66,21 @@ Kurallar ve API: [Yönetim Merkezi Kuralları ve API](../Asama-14-Yonetim-Merkez
 | Paylaşılan birim testleri | ✅ 95/95 (5 yeni) |
 | API entegrasyon testleri (**gerçek PostgreSQL + Redis + WebSocket**) | ✅ 214/214 (17 yeni: 14 yönetim + 3 canlı yansıma) |
 | API uçtan uca (ayrı API + oyun sunucusu süreçleri) | ✅ 55/55 adım (3 yeni) |
-| Tarayıcı uçtan uca (Chromium: 3 masaüstü hesap + iPhone 13) | UI_SONUC |
-| `npm run build`, `npm audit` | BUILD_SONUC |
+| Tarayıcı uçtan uca (Chromium: 3 masaüstü hesap + iPhone 13) | ✅ 84/84 adım (10 yeni), son iki koşuda üst üste. Başsız yazılımsal çizimde FPS: masaüstü 21, telefon emülasyonu 45. Bu bir ölçüm ortamı değeridir, gerçek cihaz FPS'i değildir. Koşu geçmişi için aşağıdaki nota bak |
+| `npm run build`, `npm audit` | ✅ Paylaşılan, API, istemci ve panel derlendi; 0 güvenlik açığı |
 | Şema doğrulama | ✅ 0001 → 0010 + taslak boş veritabanına hatasız (100 tablo) |
+
+**Tarayıcı testi koşu geçmişi (dürüst kayıt):**
+
+| Koşu | Sonuç | Düşen adım ve sebebi |
+|---|---|---|
+| 1 | 82/84 | "B hareket eder" (yük altında süre yetmedi) ve Aşama 9 hedef paneli (yüzde göstergesi kalkmıştı; düzeltildi, bkz. §5-5) |
+| 2 | 83/84 | "B hareket eder" (adım henüz sabit süre bekliyordu; düzeltildi, bkz. §5-6) |
+| 3 | 83/84 | Aşama 7 geçit adımı: "bölgesine geçtin" bildirimi görev bildirimiyle siliniyordu (gerçek hata; düzeltildi, bkz. §5-8) |
+| 4 | 84/84 | — |
+| 5 (son) | 84/84 | — (giriş geçmişi etiketleri dahil son kod; teslim edilen ekran görüntüleri bu koşudan) |
+
+Aşama 14'ün 10 yeni adımı beş koşunun hepsinde geçti.
 
 **Doğrulananlar (entegrasyon testleri):**
 - **403 matrisi:**
