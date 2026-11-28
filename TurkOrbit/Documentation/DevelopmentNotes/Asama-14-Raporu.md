@@ -167,6 +167,7 @@ Kurallar ve API: [Yönetim Merkezi Kuralları ve API](../Asama-14-Yonetim-Merkez
    - Bir tarayıcı koşusunda Aşama 7'nin "J ile geçitten atlama" adımı düştü. Sunucu geçişi doğru kaydetmişti; ama "G-2 … bölgesine geçtin" bildirimi ekranda görülmedi.
    - Sebep: O koşuda rastgele atanan günlük görev "Şirket Turu" (G-1 ve G-2'yi ziyaret et) geçişle tamamlandı. Sunucu yaklaşık 200 ms sonra "Görev tamamlandı" bildirimini gönderdi. İstemcide tek bildirim yeri olduğu için yeni bildirim öncekini anında sildi. Oyuncu da geçiş mesajını göremiyordu; adımın bazen düşmesinin nedeni günlük görevin rastgele seçilmesiydi.
    - Düzeltme: Bildirimler artık üst üste diziliyor (en fazla 3, her biri 4,5 saniye). Aynı metin yeniden gelirse ikinci kopya açılmıyor, süresi tazeleniyor. Bildirim alanı tıklamaları oyuna geçiriyor.
+9. **Panelde ham kod:** Oyuncu sayfasının "Son girişler" listesinde başarısız giriş sebebi `account_suspended` gibi ham kodla görünüyordu (ekran görüntüsünde görüldü). Artık oyuncunun güvenlik sayfasındaki ortak Türkçe etiketler kullanılıyor ("Askıya alınmış hesap").
 
 ## 6. Bilinen sınırlamalar
 | # | Konu | Plan |

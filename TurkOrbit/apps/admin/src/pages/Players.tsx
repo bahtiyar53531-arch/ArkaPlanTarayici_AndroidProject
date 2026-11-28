@@ -1,4 +1,5 @@
 import {
+  LOGIN_FAILURE_LABELS_TR,
   ROLES,
   ROLE_LABELS_TR,
   SANCTION_LABELS,
@@ -224,7 +225,7 @@ export function PlayerDetailPage() {
           <h2>Son girişler</h2>
           <table className="table"><tbody>
             {p.logins.map((l, i) => (
-              <tr key={i}><td>{l.success ? <Badge kind="ok">Başarılı</Badge> : <Badge kind="warn">{l.reason ?? 'Başarısız'}</Badge>}</td><td>{l.platform}</td><td className="mono small">{l.ip}</td><td className="small muted">{formatDate(l.at)}</td></tr>
+              <tr key={i}><td>{l.success ? <Badge kind="ok">Başarılı</Badge> : <Badge kind="warn">{l.reason ? (LOGIN_FAILURE_LABELS_TR[l.reason] ?? l.reason) : 'Başarısız'}</Badge>}</td><td>{l.platform}</td><td className="mono small">{l.ip}</td><td className="small muted">{formatDate(l.at)}</td></tr>
             ))}
           </tbody></table>
         </div>
