@@ -1,0 +1,25 @@
+{
+  "name": "@turkorbit/admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TÜRK ORBIT YÖNETİM MERKEZİ — yetki tabanlı yönetim paneli (aynı API ve oturum; üretimde /yonetim/)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@turkorbit/shared": "0.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.7"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^7.3.8"
+  }
+}

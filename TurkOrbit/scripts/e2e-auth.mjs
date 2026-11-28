@@ -848,6 +848,72 @@ async function main() {
     const v = await app.req('GET', `/support/tickets/${ticketNo}`);
     expect(v.json.ticket.messages.length === 2 && v.json.ticket.messages[1].author === 'Türk Orbit Destek', JSON.stringify(v.json.ticket.messages));
   });
+  // ------------------------------------------------------------------ Aşama 14: Yönetim Merkezi (ayrı API ve oyun sunucusu süreçleri)
+  const q14 = async (sql, params = []) => {
+    const c = new pg.Client({ connectionString: DB_URL });
+    await c.connect();
+    try {
+      return (await c.query(sql, params)).rows;
+    } finally {
+      await c.end();
+    }
+  };
+  await step('Yönetim Merkezi: oyuncu B yönetim uçlarına 403 alır; rol aracıyla A\'ya oyun yöneticisi → pano gerçek veri ve oyun sunucusu nabzı', async () => {
+    const d = await app.req('GET', '/admin/dashboard');
+    expect(d.status === 403 && d.json.error.code === 'FORBIDDEN', JSON.stringify(d.json));
+    const g = spawnSync(tsx, ['apps/api/src/scripts/role-cli.ts', 'grant', '--user', 'AnadoluKartali', '--role', 'game_admin', '--reason', 'E2E yönetim'], { cwd: ROOT, env, encoding: 'utf8' });
+    expect(g.status === 0, g.stderr || g.stdout);
+    let dash = null;
+    for (let i = 0; i < 40; i++) {
+      dash = await pc.req('GET', '/admin/dashboard');
+      if (dash.json.nodes?.length) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const users = (await q14(`SELECT count(*)::int AS n FROM users WHERE status <> 'deleted'`))[0].n;
+    expect(dash.status === 200 && dash.json.players.total === users && dash.json.nodes.length === 1, JSON.stringify(dash.json).slice(0, 400));
+  });
+  await step('Canlı yansıma (süreçler arası): A NPC canını yayımlar → Redis → oyun sunucusu süreci → B\'nin bağlantısında yeni azami can', async () => {
+    const bInfo = (await q14(`SELECT p.id, co.code FROM players p JOIN users u ON u.id = p.user_id JOIN companies co ON co.id = p.company_id WHERE u.username = 'GokBoru'`))[0];
+    // Oda yalnızca boşken yeniden kurulur (doğma noktaları oda kurulurken okunur): çevrimiçi pilot olmayan bir harita seçilir
+    const keys = spawnSync('redis-cli', ['-u', REDIS_URL, '--scan', '--pattern', 'game:presence:*'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    const occupied = new Set(keys.map((k) => JSON.parse(spawnSync('redis-cli', ['-u', REDIS_URL, 'GET', k], { encoding: 'utf8' }).stdout.trim() || '{}').map));
+    const map = [`${bInfo.code[0]}-2`, `${bInfo.code[0]}-1`].find((m) => !occupied.has(m));
+    expect(map, `boş harita yok: ${[...occupied].join(',')}`);
+    await q14(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-e2e-hedef', 'E2E')`);
+    const t = (await q14(
+      `INSERT INTO npc_types (code, name, family, level, sprite_key, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id)
+       VALUES ('test-e2e-hedef', 'Deneme Hedefi', 'cakal', 1, 'npc-cakal', 3000, 0, 0, 0, 1000, 450, 1, '{"behavior":"passive","patrol_radius":1}', 1, (SELECT id FROM reward_tables WHERE code = 'npc.test-e2e-hedef')) RETURNING id`,
+    ))[0];
+    await q14(`INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds) VALUES ((SELECT id FROM maps WHERE code = $1), $2, '{"type":"circle","x":15000,"y":3000,"r":1}', 1, 600)`, [map, t.id]);
+    await q14(`UPDATE players SET pos_x = 15100, pos_y = 3000, map_id = (SELECT id FROM maps WHERE code = $2) WHERE id = $1`, [bInfo.id, map]);
+    const gb = await GameConn.open(app);
+    await gb.wait('enter', (m) => m.e.some((e) => e.n === 'Deneme Hedefi' && e.mh === 3000)).catch((err) => {
+      throw new Error(`${err.message}; harita=${gb.welcome.map.map.code} konum=${gb.welcome.you.slice(0, 2)} seçilen=${map} dolu=${[...occupied].join(',')}`);
+    });
+    const draft = await pc.req('POST', `/admin/content/npc_type/${t.id}/drafts`, { changes: { hitpoints: 6000 }, note: 'E2E canlı yansıma' });
+    expect(draft.status === 200 && draft.json.content.draft.diff[0].after === 6000, JSON.stringify(draft.json).slice(0, 300));
+    const pub = await pc.req('POST', `/admin/content/npc_type/revisions/${draft.json.content.draft.id}/publish`);
+    expect(pub.status === 200, JSON.stringify(pub.json).slice(0, 300));
+    await gb.wait('enter', (m) => m.e.some((e) => e.n === 'Deneme Hedefi' && e.mh === 6000), 8000);
+    await gb.close();
+  });
+  await step('Askı (süreçler arası): A, B\'yi askıya alır → B\'nin oyun bağlantısı gerekçeli mesajla 4003 ile kapanır, oturumu düşer; ban kaldırılınca giriş yapar', async () => {
+    const bId = (await q14(`SELECT id FROM users WHERE username = 'GokBoru'`))[0].id;
+    const gb = await GameConn.open(app);
+    const r = await pc.req('POST', `/admin/players/${bId}/suspend`, { reason: 'E2E yaptırım', publicReason: 'Kural ihlali', hours: 1 });
+    expect(r.status === 200 && r.json.status === 'applied', JSON.stringify(r.json));
+    const kick = await gb.wait('kick', () => true, 8000);
+    expect(kick.code === 4003 && kick.message.includes('askıya alındı') && kick.message.includes('Kural ihlali'), JSON.stringify(kick));
+    expect((await gb.closed) === 4003, 'bağlantı 4003 ile kapanmalı');
+    expect((await app.req('GET', '/auth/me')).status === 401, 'askıdaki oyuncunun oturumu düşmeli');
+    const un = await pc.req('POST', `/admin/players/${bId}/unban`, { reason: 'E2E kaldırma' });
+    expect(un.status === 200, JSON.stringify(un.json));
+    const lg = await app.req('POST', '/auth/login', { identifier: 'GokBoru', password: 'Yeni_Gezegen_Rotasi_42', transport: 'token', device: { platform: 'android' } });
+    expect(lg.status === 200 && lg.json.sessionToken, JSON.stringify(lg.json).slice(0, 200));
+    app.bearer = lg.json.sessionToken;
+    const actions = (await q14(`SELECT action FROM admin_audit_log WHERE action IN ('content.publish', 'player.suspension', 'player.unban') ORDER BY id`)).map((x) => x.action);
+    expect(JSON.stringify(actions) === '["content.publish","player.suspension","player.unban"]', JSON.stringify(actions));
+  });
   await step('Çıkış: oturum sunucuda iptal edilir', async () => {
     const r = await pc.req('POST', '/auth/logout', {});
     expect(r.status === 200, JSON.stringify(r.json));

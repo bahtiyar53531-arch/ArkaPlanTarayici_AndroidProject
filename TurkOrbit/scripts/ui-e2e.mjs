@@ -39,6 +39,7 @@ const SHOTS10 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuler
 const SHOTS11 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-11');
 const SHOTS12 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-12');
 const SHOTS13 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-13');
+const SHOTS14 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-14');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -46,6 +47,9 @@ const WEB_PORT = 5174;
 const SMTP_PORT = 2526;
 const GAME_PORT = 4102;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
+// Aşama 14: Yönetim Merkezi (ayrı Vite uygulaması, /yonetim/ altında; aynı API ve oturum çerezi)
+const ADMIN_PORT = 5176;
+const ADMIN = `http://127.0.0.1:${ADMIN_PORT}/yonetim`;
 mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SHOTS5, { recursive: true });
 mkdirSync(SHOTS6, { recursive: true });
@@ -56,6 +60,7 @@ mkdirSync(SHOTS10, { recursive: true });
 mkdirSync(SHOTS11, { recursive: true });
 mkdirSync(SHOTS12, { recursive: true });
 mkdirSync(SHOTS13, { recursive: true });
+mkdirSync(SHOTS14, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -89,7 +94,7 @@ const env = {
   DATABASE_URL: DB_URL,
   REDIS_URL,
   PUBLIC_WEB_URL: WEB,
-  ALLOWED_ORIGINS: WEB,
+  ALLOWED_ORIGINS: `${WEB},http://127.0.0.1:${ADMIN_PORT}`,
   CSRF_SECRET: 'ui-e2e-csrf-secret-at-least-32-characters',
   MAIL_TRANSPORT: 'smtp',
   SMTP_URL: `smtp://127.0.0.1:${SMTP_PORT}?ignoreTLS=true`,
@@ -187,6 +192,16 @@ try {
       `INSERT INTO quest_objectives (quest_id, sort_order, objective_type, params, target, label)
        VALUES ((SELECT id FROM quests WHERE code = 'test-ui-av'), 1, 'kill_npc', '{"family":["cakal"],"maps":["{c}-1"]}', 1, 'Çakal ailesinden NPC yok et ({c}-1)')`,
     );
+    // Aşama 14: Yönetim Merkezi'nden canı değiştirilecek pasif eğitim hedefi (G-1)
+    await s.query(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-ui-hedef', 'Eğitim')`);
+    await s.query(
+      `INSERT INTO npc_types (code, name, family, level, sprite_key, scale, color_hex, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id) VALUES
+       ('test-ui-hedef', 'Eğitim Hedefi', 'cakal', 1, 'npc-cakal', 1, '#7AB7E0', 5000, 0, 0, 0, 1000, 450, 1, '{"behavior":"passive","patrol_radius":1}', 10, (SELECT id FROM reward_tables WHERE code = 'npc.test-ui-hedef'))`,
+    );
+    await s.query(
+      `INSERT INTO npc_spawns (map_id, npc_type_id, area, max_alive, respawn_seconds) VALUES
+       ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM npc_types WHERE code = 'test-ui-hedef'), '{"type":"circle","x":9000,"y":3000,"r":1}', 1, 600)`,
+    );
     // Aşama 11: G-1'de test maden noktaları (biri toplanacak, üçü görünecek) ve 2 sn'lik test tarifi
     await s.query(
       `INSERT INTO resource_nodes (map_id, item_type_id, area, max_count, respawn_seconds, yield_min, yield_max) VALUES
@@ -207,6 +222,13 @@ try {
       stdio: ['ignore', 'ignore', 'inherit'],
     }),
   );
+  procs.push(
+    spawn(path.join(ROOT, 'node_modules/.bin/vite'), ['--host', '127.0.0.1', '--port', String(ADMIN_PORT), '--strictPort'], {
+      cwd: path.join(ROOT, 'apps/admin'),
+      env,
+      stdio: ['ignore', 'ignore', 'inherit'],
+    }),
+  );
   // Oyun sunucusu günlüğü (hata ayıklama için): test-results/ui-e2e-game.log
   mkdirSync(path.join(ROOT, 'test-results'), { recursive: true });
   const gameLog = openSync(path.join(ROOT, 'test-results/ui-e2e-game.log'), 'w');
@@ -219,6 +241,7 @@ try {
   await startGame();
   await waitHttp(`http://127.0.0.1:${API_PORT}/api/v1/health`);
   await waitHttp(WEB);
+  await waitHttp(`${ADMIN}/`);
 
   browser = await playwright.chromium.launch();
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
@@ -1026,6 +1049,233 @@ try {
   });
   await desktopB2.close();
   await guestCtx.close();
+
+  console.log('Aşama 14 — Yönetim Merkezi (yönetici A + oyuncu B + ikinci yetkili C)');
+  const desktopB3 = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
+  const pcB3 = await desktopB3.newPage();
+  pcB3.on('pageerror', (e) => pageErrors.push(`pcB3: ${e.message}`));
+  const C = { username: 'KomutaIkinci', email: 'komuta.ikinci@ornek.com', password: 'Malazgirt_Zaferi_1071' };
+  const shot14 = (page, name, fullPage = false) => page.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS14, name), fullPage });
+  const dialog = async (page, reason, extra = {}) => {
+    const d = page.getByTestId('action-dialog');
+    await d.waitFor();
+    if (extra.hours) await d.getByTestId('dialog-hours').selectOption(String(extra.hours));
+    if (extra.public) await d.getByTestId('dialog-public').fill(extra.public);
+    await d.getByTestId('dialog-reason').fill(reason);
+    await d.getByTestId('dialog-confirm').click();
+    await d.waitFor({ state: 'detached' });
+  };
+  const loginB = async () => {
+    await pcB3.goto(`${WEB}/giris`);
+    await pcB3.getByLabel('Kullanıcı adı veya e-posta').fill(B.username);
+    await pcB3.getByLabel('Parola', { exact: true }).fill(B.password);
+    await pcB3.getByRole('button', { name: 'Giriş yap' }).click();
+    await pcB3.getByRole('heading', { name: B.username }).waitFor();
+  };
+  const kredi = async (username) =>
+    Number((await db.query(`SELECT w.balance FROM wallets w JOIN players p ON p.id = w.player_id JOIN users u ON u.id = p.user_id WHERE u.username = $1 AND w.currency_code = 'KREDI'`, [username])).rows[0].balance);
+  await step('Yönetim Merkezi: oyuncu hesabıyla açılınca "Yetkin yok" görünür; yönetim API\'si oyuncuya 403 döner', async () => {
+    await loginB();
+    await pcB3.goto(`${ADMIN}/`);
+    await pcB3.getByTestId('not-staff').waitFor();
+    const st = await pcB3.evaluate(async () => (await fetch('/api/v1/admin/dashboard', { credentials: 'include' })).status);
+    if (st !== 403) throw new Error(`oyuncuya yönetim API'si ${st} döndü`);
+  });
+  await step('Rol aracıyla A\'ya oyun ve sistem yöneticisi rolleri; pano gerçek oyuncu sayısını ve oyun sunucusu nabzını gösterir', async () => {
+    await db.query(
+      `INSERT INTO user_roles (user_id, role_key, reason) SELECT u.id, r, 'UI testi' FROM users u, unnest(ARRAY['game_admin', 'system_admin']) AS r WHERE u.username = $1 ON CONFLICT DO NOTHING`,
+      [A.username],
+    );
+    await pc.goto(`${ADMIN}/`);
+    await pc.getByTestId('dash-stats').waitFor();
+    const total = (await db.query(`SELECT count(*)::int AS n FROM users WHERE status <> 'deleted'`)).rows[0].n;
+    const shown = await pc.locator('.stat').filter({ hasText: 'Toplam oyuncu' }).locator('.stat-value').innerText();
+    if (shown !== total.toLocaleString('tr-TR')) throw new Error(`panoda ${shown}, veritabanında ${total} oyuncu`);
+    await pc.getByTestId('dash-nodes').locator('tbody tr').first().waitFor({ timeout: 12_000 });
+    await pc.getByTestId('status-bar').getByText('1 oyun sunucusu').waitFor();
+    await shot14(pc, '01-pano.jpg', true);
+  });
+  await step('NPC CANI DEĞİŞİNCE OYUNDA DEĞİŞİR: A taslak kaydeder (fark), yayımlar → oyundaki B\'nin hedef panelinde yeni azami can', async () => {
+    await teleport(pcB3, B.username, 9150, 3000, 'G-1');
+    await singleCanvas(pcB3);
+    await pcB3.getByTestId('target-button').click();
+    await pcB3.getByTestId('target-name').getByText('Eğitim Hedefi').waitFor({ timeout: 8000 });
+    await pcB3.getByTestId('target-hp').getByText('5.000 / 5.000').waitFor();
+    const npcId = (await db.query(`SELECT id FROM npc_types WHERE code = 'test-ui-hedef'`)).rows[0].id;
+    await pc.goto(`${ADMIN}/icerik/npc_type`);
+    await pc.getByTestId(`content-${npcId}`).click();
+    await pc.getByTestId('f-hitpoints').fill('8000');
+    await pc.getByTestId('draft-note').fill('Eğitim hedefi çok çabuk düşüyordu');
+    await pc.getByTestId('draft-save').click();
+    await pc.getByTestId('diff').getByText('8.000').waitFor();
+    if ((await db.query(`SELECT hitpoints FROM npc_types WHERE id = $1`, [npcId])).rows[0].hitpoints !== 5000) throw new Error('taslak veritabanını değiştirdi');
+    await shot14(pc, '02-npc-taslak-fark.jpg', true);
+    await pc.getByTestId('publish').click();
+    await pc.getByTestId('content-msg').getByText('Yayımlandı', { exact: false }).waitFor();
+    await pcB3.getByTestId('target-hp').getByText('8.000 / 8.000').waitFor({ timeout: 8000 });
+    await shot14(pcB3, '03-oyunda-yeni-npc-cani.jpg');
+  });
+  await step('FİYAT DEĞİŞİNCE MAĞAZADA DEĞİŞİR: A fiyatı yayımlar → B yeni fiyatı görür; "Bu sürüme dön" ile eski fiyat geri gelir', async () => {
+    const offerId = (await db.query(`SELECT o.id FROM shop_offers o JOIN item_types it ON it.id = o.item_type_id WHERE it.code = 'rocket.yildirim'`)).rows[0].id;
+    const price = async () => {
+      await pcB3.goto(`${WEB}/magaza`);
+      await pcB3.getByRole('tab', { name: 'Roketler' }).click();
+      return pcB3.locator('.offer').filter({ hasText: 'Yıldırım R-1' }).locator('.price b').innerText();
+    };
+    const before = await price();
+    if (!before.includes('1.000')) throw new Error(`başlangıç fiyatı: ${before}`);
+    await pc.goto(`${ADMIN}/icerik/shop_offer/${offerId}`);
+    await pc.getByTestId('f-price').fill('1500');
+    await pc.getByTestId('draft-save').click();
+    await pc.getByTestId('diff').waitFor();
+    await pc.getByTestId('publish').click();
+    await pc.getByTestId('content-msg').getByText('Yayımlandı', { exact: false }).waitFor();
+    const after = await price();
+    if (!after.includes('1.500')) throw new Error(`yayından sonra fiyat: ${after}`);
+    await pcB3.locator('.offer').filter({ hasText: 'Yıldırım R-1' }).scrollIntoViewIfNeeded();
+    await shot14(pcB3, '04-magazada-yeni-fiyat.jpg');
+    await pc.getByTestId('rollback-1').click();
+    await pc.getByTestId('content-msg').getByText('geri yüklendi', { exact: false }).waitFor();
+    await shot14(pc, '05-surum-gecmisi-geri-alma.jpg', true);
+    const back = await price();
+    if (!back.includes('1.000')) throw new Error(`geri almadan sonra fiyat: ${back}`);
+  });
+  await step('GÖREV YAYIMLANINCA OYUNCU GÖRÜR: A yeni etkinlik görevi oluşturur (yayımlanmaz, B görmez) → yayımlar → B görev listesinde görür', async () => {
+    await pc.goto(`${ADMIN}/icerik/quest/yeni`);
+    await pc.getByTestId('q-code').fill('ui_cakal_avi');
+    await pc.getByTestId('q-title').fill('Çakal Avı Haftası');
+    await pc.getByTestId('q-desc').fill('Bu hafta Gökbörü çevresindeki çakalları temizle.');
+    await pc.getByTestId('q-target').fill('5');
+    await pc.getByTestId('q-label').fill('5 Çakal yok et');
+    await pc.getByTestId('q-params').fill('cakal');
+    await pc.getByTestId('q-create').click();
+    await pc.waitForURL(/\/yonetim\/icerik\/quest\/\d+$/);
+    await pcB3.goto(`${WEB}/gorevler`);
+    await pcB3.getByTestId('quest-tab-event').click();
+    await pcB3.getByTestId('quest-board').waitFor();
+    if ((await pcB3.getByText('Çakal Avı Haftası').count()) !== 0) throw new Error('yayımlanmamış görev oyuncuya göründü');
+    await pc.getByTestId('f-is_published').selectOption('1');
+    await pc.getByTestId('draft-save').click();
+    await pc.getByTestId('publish').click();
+    await pc.getByTestId('content-msg').getByText('Yayımlandı', { exact: false }).waitFor();
+    await pcB3.reload();
+    await pcB3.getByTestId('quest-tab-event').click();
+    await pcB3.getByText('Çakal Avı Haftası').first().waitFor({ timeout: 8000 });
+    await shot14(pcB3, '06-oyuncu-yeni-gorevi-goruyor.jpg', true);
+  });
+  await step('İKİ YETKİLİ ONAYI: A eşik üstü para verme talebi açar ve kendisi onaylayamaz; ikinci yetkili C onaylar, B\'nin bakiyesine eklenir', async () => {
+    const reg = await fetch(`http://127.0.0.1:${API_PORT}/api/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: C.username, email: C.email, password: C.password, acceptTerms: true }),
+    });
+    if (reg.status !== 201) throw new Error(`C kaydı: ${reg.status}`);
+    const token = new URL(await linkFor(C.email, 'doğrula')).searchParams.get('token');
+    const ver = await fetch(`http://127.0.0.1:${API_PORT}/api/v1/auth/verify-email`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+    if (!ver.ok) throw new Error(`C doğrulama: ${ver.status}`);
+    await db.query(`INSERT INTO user_roles (user_id, role_key, reason) SELECT id, 'game_admin', 'UI testi' FROM users WHERE username = $1`, [C.username]);
+    const bPilot = (await db.query(`SELECT p.id FROM players p JOIN users u ON u.id = p.user_id WHERE u.username = $1`, [B.username])).rows[0].id;
+    const start = await kredi(B.username);
+    await pc.goto(`${ADMIN}/ekonomi?pilot=${bPilot}`);
+    await pc.getByTestId('grant-pilot').waitFor();
+    await pc.getByTestId('grant-amount').fill('2000000');
+    await pc.getByTestId('grant-reason').fill('Turnuva birinciliği ödülü');
+    await pc.getByTestId('grant-submit').click();
+    await pc.getByTestId('grant-msg').getByText('onay talebi oluşturuldu', { exact: false }).waitFor();
+    if ((await kredi(B.username)) !== start) throw new Error('onaysız para verildi');
+    await pc.goto(`${ADMIN}/onaylar`);
+    await pc.getByTestId('approval-waiting').getByText('Bu senin talebin', { exact: false }).waitFor();
+    await shot14(pc, '07-onay-bekliyor.jpg', true);
+    const cCtx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
+    const pcC = await cCtx.newPage();
+    pcC.on('pageerror', (e) => pageErrors.push(`pcC: ${e.message}`));
+    await pcC.goto(`${ADMIN}/`);
+    await pcC.getByTestId('login-id').fill(C.username);
+    await pcC.getByTestId('login-password').fill(C.password);
+    await pcC.getByTestId('login-submit').click();
+    await pcC.getByTestId('dash-stats').waitFor();
+    await pcC.goto(`${ADMIN}/onaylar`);
+    await pcC.getByTestId('approve').first().click();
+    await pcC.getByTestId('approval-msg').getByText('Onaylandı ve uygulandı', { exact: false }).waitFor();
+    await shot14(pcC, '08-ikinci-yetkili-onayladi.jpg', true);
+    await cCtx.close();
+    const end = await kredi(B.username);
+    if (end - start !== 2_000_000) throw new Error(`bakiye farkı ${end - start}`);
+  });
+  await step('YAPTIRIM: A, B\'yi askıya alır → oyundaki B gerekçeyle anında atılır ve giriş yapamaz; A banı kaldırınca B girer', async () => {
+    await pcB3.goto(`${WEB}/oyna`);
+    await pcB3.locator('.hud-minimap-title').waitFor();
+    await pc.goto(`${ADMIN}/oyuncular`);
+    await pc.getByTestId('player-search').fill(B.username);
+    await pc.getByTestId('player-search').press('Enter');
+    await pc.getByTestId(`player-${B.username}`).click();
+    await pc.getByTestId('act-suspend').click();
+    await dialog(pc, 'Sohbette tekrarlanan hakaret şikâyeti incelendi', { hours: 1, public: 'Sohbette hakaret' });
+    await pc.getByTestId('player-done').waitFor();
+    await pcB3.getByTestId('conn-ended').getByText('askıya alındı', { exact: false }).waitFor({ timeout: 8000 });
+    await pcB3.getByTestId('conn-ended').getByText('Sohbette hakaret', { exact: false }).waitFor();
+    await shot14(pcB3, '09-oyunda-askiya-alindi.jpg');
+    await shot14(pc, '10-oyuncu-yonetimi.jpg', true);
+    await pcB3.goto(`${WEB}/giris`);
+    await pcB3.getByLabel('Kullanıcı adı veya e-posta').fill(B.username);
+    await pcB3.getByLabel('Parola', { exact: true }).fill(B.password);
+    await pcB3.getByRole('button', { name: 'Giriş yap' }).click();
+    await pcB3.getByText('askıya alındı', { exact: false }).waitFor();
+    await pc.getByTestId('act-unban').click();
+    await dialog(pc, 'İtiraz değerlendirildi, uyarı yeterli');
+    await pc.getByTestId('player-done').waitFor();
+    await loginB();
+  });
+  await step('BAKIM MODU: A açar → oyundaki B mesajla çıkarılır ve oyuna giremez; A kapatınca B oyuna girer', async () => {
+    await pcB3.goto(`${WEB}/oyna`);
+    await pcB3.locator('.hud-minimap-title').waitFor();
+    await pc.goto(`${ADMIN}/sistem`);
+    await pc.getByTestId('maint-message').fill('Planlı bakım: 10 dakika sonra dönüyoruz.');
+    await pc.getByTestId('maint-on').click();
+    await dialog(pc, 'Veritabanı bakımı');
+    await pc.getByTestId('system-msg').getByText('Bakım modu açıldı.').waitFor();
+    await pcB3.getByTestId('conn-ended').getByText('Planlı bakım', { exact: false }).waitFor({ timeout: 8000 });
+    await shot14(pcB3, '11-bakim-modu-oyuncu.jpg');
+    await pcB3.goto(`${WEB}/oyna`);
+    await pcB3.getByText('Planlı bakım', { exact: false }).first().waitFor();
+    await shot14(pc, '12-sistem-bakim.jpg', true);
+    await pc.getByTestId('maint-off').click();
+    await dialog(pc, 'Bakım tamamlandı');
+    await pc.getByTestId('system-msg').getByText('Bakım modu kapatıldı.').waitFor();
+    await pcB3.goto(`${WEB}/oyna`);
+    await pcB3.locator('.hud-minimap-title').waitFor();
+  });
+  await step('Denetim kaydı: yayın, geri alma, onay, askı ve bakım işlemleri yöneticisiyle listelenir', async () => {
+    await pc.goto(`${ADMIN}/denetim`);
+    const list = pc.getByTestId('audit-list');
+    for (const a of ['content.publish', 'content.rollback', 'approval.approve', 'player.suspension', 'player.unban', 'system.maintenance.on', 'system.maintenance.off']) {
+      await list.getByText(a, { exact: true }).first().waitFor();
+    }
+    await shot14(pc, '13-denetim-kaydi.jpg', true);
+  });
+  await step('Telefonda Yönetim Merkezi: menü çekmecesi açılır, oyuncu sayfası tek sütun ve yatay taşmasız', async () => {
+    const ip = await browser.newContext({ ...playwright.devices['iPhone 13'], locale: 'tr-TR' });
+    const m = await ip.newPage();
+    m.on('pageerror', (e) => pageErrors.push(`phoneAdmin: ${e.message}`));
+    await m.goto(`${ADMIN}/`);
+    await m.getByTestId('login-id').fill(C.username);
+    await m.getByTestId('login-password').fill(C.password);
+    await m.getByTestId('login-submit').click();
+    await m.getByTestId('dash-stats').waitFor();
+    await m.getByTestId('menu-toggle').click();
+    await m.getByRole('link', { name: 'Oyuncu yönetimi' }).click();
+    await m.getByTestId('player-search').fill(B.username);
+    await m.getByTestId('player-search').press('Enter');
+    await m.getByTestId(`player-${B.username}`).click();
+    await m.getByTestId('player-actions').waitFor();
+    const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (overflow > 1) throw new Error(`yatay taşma: ${overflow}px`);
+    await shot14(m, '14-mobil-oyuncu.jpg', true);
+    await ip.close();
+  });
+  // Sonraki adımlar A'yı oyuncu olarak kullanır
+  await db.query(`DELETE FROM user_roles WHERE role_key IN ('game_admin', 'system_admin') AND user_id = (SELECT id FROM users WHERE username = $1)`, [A.username]);
+  await desktopB3.close();
   // Telefon adımları G-2'de devam eder
   await teleport(pc, A.username, 2200, 6250, 'G-2');
 
@@ -1252,7 +1502,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}, ${path.relative(ROOT, SHOTS13)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}, ${path.relative(ROOT, SHOTS13)}, ${path.relative(ROOT, SHOTS14)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

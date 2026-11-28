@@ -171,6 +171,8 @@ export class ApprovalService {
         await audit(c, actor, { action: 'approval.approve', targetType: 'approval', targetId: row.id, after: { ...base, result: res.result }, reason: b.note ?? row.reason });
       } catch (err) {
         if (!(err instanceof AppError)) throw err;
+        // Çıkar çatışması bir yürütme hatası değil, inceleme reddidir: talep açık kalır
+        if (err.code === 'APPROVAL_SELF') throw err;
         await c.query('ROLLBACK TO SAVEPOINT approval_exec');
         await c.query(
           `UPDATE approval_requests SET status = 'failed', reviewed_by = $2, reviewed_label = $3, reviewed_at = $4, review_note = $5, result = $6 WHERE id = $1`,

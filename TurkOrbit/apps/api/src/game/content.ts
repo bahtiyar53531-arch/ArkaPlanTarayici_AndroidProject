@@ -179,6 +179,8 @@ export class GameContent {
        FROM npc_spawns s JOIN maps m ON m.id = s.map_id WHERE m.code = $1 AND s.is_enabled ORDER BY s.id`,
       [mapCode],
     );
+    // Aşama 14: oyun sunucusu açıldıktan sonra eklenmiş (henüz bellekte olmayan) bir NPC türü varsa içerik bir kez yeniden yüklenir
+    if (r.rows.some((s) => !this.npcTypes.has(s.npc_type_id))) await this.load(db);
     return r.rows
       .filter((s) => this.npcTypes.has(s.npc_type_id))
       .map((s) => ({ id: s.id, typeId: s.npc_type_id, area: s.area, maxAlive: s.max_alive, respawnMs: s.respawn_seconds * 1000, overrides: s.overrides ?? {} }));

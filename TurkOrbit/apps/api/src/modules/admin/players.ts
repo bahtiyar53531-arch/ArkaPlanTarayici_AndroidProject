@@ -411,6 +411,7 @@ export class AdminPlayerService {
 
   private async execRole(c: DbClient, ctx: ExecContext): Promise<ExecResult> {
     const p = ctx.payload as { userId: string; reason: string };
+    if (p.userId === ctx.approver.userId) throw new AppError('APPROVAL_SELF', 403, 'Kendi rol atamanı onaylayamazsın.');
     const u = await this.user(c, p.userId, true);
     const before = await getUserRoles(c, u.id);
     if (before.includes('super_admin')) throw new AppError('NO_CHANGES', 409, 'Kullanıcı zaten Süper Yönetici.');
@@ -533,6 +534,9 @@ export class AdminPlayerService {
 
   private async execGrant(c: DbClient, ctx: ExecContext): Promise<ExecResult> {
     const p = ctx.payload as { playerId: string; pilot: string; kind: 'currency' | 'item'; code: string; amount: number; reason: string };
+    // Çıkar çatışması: işlemden yararlanan kişi onaylayamaz
+    const owner = await c.query<{ user_id: string }>('SELECT user_id FROM players WHERE id = $1', [p.playerId]);
+    if (owner.rows[0]?.user_id === ctx.approver.userId) throw new AppError('APPROVAL_SELF', 403, 'Kendi pilotuna yapılan işlemi onaylayamazsın.');
     const out = new Outbox();
     const r = await this.doGrant(c, ctx.approver, ctx.requestedBy, p, out, ctx.approvalId);
     return { result: { pilot: p.pilot, code: p.code, amount: p.amount, ...(r.balance !== undefined ? { balance: r.balance } : {}) }, ...(r.after ? { after: r.after } : {}) };

@@ -33,6 +33,19 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # Aşama 14 — TÜRK ORBIT YÖNETİM MERKEZİ (apps/admin/dist). Aynı alan adı: oturum çerezi ve CSRF aynen çalışır.
+    # İsteğe bağlı ek katman: panele yalnızca ofis/VPN IP'lerinden erişim (yetkiler zaten sunucuda denetlenir).
+    location /yonetim/ {
+        alias /var/www/turkorbit/admin/;
+        try_files $uri $uri/ /yonetim/index.html;
+        # allow 203.0.113.0/24; deny all;
+    }
+    location /yonetim/assets/ {
+        alias /var/www/turkorbit/admin/assets/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
     # REST API (apps/api) — PM2/systemd ile 127.0.0.1:4000'de çalışır
     location /api/ {
         proxy_pass http://127.0.0.1:4000;

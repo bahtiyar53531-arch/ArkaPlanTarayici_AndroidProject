@@ -389,6 +389,11 @@ describe('para/eşya verme ve iki yetkili onayı', () => {
     expect(await bal()).toBe(start + 5000);
     expect((await post(ga, `/admin/approvals/${id}/review`, { approve: true })).json().error.code).toBe('APPROVAL_SELF');
     expect((await post(cm, `/admin/approvals/${id}/review`, { approve: true })).statusCode).toBe(403);
+    // Çıkar çatışması: pilotun sahibi (oyun yöneticisi olsa bile) kendi pilotuna yapılan işlemi onaylayamaz
+    const owner = await user('SansliSahip', { roles: ['game_admin'], pilot: true });
+    const own = (await post(ga, '/admin/economy/grant', { playerId: owner.pilotId, kind: 'currency', code: 'KREDI', amount: 1_500_000, reason: 'Ödül' })).json().approval.id;
+    expect((await post(owner, `/admin/approvals/${own}/review`, { approve: true })).json().error.code).toBe('APPROVAL_SELF');
+    expect((await get(ga2, '/admin/approvals')).json().approvals.find((a: { id: number }) => a.id === own).status).toBe('pending');
     r = await post(ga2, `/admin/approvals/${id}/review`, { approve: true, note: 'Turnuva sonuçları doğrulandı' });
     expect(r.json().approval).toMatchObject({ status: 'executed', reviewedBy: 'HazineIki' });
     expect(await bal()).toBe(start + 5000 + 2_000_000);

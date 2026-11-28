@@ -287,6 +287,15 @@ export class GameController {
     try {
       ticket = (await api<{ ticket: string }>('POST', '/game/ticket', { serverCode: SERVER })).ticket;
     } catch (e) {
+      // Aşama 14: bakım modu — yeniden bağlanmaya çalışılmaz, sunucunun mesajı gösterilir
+      if (e instanceof ApiError && e.code === 'MAINTENANCE') {
+        if (this.firstWelcome) {
+          this.firstWelcome.reject(e);
+          this.firstWelcome = null;
+          return;
+        }
+        return this.end('ended', e.message);
+      }
       if (this.firstWelcome && e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'RATE_LIMITED') {
         this.firstWelcome.reject(e);
         this.firstWelcome = null;
