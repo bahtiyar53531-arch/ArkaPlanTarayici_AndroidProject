@@ -1,0 +1,85 @@
+apply plugin: 'com.android.application'
+
+// Sürüm, istemcinin package.json'ından gelir (web, Android ve iOS aynı sürümü taşır; API sürüm kapısı bunu denetler).
+// versionCode = büyük*10000 + küçük*100 + yama (0.15.0 → 1500). Google Play her yüklemede daha büyük versionCode ister.
+def clientPackage = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+def appVersion = clientPackage.version as String
+def versionParts = appVersion.tokenize('.').collect { it as int }
+def appVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+
+// Sürüm (mağaza) imzası ortam değişkenlerinden okunur; anahtar deposu ve parolalar depoya GİRMEZ.
+def releaseKeystore = System.getenv('TURKORBIT_KEYSTORE')
+
+android {
+    namespace = "com.turkorbit.oyun"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.turkorbit.oyun"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode appVersionCode
+        versionName appVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv('TURKORBIT_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('TURKORBIT_KEY_ALIAS')
+                keyPassword System.getenv('TURKORBIT_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            // Test derlemesi: mağaza sürümüyle yan yana kurulur; yerel ağdaki http geliştirme sunucusuna bağlanabilir
+            applicationIdSuffix '.test'
+            versionNameSuffix '-test'
+            manifestPlaceholders = [usesCleartextTraffic: 'true']
+        }
+        release {
+            // Sürüm derlemesi: yalnızca HTTPS/WSS
+            manifestPlaceholders = [usesCleartextTraffic: 'false']
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseKeystore) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

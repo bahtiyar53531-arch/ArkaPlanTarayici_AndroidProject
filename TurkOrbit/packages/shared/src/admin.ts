@@ -134,6 +134,8 @@ export interface ContentField {
   maxLength?: number;
   nullable?: boolean;
   help?: string;
+  /** metin alanında biçim denetimi (Aşama 15): sürüm "1.2.3", güvenli bağlantı "https://…" */
+  format?: 'version' | 'https-url';
 }
 
 export interface ContentTypeDef {
@@ -390,7 +392,41 @@ export const SETTING_DEFS: SettingDef[] = [
     ],
   },
 ];
+SETTING_DEFS.push({
+  key: 'client',
+  title: 'Mobil uygulama sürümü',
+  description:
+    'Android/iOS uygulamasının desteklenen en düşük sürümü. Daha eski sürümler "Güncelleme gerekli" ekranı görür ve mağaza bağlantısına yönlendirilir. Web etkilenmez.',
+  fields: [
+    { key: v('min_version.android'), label: 'Android en düşük sürüm', kind: 'text', maxLength: 14, format: 'version' },
+    { key: v('min_version.ios'), label: 'iOS en düşük sürüm', kind: 'text', maxLength: 14, format: 'version' },
+    { key: v('store_url.android'), label: 'Google Play bağlantısı', kind: 'text', maxLength: 300, nullable: true, format: 'https-url' },
+    { key: v('store_url.ios'), label: 'App Store bağlantısı', kind: 'text', maxLength: 300, nullable: true, format: 'https-url' },
+    { key: v('message'), label: 'Oyuncuya gösterilen mesaj', kind: 'text', minLength: 5, maxLength: 200 },
+  ],
+});
 export const SETTING_DEF_BY_KEY = new Map(SETTING_DEFS.map((d) => [d.key, d]));
+
+// ------------------------------------------------------------------ istemci sürümü (Aşama 15)
+const VERSION_RE = /^(\d{1,4})\.(\d{1,4})\.(\d{1,4})$/;
+export function isVersionString(s: string): boolean {
+  return VERSION_RE.test(s);
+}
+/** "1.10.0" > "1.9.3". Biçimsiz sürüm en eski kabul edilir (0.0.0). */
+export function compareVersions(a: string, b: string): number {
+  const pa = VERSION_RE.exec(a)?.slice(1).map(Number) ?? [0, 0, 0];
+  const pb = VERSION_RE.exec(b)?.slice(1).map(Number) ?? [0, 0, 0];
+  for (let i = 0; i < 3; i++) if (pa[i]! !== pb[i]!) return pa[i]! < pb[i]! ? -1 : 1;
+  return 0;
+}
+export function isHttpsUrl(s: string): boolean {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:' && !!u.hostname && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
 
 // ------------------------------------------------------------------ yol ve fark yardımcıları
 export function getPath(obj: unknown, path: string): unknown {
@@ -457,6 +493,8 @@ export function validateField(f: ContentField, raw: unknown): { ok: true; value:
       if (!s && f.nullable) return { ok: true, value: null };
       if (f.minLength !== undefined && s.length < f.minLength) return { ok: false, message: `${f.label} en az ${f.minLength} karakter olmalı.` };
       if (f.maxLength !== undefined && s.length > f.maxLength) return { ok: false, message: `${f.label} en fazla ${f.maxLength} karakter olabilir.` };
+      if (f.format === 'version' && !isVersionString(s)) return { ok: false, message: `${f.label} "1.2.3" biçiminde olmalı.` };
+      if (f.format === 'https-url' && !isHttpsUrl(s)) return { ok: false, message: `${f.label} https:// ile başlayan geçerli bir bağlantı olmalı.` };
       return { ok: true, value: s };
     }
     case 'datetime': {

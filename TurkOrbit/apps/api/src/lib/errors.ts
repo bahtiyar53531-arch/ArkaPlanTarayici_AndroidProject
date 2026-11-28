@@ -8,6 +8,9 @@ export class AppError extends Error {
     public readonly extra: {
       fields?: Record<string, string[]>;
       retryAfterSeconds?: number;
+      /** Aşama 15: 426 CLIENT_OUTDATED yanıtında güncelleme bilgisi */
+      minVersion?: string;
+      storeUrl?: string | null;
     } = {},
   ) {
     super(message);

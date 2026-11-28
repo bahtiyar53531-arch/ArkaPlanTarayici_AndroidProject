@@ -20,7 +20,8 @@ import {
 } from '@turkorbit/shared';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, attachmentUrl, uploadFile } from '../api/client';
+import { api, ApiError, attachmentUrl, openAttachmentNative, uploadFile } from '../api/client';
+import { IS_NATIVE } from '../platform/native';
 import { useAuth } from '../auth/AuthContext';
 import { AccountLayout } from '../components/Layout';
 import { Alert, ErrorAlert, formatDate } from '../components/ui';
@@ -228,9 +229,13 @@ function Messages({ messages }: { messages: SupportMessageView[] }) {
               {m.attachments.map((a) => (
                 <li key={a.id}>
                   📎{' '}
-                  <a href={attachmentUrl(a.id)} download={a.fileName} data-testid={`att-${a.id}`}>
-                    {a.fileName}
-                  </a>{' '}
+                  {IS_NATIVE ? (
+                    <AttachmentButton id={a.id} name={a.fileName} />
+                  ) : (
+                    <a href={attachmentUrl(a.id)} download={a.fileName} data-testid={`att-${a.id}`}>
+                      {a.fileName}
+                    </a>
+                  )}{' '}
                   <span className="muted small">({sizeText(a.sizeBytes)})</span>
                 </li>
               ))}
@@ -527,5 +532,35 @@ export function SupportDeskTicketPage() {
         />
       )}
     </AccountLayout>
+  );
+}
+
+/** Mobil uygulamada ek: tek kullanımlık bağlantı alınır ve cihazın tarayıcısında indirilir (Aşama 15). */
+function AttachmentButton({ id, name }: { id: number; name: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        className="link-button"
+        disabled={busy}
+        data-testid={`att-${id}`}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await openAttachmentNative(id);
+          } catch (e) {
+            setError(e instanceof ApiError ? e.message : 'Dosya açılamadı.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {name}
+      </button>
+      {error && <span className="field-error"> {error}</span>}
+    </>
   );
 }

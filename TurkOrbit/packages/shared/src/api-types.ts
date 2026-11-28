@@ -103,6 +103,9 @@ export const ERROR_CODES = [
   'QUEST_CODE_TAKEN',
   'MAINTENANCE',
   'MUTED',
+  // Aşama 15
+  'CLIENT_OUTDATED',
+  'LINK_INVALID',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -18,6 +18,9 @@ import { SocialPage } from './pages/SocialPages';
 import { ForumCategoryPage, ForumIndexPage, ForumSearchPage, ForumThreadPage } from './pages/ForumPages';
 import { SupportDeskPage, SupportDeskTicketPage, SupportPage, SupportTicketPage } from './pages/SupportPages';
 import { MarketPage } from './pages/MarketPages';
+import { ServerSetupPage, UpdateRequiredGate } from './pages/MobilePages';
+import { IS_NATIVE } from './platform/native';
+import { needsServerSetup, SERVER_LOCKED } from './platform/server';
 
 // Oyun ekranı (Phaser dahil) ayrı parça olarak yalnızca /oyna açılınca indirilir.
 const GamePage = lazy(() => import('./pages/GamePage').then((m) => ({ default: m.GamePage })));
@@ -45,10 +48,20 @@ function GuestOnly({ children }: { children: ReactNode }) {
 }
 
 export function App() {
+  // Mobil test derlemesi: sunucu adresi seçilmeden hiçbir sayfa açılmaz
+  if (IS_NATIVE && needsServerSetup()) {
+    return (
+      <BrowserRouter>
+        <ServerSetupPage />
+      </BrowserRouter>
+    );
+  }
   return (
     <BrowserRouter>
+      <UpdateRequiredGate />
       <AuthProvider>
         <Routes>
+          {IS_NATIVE && !SERVER_LOCKED && <Route path="/sunucu" element={<ServerSetupPage />} />}
           <Route path="/" element={<GuestOnly><LoginPage /></GuestOnly>} />
           <Route path="/giris" element={<GuestOnly><LoginPage /></GuestOnly>} />
           <Route path="/kayit" element={<GuestOnly><RegisterPage /></GuestOnly>} />

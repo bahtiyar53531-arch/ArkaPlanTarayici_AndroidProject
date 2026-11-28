@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test derlemesi (debug APK) mağaza sürümüyle yan yana kurulabilir ve adı ayrıdır. -->
+<resources>
+    <string name="app_name">Türk Orbit Test</string>
+    <string name="title_activity_main">Türk Orbit Test</string>
+</resources>

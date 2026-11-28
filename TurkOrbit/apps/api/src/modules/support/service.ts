@@ -282,15 +282,26 @@ export class SupportService {
   }
 
   /** İndirme: talep sahibi veya `support.read` yetkili personel. İç nota eklenen dosya yalnızca personele. */
-  async download(user: SupportUser, attachmentId: number): Promise<{ bytes: Buffer; fileName: string; mimeType: AttachmentType }> {
+  /** Ek dosyaya erişim denetimi: talep sahibi (iç notlar hariç) veya support.read yetkili personel. */
+  private async authorizeAttachment(userId: string, attachmentId: number) {
     const r = await this.db.query<{ storage_key: string; file_name: string; mime_type: AttachmentType; owner: string; internal: boolean }>(
       `SELECT a.storage_key, a.file_name, a.mime_type, t.user_id AS owner, m.is_internal_note AS internal
        FROM support_attachments a JOIN support_tickets t ON t.id = a.ticket_id JOIN support_messages m ON m.id = a.message_id WHERE a.id = $1`,
       [attachmentId],
     );
     const a = r.rows[0];
-    const staff = a ? await userHasPermission(this.db, user.id, 'support.read') : false;
-    if (!a || (!staff && (a.owner !== user.id || a.internal))) throw err('NOT_FOUND', 404, 'Dosya bulunamadı.');
+    const staff = a ? await userHasPermission(this.db, userId, 'support.read') : false;
+    if (!a || (!staff && (a.owner !== userId || a.internal))) throw err('NOT_FOUND', 404, 'Dosya bulunamadı.');
+    return a;
+  }
+
+  /** Mobil uygulama için indirme izni denetimi (bağlantı üretmeden önce). */
+  async assertCanDownload(user: SupportUser, attachmentId: number): Promise<void> {
+    await this.authorizeAttachment(user.id, attachmentId);
+  }
+
+  async download(user: SupportUser, attachmentId: number): Promise<{ bytes: Buffer; fileName: string; mimeType: AttachmentType }> {
+    const a = await this.authorizeAttachment(user.id, attachmentId);
     const bytes = await this.o.store.get(a.storage_key);
     if (!bytes) throw err('NOT_FOUND', 404, 'Dosya bulunamadı.');
     return { bytes, fileName: a.file_name, mimeType: a.mime_type };

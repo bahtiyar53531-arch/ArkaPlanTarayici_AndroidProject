@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { normalizePlatform } from '../../lib/client-info.js';
-import { Errors } from '../../lib/errors.js';
+import { AppError, Errors } from '../../lib/errors.js';
+import type { OneTimeLinks } from '../../lib/one-time.js';
 import type { RateLimiter } from '../../lib/rate-limit.js';
 import type { AuthGuards } from '../auth/guards.js';
 import type { SupportService, SupportUser } from './service.js';
@@ -12,8 +13,18 @@ const idParam = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const UPLOAD_BODY_LIMIT = 10 * 1024 * 1024;
 
 /** Destek uçları (Aşama 13). Personel uçları veritabanındaki rol-yetki eşlemesiyle korunur. */
-export function supportRoutes(app: FastifyInstance, opts: { service: SupportService; guards: AuthGuards; limiter: RateLimiter }) {
-  const { service, guards, limiter } = opts;
+/** Tek kullanımlık ek indirme bağlantısının taşıdığı veri (Aşama 15). */
+export interface AttachmentLink {
+  userId: string;
+  username: string;
+  attachmentId: number;
+}
+
+export function supportRoutes(
+  app: FastifyInstance,
+  opts: { service: SupportService; guards: AuthGuards; limiter: RateLimiter; links: OneTimeLinks<AttachmentLink> },
+) {
+  const { service, guards, limiter, links } = opts;
   const me = (r: FastifyRequest): SupportUser => ({ id: r.auth!.user.id, username: r.auth!.user.username });
   const auth = { preHandler: guards.requireAuth };
   const limit = async (r: FastifyRequest, action: string, n: number, w: number, message?: string) => {
@@ -67,8 +78,33 @@ export function supportRoutes(app: FastifyInstance, opts: { service: SupportServ
     );
   });
 
-  app.get<{ Params: { id: string } }>('/support/attachments/:id', auth, async (r, reply) => {
-    const f = await service.download(me(r), idParam.parse(r.params.id));
+  /**
+   * Aşama 15 — mobil uygulama: WebView, indirme bağlantısına Bearer anahtarı ekleyemez. Oturumlu istekle 60 sn geçerli,
+   * tek kullanımlık ve yalnızca bu eke bağlı bir bağlantı üretilir; uygulama onu cihazın tarayıcısında açar.
+   */
+  app.post<{ Params: { id: string } }>('/support/attachments/:id/link', auth, async (r) => {
+    await limit(r, 'support-link', 60, 3600);
+    const id = idParam.parse(r.params.id);
+    await service.assertCanDownload(me(r), id);
+    const token = await links.create({ userId: r.auth!.user.id, username: r.auth!.user.username, attachmentId: id });
+    return { path: `/support/attachments/${id}?dl=${token}`, expiresInSeconds: 60 };
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { dl?: string } }>('/support/attachments/:id', { preHandler: guards.optionalAuth }, async (r, reply) => {
+    const id = idParam.parse(r.params.id);
+    let user: SupportUser;
+    if (typeof r.query.dl === 'string') {
+      const link = await links.consume(r.query.dl);
+      if (!link || link.attachmentId !== id) {
+        throw new AppError('LINK_INVALID', 410, 'İndirme bağlantısının süresi dolmuş veya daha önce kullanılmış. Uygulamadan yeniden dene.');
+      }
+      // Yetki indirme anında yeniden denetlenir (ör. bu arada personel yetkisi alındıysa)
+      user = { id: link.userId, username: link.username };
+    } else {
+      if (!r.auth) throw Errors.unauthenticated();
+      user = me(r);
+    }
+    const f = await service.download(user, id);
     return reply
       .header('Content-Type', f.mimeType === 'text/plain' ? 'text/plain; charset=utf-8' : f.mimeType)
       .header('Content-Disposition', `attachment; filename="${f.fileName.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(f.fileName)}`)

@@ -406,3 +406,20 @@
 .party-invite-actions { display: flex; gap: 6px; }
 .hud-target-actions { display: flex; gap: 6px; margin-top: 4px; }
 .device-tablet .hud-chat { max-width: 44vw; }
+
+/* ================================================================== Yatay telefon (Aşama 15)
+   Kısa ekranda (≈360–430 px) savaş düğmeleri mini haritanın ve radarın, joystick görev izleyicisinin üstüne biniyordu.
+   Yerleşim: sol üstte pilot + görev yan yana; sağ üstte tek satır düğmeler; mini harita ve radar savaş sütununun
+   (veya sağdaki joystick'in) solunda; hedef paneli alt ortada mühimmat satırının üstünde. Dokunma alanları ≥ 40 px. */
+.phone-landscape .hud-corner.tl { flex-direction: row; align-items: flex-start; }
+.phone-landscape .hud-pilot { min-width: 150px; gap: 3px; padding: 6px 8px; }
+.phone-landscape .hud-quests { width: 170px; }
+.phone-landscape .hud-topbar { max-width: none; flex-wrap: nowrap; gap: 5px; }
+.phone-landscape.joystick-left .hud-minimap,
+.phone-landscape.joystick-left .hud-nearby { margin-right: 94px; }
+.phone-landscape.joystick-right .hud-minimap,
+.phone-landscape.joystick-right .hud-nearby { margin-right: calc(var(--joy-size, 130px) + 30px); }
+.phone-landscape .hud-combat-buttons.touch { bottom: calc(env(safe-area-inset-bottom) + 12px); gap: 8px; }
+.phone-landscape .hud-combat-buttons.touch .hud-attack { width: 72px; height: 72px; }
+.phone-landscape .hud-combat-buttons.touch .hud-slot { width: 52px; height: 52px; }
+.phone-landscape .hud-corner.bc .hud-target { min-width: 170px; }

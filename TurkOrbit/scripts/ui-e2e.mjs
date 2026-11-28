@@ -10,7 +10,7 @@
  * Kullanım:  npm run test:ui
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, openSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,6 +40,7 @@ const SHOTS11 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuler
 const SHOTS12 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-12');
 const SHOTS13 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-13');
 const SHOTS14 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-14');
+const SHOTS15 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-15');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -50,6 +51,10 @@ const WEB = `http://127.0.0.1:${WEB_PORT}`;
 // Aşama 14: Yönetim Merkezi (ayrı Vite uygulaması, /yonetim/ altında; aynı API ve oturum çerezi)
 const ADMIN_PORT = 5176;
 const ADMIN = `http://127.0.0.1:${ADMIN_PORT}/yonetim`;
+// Aşama 15: mobil uygulamanın web paketi (APK/IPA'ya giren derlenmiş dist-mobile) ayrı bir kökten sunulur;
+// sayfaya Capacitor'ın gerçek Android köprü betiği ve Node tarafında çalışan yerel eklenti taklidi eklenir.
+const MOBILE_PORT = 5177;
+const MOBILE = `http://127.0.0.1:${MOBILE_PORT}`;
 mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SHOTS5, { recursive: true });
 mkdirSync(SHOTS6, { recursive: true });
@@ -61,6 +66,7 @@ mkdirSync(SHOTS11, { recursive: true });
 mkdirSync(SHOTS12, { recursive: true });
 mkdirSync(SHOTS13, { recursive: true });
 mkdirSync(SHOTS14, { recursive: true });
+mkdirSync(SHOTS15, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -94,7 +100,7 @@ const env = {
   DATABASE_URL: DB_URL,
   REDIS_URL,
   PUBLIC_WEB_URL: WEB,
-  ALLOWED_ORIGINS: `${WEB},http://127.0.0.1:${ADMIN_PORT}`,
+  ALLOWED_ORIGINS: `${WEB},http://127.0.0.1:${ADMIN_PORT},${MOBILE}`,
   CSRF_SECRET: 'ui-e2e-csrf-secret-at-least-32-characters',
   MAIL_TRANSPORT: 'smtp',
   SMTP_URL: `smtp://127.0.0.1:${SMTP_PORT}?ignoreTLS=true`,
@@ -229,6 +235,20 @@ try {
       stdio: ['ignore', 'ignore', 'inherit'],
     }),
   );
+  // Aşama 15: mobil paket (test derlemesi gibi: sunucu adresi gömülü değil, uygulama sorar)
+  {
+    const mobileEnv = { ...env };
+    delete mobileEnv.VITE_SERVER_URL;
+    const b = spawnSync(path.join(ROOT, 'node_modules/.bin/vite'), ['build', '--mode', 'mobile', '--logLevel', 'error'], { cwd: path.join(ROOT, 'apps/client'), env: mobileEnv, encoding: 'utf8' });
+    if (b.status !== 0) throw new Error(`mobil paket derlenemedi: ${b.stderr}`);
+    procs.push(
+      spawn(path.join(ROOT, 'node_modules/.bin/vite'), ['preview', '--mode', 'mobile', '--host', '127.0.0.1', '--port', String(MOBILE_PORT), '--strictPort'], {
+        cwd: path.join(ROOT, 'apps/client'),
+        env: mobileEnv,
+        stdio: ['ignore', 'ignore', 'inherit'],
+      }),
+    );
+  }
   // Oyun sunucusu günlüğü (hata ayıklama için): test-results/ui-e2e-game.log
   mkdirSync(path.join(ROOT, 'test-results'), { recursive: true });
   const gameLog = openSync(path.join(ROOT, 'test-results/ui-e2e-game.log'), 'w');
@@ -242,8 +262,11 @@ try {
   await waitHttp(`http://127.0.0.1:${API_PORT}/api/v1/health`);
   await waitHttp(WEB);
   await waitHttp(`${ADMIN}/`);
+  await waitHttp(MOBILE);
 
-  browser = await playwright.chromium.launch();
+  // UTF-8 dil ayarı: konteynerin varsayılan "C" dilinde Chromium Türkçe karakterli dosya adını ("ekranı.png") diske
+  // yazamayıp "download" adına düşer (Aşama 15'te ek indirme adımında bulundu; telefon/masaüstü dosya sistemleri UTF-8'dir)
+  browser = await playwright.chromium.launch({ env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } });
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
   const iphone = await browser.newContext({ ...playwright.devices['iPhone 13'], locale: 'tr-TR' });
   const pc = await desktop.newPage();
@@ -297,6 +320,81 @@ try {
     const row = page.getByTestId('nearby').locator('.hud-nearby-row').filter({ hasText: name });
     if ((await row.count()) === 0) return null;
     return Number((await row.locator('.hud-nearby-dist').innerText()).replace(/\./g, ''));
+  };
+
+  /**
+   * Aşama 15: yatay telefonda HUD öğeleri birbirinin üstüne binmemeli (savaş düğmeleri ↔ mini harita/radar/düğmeler,
+   * joystick ↔ pilot/görev panelleri, hedef paneli ↔ joystick/savaş düğmeleri).
+   */
+  const assertHudNoOverlap = async (page) => {
+    const boxes = await page.evaluate(() => {
+      const r = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0).map((b) => ({ sel, x: b.x, y: b.y, w: b.width, h: b.height }));
+      return {
+        controls: [...r('.hud-combat-buttons.touch'), ...r('[data-testid="joystick"]')],
+        panels: [...r('.hud-corner.tl > *'), ...r('.hud-topbar'), ...r('.hud-minimap'), ...r('.hud-nearby'), ...r('.hud-target'), ...r('.hud-actions')],
+        viewport: { w: window.innerWidth, h: window.innerHeight },
+      };
+    });
+    const hit = (a, b) => a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1 && a.y < b.y + b.h - 1 && b.y < a.y + a.h - 1;
+    for (const c of boxes.controls) {
+      for (const p of boxes.panels) if (hit(c, p)) throw new Error(`HUD çakışması: ${c.sel} ↔ ${p.sel}`);
+      if (c.x < 0 || c.y < 0 || c.x + c.w > boxes.viewport.w + 1 || c.y + c.h > boxes.viewport.h + 1) throw new Error(`ekran dışı: ${c.sel}`);
+    }
+    for (let i = 0; i < boxes.controls.length; i++) for (let j = i + 1; j < boxes.controls.length; j++) if (hit(boxes.controls[i], boxes.controls[j])) throw new Error('joystick ↔ savaş düğmeleri çakışıyor');
+  };
+
+  // ---------------------------------------------------------------- Aşama 15: Capacitor yerel köprüsü taklidi
+  // Sayfaya, Android'in WebView'a enjekte ettiği sırayla (genel nesne → native-bridge.js → eklenti başlıkları) GERÇEK
+  // Capacitor köprü betiği eklenir. Köprünün "yerel" ucu (androidBridge.postMessage) Node'daki bu taklide bağlanır:
+  // güvenli depo (Keystore yerine bellek), cihaz bilgisi, geri tuşu/ön plan olayları. Sayfa yenilense de depo kalıcıdır.
+  // Sınır: Keystore şifrelemesi ve gerçek WebView burada çalışmaz; onlar cihazda denenir (bkz. Aşama 15 raporu).
+  const NATIVE_BRIDGE_JS = readFileSync(path.join(ROOT, 'node_modules/@capacitor/android/capacitor/src/main/assets/native-bridge.js'), 'utf8');
+  const PLUGIN_HEADERS = [
+    { name: 'TurkOrbitSecureStore', methods: ['get', 'set', 'remove'].map((name) => ({ name, rtype: 'promise' })) },
+    {
+      name: 'App',
+      methods: [{ name: 'addListener', rtype: 'callback' }, ...['removeListener', 'removeAllListeners', 'exitApp', 'minimizeApp', 'getInfo', 'getState'].map((name) => ({ name, rtype: 'promise' }))],
+    },
+    { name: 'Device', methods: ['getInfo', 'getId'].map((name) => ({ name, rtype: 'promise' })) },
+    { name: 'SystemBars', methods: ['setStyle', 'show', 'hide', 'setAnimation'].map((name) => ({ name, rtype: 'promise' })) },
+  ];
+  const nativeContext = async (device) => {
+    const state = { store: new Map(), listeners: new Map(), calls: [] };
+    const handle = ({ callbackId, pluginId, methodName, options = {} }) => {
+      state.calls.push(`${pluginId}.${methodName}`);
+      const ok = (data = {}) => ({ callbackId, pluginId, methodName, success: true, data });
+      switch (`${pluginId}.${methodName}`) {
+        case 'TurkOrbitSecureStore.get':
+          return ok({ value: state.store.get(options.key) ?? null });
+        case 'TurkOrbitSecureStore.set':
+          state.store.set(options.key, options.value);
+          return ok();
+        case 'TurkOrbitSecureStore.remove':
+          state.store.delete(options.key);
+          return ok();
+        case 'App.addListener':
+          state.listeners.set(options.eventName, callbackId); // olay geldiğinde bu kimlikle yanıtlanır
+          return null;
+        case 'Device.getInfo':
+          return ok({ model: 'Pixel 8', manufacturer: 'Google', platform: 'android', operatingSystem: 'android', osVersion: '16', isVirtual: false, webViewVersion: '141.0' });
+        default:
+          return ok();
+      }
+    };
+    const ctx = await browser.newContext({ ...playwright.devices[device], locale: 'tr-TR' });
+    await ctx.exposeBinding('__turkorbitNative', (_source, json) => handle(JSON.parse(json)));
+    await ctx.addInitScript({
+      content: `window.androidBridge = { postMessage(json) { window.__turkorbitNative(json).then((res) => { if (res) window.androidBridge.onmessage({ data: JSON.stringify(res) }); }); } };
+window.Capacitor = { DEBUG: false, isLoggingEnabled: false, Plugins: {} };`,
+    });
+    await ctx.addInitScript({ content: NATIVE_BRIDGE_JS });
+    await ctx.addInitScript({ content: `window.Capacitor.PluginHeaders = ${JSON.stringify(PLUGIN_HEADERS)};` });
+    const fire = (page, eventName, data) =>
+      page.evaluate(
+        ([callbackId, d]) => window.androidBridge.onmessage({ data: JSON.stringify({ callbackId, pluginId: 'App', methodName: 'addListener', success: true, data: d, save: true }) }),
+        [state.listeners.get(eventName), data],
+      );
+    return { ctx, state, fire };
   };
   // Tek tuval: geliştirme modundaki React StrictMode ilk oyunu kurup hemen kapatır; kapanan tuval DOM'dan kalkmalı.
   const singleCanvas = async (page) => {
@@ -1278,6 +1376,201 @@ try {
     await shot14(m, '14-mobil-oyuncu.jpg', true);
     await ip.close();
   });
+  // ================================================================ Aşama 15 — mobil uygulama
+  console.log('Aşama 15 — Mobil uygulama (Android: gerçek Capacitor köprü betiği + yerel eklenti taklidi) ve PC oyuncusu');
+  const { ctx: appCtx, state: native, fire } = await nativeContext('Pixel 7');
+  const app = await appCtx.newPage();
+  app.on('pageerror', (e) => pageErrors.push(`app: ${e.message}`));
+  const appRequests = [];
+  app.on('request', (r) => {
+    if (r.url().includes('/api/v1/')) appRequests.push({ url: r.url(), headers: r.headers() });
+  });
+  // Oyun bağlantısı araya girilebilir: "arka planda işletim sistemi soketi kapattı" durumu için
+  let gameRoute = null;
+  let gameServer = null;
+  let blockGame = false;
+  await app.routeWebSocket(/\/game$/, (ws) => {
+    if (blockGame) return ws.close({ code: 4999, reason: 'arka planda ağ yok' });
+    gameRoute = ws;
+    gameServer = ws.connectToServer();
+  });
+  const shot15 = (page, name, full = false) => page.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS15, name), fullPage: full });
+  const appLogin = async () => {
+    await app.goto(`${MOBILE}/giris`);
+    await app.getByLabel('Kullanıcı adı veya e-posta').fill(B.username);
+    await app.getByLabel('Parola', { exact: true }).fill(B.password);
+    await app.getByRole('button', { name: 'Giriş yap' }).click();
+    await app.getByRole('heading', { name: B.username }).waitFor();
+  };
+  const androidSessionItem = () => pcB3.locator('.list-item').filter({ hasText: 'Android · Google Pixel 8' });
+
+  await step('Uygulama (test derlemesi) ilk açılışta sunucu adresini sorar; ulaşılamayan adreste açıklayıcı hata, doğru adreste giriş ekranı', async () => {
+    await app.goto(`${MOBILE}/`);
+    await app.getByTestId('server-form').waitFor();
+    await app.getByTestId('server-url').fill('127.0.0.1:9');
+    await app.getByRole('button', { name: 'Bağlan' }).click();
+    await app.getByText('Sunucuya ulaşılamadı', { exact: false }).waitFor({ timeout: 10000 });
+    await shot15(app, '01-sunucu-adresi.jpg');
+    await app.getByTestId('server-url').fill(WEB);
+    await app.getByRole('button', { name: 'Bağlan' }).click();
+    await app.waitForURL(/\/giris$/);
+    await app.getByTestId('server-badge').getByText(WEB).waitFor();
+    await shot15(app, '02-uygulama-giris.jpg');
+  });
+  await step('Uygulamada giriş: oturum anahtarı yalnızca güvenli depoda; çerez ve web deposunda yok; istekler Bearer + android/0.15.0 başlıklı, CSRF yok', async () => {
+    appRequests.length = 0;
+    await appLogin();
+    const token = native.store.get('session');
+    if (!token || token.length < 30) throw new Error('güvenli depoda oturum anahtarı yok');
+    const web = await app.evaluate(() => ({ cookie: document.cookie, dump: JSON.stringify(localStorage) + JSON.stringify(sessionStorage) }));
+    if (web.cookie) throw new Error(`çerez var: ${web.cookie}`);
+    if (web.dump.includes(token)) throw new Error('anahtar web deposunda');
+    if ((await appCtx.cookies()).length) throw new Error('uygulama bağlamında çerez var');
+    const api = appRequests.filter((r) => !r.url.endsWith('/health'));
+    const authed = api.filter((r) => !r.url.endsWith('/auth/login'));
+    if (!authed.length) throw new Error('oturumlu istek görülmedi');
+    for (const r of api) {
+      if (r.headers['x-client-platform'] !== 'android' || r.headers['x-client-version'] !== '0.15.0') throw new Error(`platform/sürüm başlığı eksik: ${r.url}`);
+      if (r.headers['x-csrf-token']) throw new Error('mobilde CSRF başlığı gönderildi');
+    }
+    for (const r of authed) if (r.headers.authorization !== `Bearer ${token}`) throw new Error(`Bearer yok: ${r.url}`);
+    const s = (
+      await db.query(
+        `SELECT s.transport, s.device_name, s.app_version FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.username = $1 AND s.revoked_at IS NULL AND s.platform = 'android'`,
+        [B.username],
+      )
+    ).rows;
+    if (s.length !== 1 || s[0].transport !== 'token' || s[0].device_name !== 'Google Pixel 8' || s[0].app_version !== '0.15.0') throw new Error(`oturum kaydı: ${JSON.stringify(s)}`);
+  });
+  await step("Aynı hesap PC'de: güvenlik sayfasında Android oturumu cihaz adıyla görünür", async () => {
+    await pcB3.goto(`${WEB}/hesap/guvenlik`);
+    await androidSessionItem().waitFor();
+    await shot15(pcB3, '03-pc-android-oturumu.jpg', true);
+  });
+  await step('Telefondaki uygulama ile PC oyuncusu aynı haritada birbirini görür (yatay HUD çakışmasız); uygulamada joystick hareketi PC ekranına yansır', async () => {
+    await teleport(pc, A.username, 16000, 6000, 'G-1');
+    await waitOffline(B.username);
+    await db.query(
+      `UPDATE players SET pos_x = 16300, pos_y = 6050, map_id = (SELECT id FROM maps WHERE code = 'G-1') FROM users u WHERE u.id = players.user_id AND u.username = $1`,
+      [B.username],
+    );
+    await app.setViewportSize({ width: 915, height: 412 });
+    await app.goto(`${MOBILE}/oyna`);
+    await singleCanvas(app);
+    await app.locator('.hud-minimap-title').getByText(/^G-1 · /).waitFor();
+    await app.getByTestId('joystick').waitFor();
+    for (let i = 0; i < 80 && ((await nearbyDistance(app, A.username)) === null || (await nearbyDistance(pc, B.username)) === null); i++) await sleep(150);
+    const d0 = await nearbyDistance(pc, B.username);
+    if (d0 === null || (await nearbyDistance(app, A.username)) === null) throw new Error('pilotlar birbirini görmedi');
+    await sleep(800);
+    await assertHudNoOverlap(app);
+    // Hedef seçilince panel alt ortada açılır ve yine hiçbir denetimin üstüne binmez
+    await app.getByRole('button', { name: /Hedef/ }).first().click().catch(() => {});
+    await sleep(400);
+    await assertHudNoOverlap(app);
+    await shot15(app, '04-uygulamada-oyun-pc-oyuncusu.jpg');
+    const box = await app.getByTestId('joystick').boundingBox();
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await app.mouse.move(cx, cy);
+    await app.mouse.down();
+    await app.mouse.move(cx + box.width / 2, cy, { steps: 5 });
+    let d1 = d0;
+    for (let i = 0; i < 80 && !(d1 > d0 + 300); i++) {
+      await sleep(100);
+      d1 = (await nearbyDistance(pc, B.username)) ?? d1;
+    }
+    await app.mouse.up();
+    if (!(d1 > d0 + 300)) throw new Error(`PC'deki mesafe artmadı: ${d0} → ${d1}`);
+    await shot15(pc, '05-pc-mobil-oyuncuyu-goruyor.jpg');
+  });
+  await step('Uygulama arka plandayken soket kapanırsa (yeniden deneme beklerken) öne gelince hemen yeniden bağlanır; PC oyuncusu onu yine görür', async () => {
+    await fire(app, 'appStateChange', { isActive: false });
+    blockGame = true;
+    await gameServer.close({ code: 4999, reason: 'işletim sistemi bağlantıyı kesti' }).catch(() => {});
+    await gameRoute.close({ code: 4999, reason: 'işletim sistemi bağlantıyı kesti' });
+    await app.getByTestId('conn-banner').waitFor({ timeout: 8000 });
+    await app.getByTestId('conn-banner').getByText('3. deneme', { exact: false }).waitFor({ timeout: 10000 });
+    // Bu noktada bir sonraki kendiliğinden deneme ~4 sn sonra; ön plana dönüş bunu beklemeden bağlamalı
+    blockGame = false;
+    const t = Date.now();
+    await fire(app, 'appStateChange', { isActive: true });
+    await app.getByTestId('conn-banner').waitFor({ state: 'detached', timeout: 10000 });
+    const took = Date.now() - t;
+    if (took > 2500) throw new Error(`ön plana dönünce hemen bağlanmadı (${took} ms)`);
+    for (let i = 0; i < 60 && (await nearbyDistance(pc, B.username)) === null; i++) await sleep(150);
+    if ((await nearbyDistance(pc, B.username)) === null) throw new Error('PC oyuncusu yeniden bağlanan uygulamayı görmüyor');
+  });
+  await step('Android geri tuşu: açık görev çekmecesini kapatır; oyundan önceki sayfaya döner; ana sayfada uygulamayı arka plana alır', async () => {
+    await app.getByTestId('hud-quests-btn').click();
+    const drawer = app.getByTestId('quest-drawer');
+    await drawer.waitFor();
+    await fire(app, 'backButton', { canGoBack: true });
+    await drawer.waitFor({ state: 'detached' });
+    if (!app.url().endsWith('/oyna')) throw new Error('çekmece kapanırken sayfadan çıkıldı');
+    await fire(app, 'backButton', { canGoBack: true });
+    await app.waitForURL(/\/pilot$/);
+    const minimized = () => native.calls.filter((c) => c === 'App.minimizeApp').length;
+    const before = minimized();
+    await fire(app, 'backButton', { canGoBack: true });
+    for (let i = 0; i < 30 && minimized() === before; i++) await sleep(100);
+    if (minimized() !== before + 1) throw new Error('uygulama arka plana alınmadı');
+    if (!app.url().endsWith('/pilot')) throw new Error('ana sayfada geri tuşu sayfadan çıktı');
+    await app.setViewportSize({ width: 412, height: 915 });
+  });
+  await step("PC'den kapatılan uygulama oturumu: uygulama giriş ekranına döner, güvenli depodaki anahtar silinir", async () => {
+    await pcB3.goto(`${WEB}/hesap/guvenlik`);
+    await androidSessionItem().getByRole('button', { name: 'Oturumu kapat' }).click();
+    await pcB3.getByText('Oturum kapatıldı.').waitFor();
+    await app.reload();
+    await app.waitForURL(/\/giris$/);
+    if (native.store.has('session')) throw new Error('anahtar güvenli depoda kaldı');
+  });
+  await step("Yönetim Merkezi'nden en düşük Android sürümü yükseltilince uygulama \"Güncelleme gerekli\" ekranını gösterir; web etkilenmez; geri alınca uygulama açılır", async () => {
+    await appLogin();
+    await pc.goto(`${ADMIN}/icerik/setting/client`);
+    await pc.getByTestId('f-value.min_version.android').fill('0.16.0');
+    await pc.getByTestId('f-value.store_url.android').fill('https://play.google.com/store/apps/details?id=com.turkorbit.oyun');
+    await pc.getByTestId('draft-save').click();
+    await pc.getByTestId('diff').waitFor();
+    await pc.getByTestId('publish').click();
+    await pc.getByTestId('content-msg').getByText('Yayımlandı', { exact: false }).waitFor();
+    await shot15(pc, '07-panel-mobil-surum-ayari.jpg', true);
+    await app.reload();
+    const gate = app.getByTestId('update-required');
+    await gate.waitFor();
+    await gate.getByText('0.16.0', { exact: false }).waitFor();
+    await gate.getByRole('button', { name: 'Mağazada güncelle' }).waitFor();
+    await shot15(app, '06-guncelleme-gerekli.jpg');
+    await pcB3.goto(`${WEB}/pilot`);
+    await pcB3.getByRole('heading', { name: B.username }).waitFor();
+    await pc.getByTestId('rollback-1').click();
+    await pc.getByTestId('content-msg').getByText('geri yüklendi', { exact: false }).waitFor();
+    await gate.getByRole('button', { name: 'Tekrar dene' }).click();
+    await app.getByRole('heading', { name: B.username }).waitFor();
+    if (await app.getByTestId('update-required').count()) throw new Error('güncelleme ekranı kalkmadı');
+  });
+  await step('Uygulamada destek talebi: ek Bearer ile yüklenir; ek tek kullanımlık bağlantıyla cihaz tarayıcısında iner, bağlantı ikinci kez çalışmaz', async () => {
+    await app.goto(`${MOBILE}/destek`);
+    await app.getByTestId('ticket-category').selectOption('gameplay');
+    await app.getByTestId('ticket-subject').fill('Uygulamadan ekran görüntüsü');
+    await app.getByTestId('ticket-body').fill('Telefondaki uygulamadan yazıyorum; ekran görüntüsünü ekledim.');
+    await app.getByTestId('file-input').setInputFiles({ name: 'telefon ekranı.png', mimeType: 'image/png', buffer: PNG });
+    await app.getByTestId('ticket-submit').click();
+    await app.getByTestId('ticket-no').waitFor();
+    const att = app.locator('[data-testid^="att-"]').first();
+    await att.waitFor();
+    const [download] = await Promise.all([app.waitForEvent('download'), att.click()]);
+    if (download.suggestedFilename() !== 'telefon ekranı.png') throw new Error(`dosya adı: ${download.suggestedFilename()}`);
+    const bytes = readFileSync(await download.path());
+    if (!bytes.equals(PNG)) throw new Error('inen dosya yüklenenle aynı değil');
+    const url = new URL(download.url());
+    if (!url.searchParams.get('dl')) throw new Error('tek kullanımlık bağlantı kullanılmadı');
+    const again = await fetch(url);
+    if (again.status !== 410) throw new Error(`bağlantı ikinci kez çalıştı: ${again.status}`);
+  });
+  await appCtx.close();
+
   // Sonraki adımlar A'yı oyuncu olarak kullanır
   await db.query(`DELETE FROM user_roles WHERE role_key IN ('game_admin', 'system_admin') AND user_id = (SELECT id FROM users WHERE username = $1)`, [A.username]);
   await desktopB3.close();
@@ -1342,7 +1635,7 @@ try {
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS8, '05-pc-hangar-istasyon-kurali.jpg') });
     await pc.keyboard.press('Escape');
   });
-  await step('Telefon yatay: oyun ekranı yatay düzende açılır (aynı oturum)', async () => {
+  await step('Telefon yatay: oyun ekranı yatay düzende açılır (aynı oturum); HUD öğeleri çakışmaz', async () => {
     const land = await browser.newContext({ ...playwright.devices['iPhone 13 landscape'], locale: 'tr-TR', storageState: await iphone.storageState() });
     const lp = await land.newPage();
     lp.on('pageerror', (e) => pageErrors.push(`landscape: ${e.message}`));
@@ -1350,6 +1643,7 @@ try {
     await lp.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
     await lp.getByTestId('joystick').waitFor();
     await sleep(900);
+    await assertHudNoOverlap(lp);
     await lp.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS7, '08-mobil-yatay.jpg') });
     await land.close();
   });
@@ -1507,7 +1801,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}, ${path.relative(ROOT, SHOTS13)}, ${path.relative(ROOT, SHOTS14)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}, ${path.relative(ROOT, SHOTS13)}, ${path.relative(ROOT, SHOTS14)}, ${path.relative(ROOT, SHOTS15)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

@@ -28,14 +28,14 @@ export async function createTestContext(
   /** app.ready() öncesi ek (yalnızca test) rotaları kaydetmek için. */
   setup?: (built: BuiltApp) => void,
   /** Yükseltme zarı gibi rastgeleliği testte belirlemek için. */
-  extra: { rng?: (max: number) => number; clock?: () => Date } = {},
+  extra: { rng?: (max: number) => number; clock?: () => Date; attachmentLinkTtlSeconds?: number } = {},
 ): Promise<TestContext> {
   const config = loadConfig({
     NODE_ENV: 'test',
     DATABASE_URL: TEST_DATABASE_URL,
     REDIS_URL: TEST_REDIS_URL,
     PUBLIC_WEB_URL: WEB_ORIGIN,
-    ALLOWED_ORIGINS: `${WEB_ORIGIN},capacitor://localhost`,
+    ALLOWED_ORIGINS: `${WEB_ORIGIN},https://localhost,capacitor://localhost`,
     CSRF_SECRET: 'test-csrf-secret-that-is-at-least-32-chars',
     // Testlerde Argon2id aynı algoritma, daha düşük bellek maliyetiyle (hız için).
     ARGON2_MEMORY_KIB: '8192',
@@ -51,6 +51,7 @@ export async function createTestContext(
     limits: { registerPerIp: [1000, 3600], loginPerIp: [1000, 900], forgotPerIp: [1000, 3600], ...limits },
     ...(extra.rng ? { rng: extra.rng } : {}),
     ...(extra.clock ? { clock: extra.clock } : {}),
+    ...(extra.attachmentLinkTtlSeconds ? { attachmentLinkTtlSeconds: extra.attachmentLinkTtlSeconds } : {}),
   });
   setup?.(built);
   await built.app.ready();
@@ -98,7 +99,8 @@ export async function resetDatabase(rt: Runtime) {
          ('forum', '{"threads_per_page": 20, "posts_per_page": 20, "edit_window_minutes": 1440, "max_body": 20000}'::jsonb),
          ('support', '{"max_attachment_bytes": 5242880, "max_attachments_per_message": 3, "attach_window_minutes": 30, "max_open_tickets": 5, "auto_close_days": 7}'::jsonb),
          ('maintenance', '{"enabled": false, "message": "Türk Orbit bakımda. Kısa süre içinde geri döneceğiz."}'::jsonb),
-         ('admin', '{"grant_approval_threshold": {"KREDI": 1000000, "AKCE": 5000}, "grant_item_approval_threshold": 50, "approval_hours": 72}'::jsonb)
+         ('admin', '{"grant_approval_threshold": {"KREDI": 1000000, "AKCE": 5000}, "grant_item_approval_threshold": 50, "approval_hours": 72}'::jsonb),
+         ('client', '{"min_version": {"android": "0.15.0", "ios": "0.15.0"}, "store_url": {"android": null, "ios": null}, "message": "Türk Orbit''in yeni sürümü yayında. Oynamaya devam etmek için uygulamayı güncelle."}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

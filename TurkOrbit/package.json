@@ -27,7 +27,11 @@
     "admin:grant-role": "npm run grant-role -w @turkorbit/api --",
     "admin:revoke-role": "npm run revoke-role -w @turkorbit/api --",
     "package:phase": "node scripts/package-phase.mjs",
-    "test:ui": "node scripts/ui-e2e.mjs"
+    "test:ui": "node scripts/ui-e2e.mjs",
+    "mobile:test-apk": "node scripts/mobile.mjs test-apk",
+    "mobile:release": "node scripts/mobile.mjs release",
+    "mobile:ios": "node scripts/mobile.mjs ios",
+    "mobile:assets": "node scripts/mobile-assets.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

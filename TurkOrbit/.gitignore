@@ -9,8 +9,14 @@ apps/client/dist/
 test-results/
 playwright-report/
 .DS_Store
-# Mobil derleme çıktıları (Aşama 15'te oluşacak)
+# Mobil (Aşama 15): derleme çıktıları, Gradle önbelleği, mobil web paketi, imza anahtarları
+apps/client/dist-mobile/
 apps/client/android/app/build/
+apps/client/android/build/
+apps/client/android/.gradle/
+apps/client/android/local.properties
 apps/client/ios/App/Pods/
+*.jks
+*.keystore
 # Aşama 13: yerel destek ekleri (UPLOAD_DIR varsayılanı)
 var/

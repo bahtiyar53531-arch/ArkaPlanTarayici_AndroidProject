@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { PublicLayout } from '../components/Layout';
+import { ServerBadge } from './MobilePages';
 import {
   Alert,
   Card,
@@ -69,6 +70,7 @@ export function LoginPage() {
         <p className="card-footer">
           Hesabın yok mu? <Link to="/kayit">Hemen kayıt ol</Link>
         </p>
+        <ServerBadge />
       </Card>
     </PublicLayout>
   );

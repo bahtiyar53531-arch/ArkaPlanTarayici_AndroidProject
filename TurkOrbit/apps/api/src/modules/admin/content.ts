@@ -56,6 +56,8 @@ export class ContentService {
   private readonly adapters: Record<ContentType, Adapter>;
   /** Görev yayını/geri alması sonrası bu süreçteki görev önbelleğini hemen tazelemek için (diğer süreçler ≤2 sn'de görür) */
   onQuestChange: (() => void) | null = null;
+  /** Aşama 15: yayımlanan/geri alınan ayar (ör. 'client' sürüm kapısı önbelleği boşaltılır) */
+  onSettingChange: ((key: string) => void) | null = null;
 
   constructor(
     private readonly db: Db,
@@ -493,6 +495,7 @@ export class ContentService {
     });
     for (const e of events) await this.bridge.publishAdmin(e);
     if (type === 'quest') this.onQuestChange?.();
+    if (type === 'setting') this.onSettingChange?.(entityId);
     return this.detail(actor, type, entityId);
   }
 
@@ -537,6 +540,7 @@ export class ContentService {
     });
     for (const e of events) await this.bridge.publishAdmin(e);
     if (type === 'quest') this.onQuestChange?.();
+    if (type === 'setting') this.onSettingChange?.(entityId);
     return this.detail(actor, type, entityId);
   }
 

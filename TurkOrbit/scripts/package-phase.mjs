@@ -33,12 +33,22 @@ const excludes = [
   // Destek ekleri gibi yüklenen dosyalar (UPLOAD_DIR varsayılanı: <çalışma klasörü>/var/uploads)
   'TurkOrbit/var/*',
   'TurkOrbit/*/*/var/*',
+  // Aşama 15: mobil derleme çıktıları ve üretilen kopyalar (npm run mobile:* yeniden üretir), imza anahtarları
+  'TurkOrbit/apps/client/dist-mobile/*',
+  'TurkOrbit/apps/client/android/.gradle/*',
+  'TurkOrbit/apps/client/android/build/*',
+  'TurkOrbit/apps/client/android/app/build/*',
+  'TurkOrbit/apps/client/android/app/src/main/assets/public/*',
+  'TurkOrbit/apps/client/android/local.properties',
+  'TurkOrbit/apps/client/ios/App/App/public/*',
+  'TurkOrbit/*.jks',
+  'TurkOrbit/*.keystore',
 ];
 const parent = path.dirname(ROOT);
 let r = spawnSync('zip', ['-r', '-q', '-X', out, 'TurkOrbit', '-x', ...excludes], { cwd: parent, stdio: 'inherit' });
 if (r.error) {
   // zip yoksa (ör. Windows) bsdtar ile dene
-  const tarExcludes = ['node_modules', 'dist', 'Deliveries', '.env', 'test-results', 'playwright-report', 'var'].flatMap((e) => [
+  const tarExcludes = ['node_modules', 'dist', 'dist-mobile', 'Deliveries', '.env', 'test-results', 'playwright-report', 'var', '.gradle', '*.jks', '*.keystore'].flatMap((e) => [
     '--exclude',
     e,
   ]);

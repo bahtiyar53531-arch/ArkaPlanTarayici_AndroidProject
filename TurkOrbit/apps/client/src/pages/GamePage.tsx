@@ -108,6 +108,8 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
     else setChatFocus((n) => n + 1);
   };
   const [portraitHint, setPortraitHint] = useState(false);
+  // Aşama 15: yatay telefonda HUD ayrı yerleşir (sol üstte pilot + görev yan yana, hedef paneli alt ortada)
+  const [phoneLandscape, setPhoneLandscape] = useState(false);
   const { quality, fpsLimit } = c.settings.graphics;
 
   // Phaser oyunu: grafik kalitesi / FPS sınırı değişince yeniden kurulur.
@@ -168,20 +170,28 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
   useEffect(() => {
     if (deviceClass !== 'phone') return;
     const mq = window.matchMedia('(orientation: portrait)');
-    const on = () => setPortraitHint(mq.matches);
+    const on = () => {
+      setPortraitHint(mq.matches);
+      setPhoneLandscape(!mq.matches);
+    };
     on();
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   }, [deviceClass]);
 
   const s = c.settings;
+  const joystickRight = s.controls.mode === 'joystick' && s.controls.joystickSide === 'right';
+  const rootClass = `game-root device-${deviceClass}${phoneLandscape ? ' phone-landscape' : ''} ${joystickRight ? 'joystick-right' : 'joystick-left'}`;
   return (
-    <div className={`game-root device-${deviceClass}`} style={{ ['--hud-scale' as string]: s.hud.scale }}>
+    <div
+      className={rootClass}
+      style={{ ['--hud-scale' as string]: s.hud.scale, ['--joy-size' as string]: `${Math.round(130 * s.controls.joystickSize)}px` }}
+    >
       <div ref={host} className="game-canvas" data-testid="game-canvas" />
       <div className="hud-layer">
         <div className="hud-corner tl">
           <PilotPanel c={c} />
-          <QuestTracker c={c} max={deviceClass === 'phone' ? 2 : 3} onOpen={() => setOverlay('quests')} />
+          <QuestTracker c={c} max={phoneLandscape ? 1 : deviceClass === 'phone' ? 2 : 3} onOpen={() => setOverlay('quests')} />
           {!touch && overlay === 'none' && (
             <div className="hud-help muted small">WASD: hareket · Tıkla: hedef seç / git · Boşluk: ateş · 1–5: mühimmat · R: roket · Tab: en yakın hedef · {s.keys.jump.replace(/^Key/, '')}: geçit · {s.keys.galaxy.replace(/^Key/, '')}: galaksi · {s.keys.quests.replace(/^Key/, '')}: görevler · Enter: sohbet</div>
           )}
@@ -200,7 +210,7 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
           {deviceClass !== 'phone' && <PartyPanel c={c} />}
         </div>
         <div className="hud-corner tc">
-          <TargetPanel c={c} onPilot={openDm} />
+          {!phoneLandscape && <TargetPanel c={c} onPilot={openDm} />}
           <PartyInvites c={c} />
         </div>
         {!touch && (
@@ -209,6 +219,7 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
           </div>
         )}
         <div className="hud-corner bc">
+          {phoneLandscape && <TargetPanel c={c} onPilot={openDm} />}
           <PortalPrompt c={c} />
           <ActionBar c={c} touch={touch} />
         </div>

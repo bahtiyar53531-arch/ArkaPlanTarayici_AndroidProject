@@ -8,6 +8,9 @@ import { createAuthGuards, type AuthGuards } from './modules/auth/guards.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { AuthService, type AuthLimits } from './modules/auth/service.js';
 import { healthRoutes } from './modules/health/routes.js';
+import { ClientGate, registerClientGate } from './modules/client/gate.js';
+import { OneTimeLinks } from './lib/one-time.js';
+import type { AttachmentLink } from './modules/support/routes.js';
 import { hangarRoutes } from './modules/hangar/routes.js';
 import { HangarService, type Rng } from './modules/hangar/service.js';
 import { playerRoutes } from './modules/player/routes.js';
@@ -56,13 +59,14 @@ export interface BuiltApp {
   adminPlayers: AdminPlayerService;
   content: ContentService;
   overview: AdminOverviewService;
+  clientGate: ClientGate;
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export async function buildApp(
   rt: Runtime,
-  options: { limits?: Partial<AuthLimits>; rng?: Rng; clock?: () => Date; files?: FileStore } = {},
+  options: { limits?: Partial<AuthLimits>; rng?: Rng; clock?: () => Date; files?: FileStore; attachmentLinkTtlSeconds?: number } = {},
 ): Promise<BuiltApp> {
   const { config } = rt;
   const app = Fastify({
@@ -176,6 +180,13 @@ export async function buildApp(
   const adminPlayers = new AdminPlayerService({ db: rt.db, log: app.log, auth, bridge, notifier, approvals, ...(options.clock ? { clock: options.clock } : {}) });
   const content = new ContentService(rt.db, app.log, bridge, options.clock);
   content.onQuestChange = () => quests.catalog.invalidate();
+  // Aşama 15 — mobil uygulama: sürüm kapısı ve tek kullanımlık ek indirme bağlantıları
+  const clientGate = new ClientGate(rt.db);
+  content.onSettingChange = (key) => {
+    if (key === 'client') clientGate.invalidate();
+  };
+  registerClientGate(app, clientGate);
+  const attachmentLinks = new OneTimeLinks<AttachmentLink>(rt.redis, 'dl:attachment', options.attachmentLinkTtlSeconds ?? 60);
   const overview = new AdminOverviewService(rt.db, app.log, bridge, approvals, options.clock);
 
   await app.register(
@@ -190,11 +201,11 @@ export async function buildApp(
       marketRoutes(api, { service: market, guards });
       socialRoutes(api, { clans, social, guards, limiter: rt.limiter });
       forumRoutes(api, { service: forum, guards, limiter: rt.limiter });
-      supportRoutes(api, { service: support, guards, limiter: rt.limiter });
+      supportRoutes(api, { service: support, guards, limiter: rt.limiter, links: attachmentLinks });
       adminRoutes(api, { guards, db: rt.db, limiter: rt.limiter, players: adminPlayers, content, overview, approvals, forum });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, forum, support, files, guards, bridge, approvals, adminPlayers, content, overview };
+  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, forum, support, files, guards, bridge, approvals, adminPlayers, content, overview, clientGate };
 }

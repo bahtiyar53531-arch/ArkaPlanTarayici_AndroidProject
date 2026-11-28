@@ -126,7 +126,18 @@ export function FieldInput({ f, value, onChange }: { f: ContentField; value: unk
       );
       break;
     default:
-      input = <input id={id} type="text" maxLength={f.maxLength} value={(value as string | null) ?? ''} onChange={(e) => onChange(e.target.value)} data-testid={id} />;
+      input = (
+        <input
+          id={id}
+          type={f.format === 'https-url' ? 'url' : 'text'}
+          inputMode={f.format === 'version' ? 'decimal' : undefined}
+          placeholder={f.format === 'version' ? '1.2.3' : f.format === 'https-url' ? 'https://…' : undefined}
+          maxLength={f.maxLength}
+          value={(value as string | null) ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          data-testid={id}
+        />
+      );
   }
   return (
     <label className="field" htmlFor={id}>

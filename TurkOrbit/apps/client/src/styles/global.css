@@ -643,3 +643,18 @@ select, .motto-form input {
   .forum-thread-stats, .forum-thread-last { width: auto; text-align: left; }
   .forum-search input { min-width: 0; flex: 1; }
 }
+
+/* Aşama 15: bağlantı görünümlü düğme (mobilde ek indirme) */
+.link-button { background: none; border: 0; padding: 0; color: var(--cyan); text-decoration: underline; cursor: pointer; font: inherit; }
+.link-button:disabled { opacity: 0.6; cursor: wait; }
+
+/* Aşama 15: mobil uygulama — güncelleme zorunluluğu ve test derlemesi sunucu bilgisi */
+.update-gate {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px);
+  background: rgba(3, 6, 18, 0.94);
+}
+.update-card { width: min(440px, 100%); background: var(--panel-solid); border: 1px solid #2a3a70; border-radius: 14px; padding: 22px; text-align: center; }
+.update-card h2 { margin: 0 0 10px; }
+.update-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }
+.server-badge { text-align: center; margin-top: 12px; word-break: break-all; }

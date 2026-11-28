@@ -36,6 +36,8 @@ import {
   type ShipState,
 } from '@turkorbit/shared';
 import { api, ApiError } from '../api/client';
+import { gameUrl } from '../platform/server';
+import { APP_RESUME_EVENT } from '../platform/shell';
 
 export const SERVER = 'TR1';
 const INTERP_DELAY = 150;
@@ -110,8 +112,6 @@ const fmtN = (n: number) => n.toLocaleString('tr-TR');
 
 type Listener = () => void;
 
-const wsUrl = (): string =>
-  (import.meta.env.VITE_GAME_URL as string | undefined) ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/game`;
 
 const lerpAngle = (a: number, b: number, t: number) => {
   let d = b - a;
@@ -271,11 +271,29 @@ export class GameController {
     void this.open();
     this.timers.push(setInterval(() => this.send({ t: 'ping', c: performance.now() }), 2000));
     window.addEventListener('online', this.onOnline);
+    window.addEventListener(APP_RESUME_EVENT, this.onResume);
     return p;
   }
 
   private onOnline = () => {
     if (this.state.conn === 'reconnecting') {
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      void this.open();
+    }
+  };
+
+  /**
+   * Mobil uygulama ön plana döndü (Aşama 15). Arka planda işletim sistemi bağlantıyı kesmiş olabilir:
+   * yeniden bağlanma bekliyorsa hemen denenir; soket kapanmış ama haber gelmemişse yeniden açılır.
+   */
+  private onResume = () => {
+    if (this.disposed) return;
+    if (this.state.conn === 'reconnecting') return this.onOnline();
+    if (this.state.conn === 'online' && (!this.ws || this.ws.readyState > WebSocket.OPEN)) {
+      const dead = this.ws;
+      this.ws = null;
+      dead?.close();
+      this.scheduleReconnect();
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       void this.open();
     }
@@ -307,7 +325,7 @@ export class GameController {
       return this.scheduleReconnect();
     }
     if (this.disposed) return;
-    const ws = new WebSocket(wsUrl());
+    const ws = new WebSocket(gameUrl());
     this.ws = ws;
     ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, ticket }));
     ws.onmessage = (ev) => this.onMessage(JSON.parse(String(ev.data)) as ServerMessage);
@@ -359,6 +377,7 @@ export class GameController {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.jumpTimer) clearTimeout(this.jumpTimer);
     window.removeEventListener('online', this.onOnline);
+    window.removeEventListener(APP_RESUME_EVENT, this.onResume);
     this.ws?.close(1000);
     this.ws = null;
     this.listeners.clear();

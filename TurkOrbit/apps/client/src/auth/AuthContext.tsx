@@ -1,6 +1,10 @@
 import type { LoginResponse, MeResponse } from '@turkorbit/shared';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, ApiError, CLIENT_PLATFORM, setCsrfToken } from '../api/client';
+import { api, ApiError, setCsrfToken } from '../api/client';
+import { APP_VERSION, CLIENT_PLATFORM, IS_NATIVE } from '../platform/native';
+import { sessionToken } from '../platform/secure-store';
+import { needsServerSetup } from '../platform/server';
+import { nativeDeviceName } from '../platform/shell';
 
 interface AuthState {
   me: MeResponse | null;
@@ -24,10 +28,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
+      if (IS_NATIVE) {
+        // Mobil: oturum anahtarı güvenli depodan okunur; yoksa sunucuya sormaya gerek yok
+        if (needsServerSetup() || !(await sessionToken.load())) {
+          apply(null);
+          return;
+        }
+      }
       apply(await api<MeResponse>('GET', '/auth/me'));
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) apply(null);
-      else throw err;
+      if (err instanceof ApiError && err.status === 401) {
+        // Oturum sunucuda kapatılmış (ör. başka cihazdan "oturumu kapat"): yerel anahtar da silinir
+        await sessionToken.clear();
+        apply(null);
+      } else throw err;
     } finally {
       setLoading(false);
     }
@@ -41,10 +55,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const r = await api<LoginResponse>('POST', '/auth/login', {
       identifier,
       password,
-      transport: 'cookie',
-      device: { platform: CLIENT_PLATFORM },
+      // Mobil uygulama oturum anahtarını yanıtta alır ve güvenli depoya yazar; web HttpOnly çerez kullanır
+      transport: IS_NATIVE ? 'token' : 'cookie',
+      device: IS_NATIVE
+        ? { platform: CLIENT_PLATFORM, name: await nativeDeviceName(), appVersion: APP_VERSION }
+        : { platform: CLIENT_PLATFORM },
     });
-    apply(r);
+    if (IS_NATIVE) {
+      if (!r.sessionToken) throw new ApiError(500, 'INTERNAL_ERROR', 'Sunucu oturum anahtarı göndermedi.');
+      await sessionToken.save(r.sessionToken);
+    }
+    const { sessionToken: _omit, ...me } = r;
+    apply(me);
     return r;
   }, []);
 
@@ -52,12 +74,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api('POST', '/auth/logout');
     } finally {
+      await sessionToken.clear();
       apply(null);
     }
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ me, loading, login, logout, refresh, clear: () => apply(null) }),
+    () => ({
+      me,
+      loading,
+      login,
+      logout,
+      refresh,
+      clear: () => {
+        void sessionToken.clear();
+        apply(null);
+      },
+    }),
     [me, loading, login, logout, refresh],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
