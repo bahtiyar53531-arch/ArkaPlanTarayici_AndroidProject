@@ -17,6 +17,8 @@ import { gameRoutes } from './modules/game/routes.js';
 import { WorldService } from './modules/world/service.js';
 import { PlayerService } from './modules/player/service.js';
 import { questRoutes } from './modules/quest/routes.js';
+import { marketRoutes } from './modules/market/routes.js';
+import { MarketService } from './modules/market/service.js';
 import { QuestService } from './modules/quest/service.js';
 import type { Runtime } from './runtime.js';
 
@@ -27,6 +29,7 @@ export interface BuiltApp {
   hangar: HangarService;
   world: WorldService;
   quests: QuestService;
+  market: MarketService;
   guards: AuthGuards;
   bridge: GameBridge;
 }
@@ -136,6 +139,7 @@ export async function buildApp(
   const bridge = new GameBridge(rt.redis, app.log);
   const quests = new QuestService(rt.db, app.log, { bridge, ...(options.clock ? { clock: options.clock } : {}) });
   const hangar = new HangarService(rt.db, app.log, options.rng, bridge, quests);
+  const market = new MarketService(rt.db, app.log, { bridge, quests, ...(options.clock ? { clock: options.clock } : {}) });
   const world = new WorldService(rt.db, app.log);
 
   await app.register(
@@ -147,9 +151,10 @@ export async function buildApp(
       worldRoutes(api, { service: world, guards });
       gameRoutes(api, { bridge, guards, limiter: rt.limiter, db: rt.db });
       questRoutes(api, { service: quests, guards });
+      marketRoutes(api, { service: market, guards });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, quests, guards, bridge };
+  return { app, auth, players, hangar, world, quests, market, guards, bridge };
 }

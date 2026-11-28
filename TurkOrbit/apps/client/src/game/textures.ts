@@ -250,4 +250,22 @@ export function createNpcTextures(scene: Phaser.Scene) {
     g.generateTexture('cargo', 64, 64);
     g.destroy();
   }
+
+  // Aşama 11: maden noktası (açık renkli kristal kümesi; sahnede kaynağın rengine boyanır)
+  if (!scene.textures.exists('resource')) {
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0xffffff, 0.16);
+    g.fillCircle(40, 40, 38);
+    const crystal = (cx: number, cy: number, w: number, h: number, a: number) => {
+      g.fillStyle(0xffffff, a);
+      g.fillPoints([new Phaser.Math.Vector2(cx, cy - h), new Phaser.Math.Vector2(cx + w, cy), new Phaser.Math.Vector2(cx, cy + h * 0.55), new Phaser.Math.Vector2(cx - w, cy)], true);
+      g.lineStyle(2, 0xffffff, 1);
+      g.strokePoints([new Phaser.Math.Vector2(cx, cy - h), new Phaser.Math.Vector2(cx + w, cy), new Phaser.Math.Vector2(cx, cy + h * 0.55), new Phaser.Math.Vector2(cx - w, cy)], true);
+    };
+    crystal(40, 44, 12, 30, 0.95);
+    crystal(24, 52, 9, 20, 0.8);
+    crystal(56, 54, 9, 18, 0.8);
+    g.generateTexture('resource', 80, 80);
+    g.destroy();
+  }
 }

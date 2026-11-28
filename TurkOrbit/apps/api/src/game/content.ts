@@ -44,6 +44,18 @@ export interface NpcType {
   rewards: RewardEntry[];
 }
 
+export interface ResourceNodeGroup {
+  id: number;
+  /** kaynak eşya kodu (res.kuvarsit …) */
+  code: string;
+  name: string;
+  area: { x: number; y: number; r: number };
+  maxCount: number;
+  respawnMs: number;
+  yieldMin: number;
+  yieldMax: number;
+}
+
 export interface NpcSpawn {
   id: number;
   typeId: number;
@@ -76,6 +88,8 @@ export interface RocketStats {
 export class GameContent {
   npcTypes = new Map<number, NpcType>();
   items = new Map<string, ItemRef>();
+  /** Aşama 11: maden noktası toplama yarıçapı (game_settings.mining) */
+  miningRadius = 90;
   ammo = new Map<string, AmmoStats>();
   rockets = new Map<string, RocketStats>();
   mapIds = new Map<string, number>();
@@ -145,6 +159,18 @@ export class GameContent {
     this.mapIds = new Map(maps.rows.map((m) => [m.code, m.id]));
     const combat = await getSetting<Partial<CombatSettings>>(db, 'combat');
     this.combat = { ...DEFAULT_COMBAT_SETTINGS, ...(combat ?? {}) };
+    this.miningRadius = (await getSetting<{ pickup_radius?: number }>(db, 'mining'))?.pickup_radius ?? 90;
+  }
+
+  /** Aşama 11: haritanın maden noktası grupları (oda açılırken okunur). */
+  async resourceNodesFor(db: Queryable, mapCode: string): Promise<ResourceNodeGroup[]> {
+    const r = await db.query<{ id: number; code: string; name: string; area: { x: number; y: number; r: number }; max_count: number; respawn_seconds: number; yield_min: number; yield_max: number }>(
+      `SELECT n.id, it.code, it.name, n.area, n.max_count, n.respawn_seconds, n.yield_min, n.yield_max
+       FROM resource_nodes n JOIN maps m ON m.id = n.map_id JOIN item_types it ON it.id = n.item_type_id
+       WHERE m.code = $1 AND n.is_enabled ORDER BY n.id`,
+      [mapCode],
+    );
+    return r.rows.map((x) => ({ id: x.id, code: x.code, name: x.name, area: x.area, maxCount: x.max_count, respawnMs: x.respawn_seconds * 1000, yieldMin: x.yield_min, yieldMax: x.yield_max }));
   }
 
   async spawnsFor(db: Queryable, mapCode: string): Promise<NpcSpawn[]> {

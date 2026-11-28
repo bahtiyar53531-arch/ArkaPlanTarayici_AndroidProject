@@ -40,6 +40,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   │   │   │   ├── world/            galaksi, harita, geçit kuralları, oyuncu ayarları (Aşama 7)
     │   │   │   │   ├── game/             oyun bileti + Redis köprüsü: çevrimiçi durum, tek oturum, canlı değişiklik (Aşama 8)
     │   │   │   │   ├── quest/            görev servisi ve uçları: liste, kabul, yeniden çekme, ödül, olay kaydı (Aşama 10)
+    │   │   │   │   ├── market/           Pazar: üretim kuyruğu, günlük ödül, açık artırma + zamanlayıcı (Aşama 11)
     │   │   │   │   └── health/           sağlık uç noktası
     │   │   │   ├── game/                 gerçek zamanlı oyun sunucusu — AYRI SÜREÇ (npm run dev:game): WebSocket, 20 Hz simülasyon, AOI (Aşama 8); NPC yapay zekâsı, savaş, ödül: content.ts + persistence.ts (Aşama 9)
     │   │   │   └── scripts/              migrate.ts, role-cli.ts (sunucu tarafı rol atama)
@@ -60,7 +61,7 @@ ArkaPlanTarayici_AndroidProject/          (depo kökü — eski APK projesi, dok
     │   └── admin/                        (Aşama 14) TÜRK ORBIT YÖNETİM MERKEZİ — şimdilik README
     │
     ├── database/
-    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests (numaralı, değiştirilmez)
+    │   ├── migrations/                   0001_auth, 0002_player_profile, 0003_hangar, 0004_world, 0005_combat, 0006_quests, 0007_economy (numaralı, değiştirilmez)
     │   └── schema-draft.sql              tüm oyunun doğrulanmış taslak şeması
     │
     ├── infra/

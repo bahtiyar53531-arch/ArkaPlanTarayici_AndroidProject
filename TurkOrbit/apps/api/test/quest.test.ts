@@ -92,8 +92,9 @@ describe('görev listesi', () => {
     const weekly = byCat(q, 'weekly');
     expect(daily).toHaveLength(3);
     expect(weekly).toHaveLength(3);
-    expect(daily.every((d) => d.status === 'active' && d.cycle === '2026-11-28' && d.code.startsWith('gunluk-a'))).toBe(true);
-    expect(weekly.every((d) => d.status === 'active' && d.cycle === '2026-W48' && d.code.startsWith('haftalik-a'))).toBe(true);
+    // 1. seviye havuzu: 1–6 bandı ve (Aşama 11) seviye şartsız madencilik görevleri
+    expect(daily.every((d) => d.status === 'active' && d.cycle === '2026-11-28' && d.minLevel === 1 && /^gunluk-(a|m)\d\d$/.test(d.code))).toBe(true);
+    expect(weekly.every((d) => d.status === 'active' && d.cycle === '2026-W48' && d.minLevel === 1 && /^haftalik-(a|m)\d\d$/.test(d.code))).toBe(true);
     // Açılış Şenliği açık; seviye isteyenler kilitli; 3 hafta sonraki etkinlik görünmez
     expect(find(q, 'acilis-senligi-01')?.status).toBe('available');
     expect(find(q, 'acilis-senligi-05')).toMatchObject({ status: 'locked', lockedReason: '5. seviyede açılır' });

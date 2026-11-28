@@ -168,7 +168,7 @@ export class GameController {
       maxHp: 1,
       shield: 0,
       maxShield: 0,
-      combat: { target: null, attacking: false, ammo: 'ammo.isk1', rocket: 'rocket.yildirim', counts: {}, rocketCooldownMs: 0, laserRange: 0 },
+      combat: { target: null, attacking: false, ammo: 'ammo.isk1', rocket: 'rocket.yildirim', counts: {}, rocketCooldownMs: 0, laserRange: 0, cargo: [0, 0] },
       dead: null,
       quests: [],
       questsVersion: 0,

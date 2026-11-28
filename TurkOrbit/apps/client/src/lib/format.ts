@@ -49,6 +49,8 @@ export function formatItemStats(category: ItemCategory | 'ship', s: Record<strin
       return PET_KIND[String(s.kind)] ?? '';
     case 'ship_design':
       return 'Yalnızca görünüm değiştirir';
+    case 'resource':
+      return `${n('tier')}. kademe kaynak · rafineride ve atölyede kullanılır`;
     default:
       return '';
   }

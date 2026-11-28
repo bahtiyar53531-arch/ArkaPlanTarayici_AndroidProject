@@ -38,7 +38,7 @@ flowchart LR
 |---|---|---|---|
 | `apps/client` | TypeScript, React 18, Vite 7, Phaser 3.90 | Hesap ekranları, oyun, HUD. Web/PWA + Capacitor ile Android/iOS | Hesap ekranları ✅, oyun ekranı (tek oyunculu) ✅ |
 | `apps/api` | Node.js 22, Fastify 5, zod, pg, ioredis, argon2 | Hesap, profil, hangar, ekonomi, görev, klan, forum, destek, yönetim REST API'si | Kimlik, profil, hangar, dünya ✅ |
-| Oyun sunucusu (`apps/api/src/game`, ayrı süreç) | Node.js 22, `ws`, JSON protokol (ikili protokol Aşama 16) | Sunucu otoriteli gerçek zamanlı simülasyon: hareket ✅ (Aşama 8); savaş, NPC yapay zekâsı, ölüm, ödül ✅ (Aşama 9); görev olayları ✅ (Aşama 10) | Hareket, AOI, geçit, tek oturum, savaş, görev olayları ✅ |
+| Oyun sunucusu (`apps/api/src/game`, ayrı süreç) | Node.js 22, `ws`, JSON protokol (ikili protokol Aşama 16) | Sunucu otoriteli gerçek zamanlı simülasyon: hareket ✅ (Aşama 8); savaş, NPC yapay zekâsı, ölüm, ödül ✅ (Aşama 9); görev olayları ✅ (Aşama 10); madencilik ✅ (Aşama 11) | Hareket, AOI, geçit, tek oturum, savaş, görev olayları, madencilik ✅ |
 | `apps/admin` | React (istemciyle ortak bileşenler) | TÜRK ORBIT YÖNETİM MERKEZİ | Aşama 14 |
 | `packages/shared` | TypeScript + zod | Ortak tipler, doğrulama şemaları, roller, parola politikası, ağ protokolü ve deterministik hareket simülasyonu | ✅ |
 | Worker | API ile aynı kod tabanında ayrı süreç | Günlük/haftalık sıfırlama, açık artırma kapanışı, sıralama, temizlik | Aşama 10-11 |

@@ -215,9 +215,9 @@ export class SpaceScene extends Phaser.Scene {
     this.input.addPointer(1);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (this.input.pointer1.isDown && this.input.pointer2.isDown) return;
-      // Önce bir gemiye/NPC'ye tıklandı mı bak: hedef seçimi (kargo kutusuna tıklanınca oraya gidilir)
+      // Önce bir gemiye/NPC'ye tıklandı mı bak: hedef seçimi (kargo kutusuna / maden noktasına tıklanınca oraya gidilir)
       const hit = this.pick(p.worldX, p.worldY);
-      if (hit && hit.k !== 'c') {
+      if (hit && hit.k !== 'c' && hit.k !== 'r') {
         this.c.selectTarget(hit.id);
         return;
       }
@@ -368,9 +368,9 @@ export class SpaceScene extends Phaser.Scene {
       let r = this.remotes.get(id);
       if (!r) {
         const k = s.info.k;
-        const key = k === 'p' ? `ship:${s.info.s}:${s.info.c}` : k === 'n' ? s.info.s : 'cargo';
+        const key = k === 'p' ? `ship:${s.info.s}:${s.info.c}` : k === 'n' ? s.info.s : k === 'r' ? 'resource' : 'cargo';
         if (k === 'p' && !this.textures.exists(key)) this.loadShipTexture(key, s.info.s, s.info.c);
-        const img = this.add.image(s.x, s.y, this.textures.exists(key) ? key : this.shipKey).setDepth(k === 'c' ? 2 : 4);
+        const img = this.add.image(s.x, s.y, this.textures.exists(key) ? key : this.shipKey).setDepth(k === 'c' || k === 'r' ? 2 : 4);
         let size = 1.1;
         if (k === 'n') {
           size = 0.95 * (s.info.z ?? 1);
@@ -378,10 +378,14 @@ export class SpaceScene extends Phaser.Scene {
         } else if (k === 'c') {
           size = 1;
           this.tweens.add({ targets: img, angle: 360, duration: 6000, repeat: -1 });
+        } else if (k === 'r') {
+          size = 1;
+          img.setTint(Number.parseInt(s.info.c.slice(1), 16));
+          this.tweens.add({ targets: img, alpha: 0.75, duration: 1400, yoyo: true, repeat: -1 });
         }
         img.setScale(size);
         const label =
-          k === 'c'
+          k === 'c' || k === 'r'
             ? null
             : this.add
                 .text(s.x, s.y - 95 * size, k === 'n' ? `${s.info.n} · Sv ${s.info.l}${s.info.b ? ' ★' : ''}` : `${s.info.n} · Sv ${s.info.l}`, {
@@ -398,11 +402,11 @@ export class SpaceScene extends Phaser.Scene {
       }
       if (r.img.texture.key !== r.key && this.textures.exists(r.key)) r.img.setTexture(r.key);
       r.img.setPosition(s.x, s.y);
-      if (s.info.k !== 'c') r.img.rotation = s.h + Math.PI / 2;
+      if (s.info.k !== 'c' && s.info.k !== 'r') r.img.rotation = s.h + Math.PI / 2;
       r.label?.setPosition(s.x, s.y - 95 * r.size);
       // Can/kalkan çubukları: hedefteyse veya hasarlıysa
       r.bars.clear();
-      if (s.info.k !== 'c' && (id === targetId || s.hp < 100)) {
+      if (s.info.k !== 'c' && s.info.k !== 'r' && (id === targetId || s.hp < 100)) {
         const w = 110 * Math.max(0.8, r.size);
         const x0 = s.x - w / 2;
         const y0 = s.y - 70 * r.size;
@@ -422,9 +426,9 @@ export class SpaceScene extends Phaser.Scene {
   }
 
   /** Tıklanan dünya noktasına en yakın varlık (ekranda ~40 piksel içinde). */
-  private pick(wx: number, wy: number): { id: number; k: 'p' | 'n' | 'c' } | null {
+  private pick(wx: number, wy: number): { id: number; k: 'p' | 'n' | 'c' | 'r' } | null {
     const radius = 70 / this.cameras.main.zoom;
-    let best: { id: number; k: 'p' | 'n' | 'c' } | null = null;
+    let best: { id: number; k: 'p' | 'n' | 'c' | 'r' } | null = null;
     let bestD = radius;
     for (const [id, s] of this.c.ships) {
       if (!Number.isFinite(s.x)) continue;

@@ -54,7 +54,7 @@ import { activeShipStats } from '../modules/hangar/stats.js';
 import { WorldService } from '../modules/world/service.js';
 import { syncAchievements } from '../modules/player/achievements.js';
 import { QuestService, type QuestInterest } from '../modules/quest/service.js';
-import { GameContent, type NpcSpawn, type NpcType } from './content.js';
+import { GameContent, type NpcSpawn, type NpcType, type ResourceNodeGroup } from './content.js';
 import { CombatStore, type GrantResult } from './persistence.js';
 
 const DT = TICK_MS / 1000;
@@ -126,6 +126,21 @@ interface SpawnState {
   respawnAt: number[];
 }
 
+interface ResourceNode {
+  entityId: number;
+  uuid: string;
+  group: ResGroupState;
+  x: number;
+  y: number;
+  info: EntityInfo;
+}
+
+interface ResGroupState {
+  group: ResourceNodeGroup;
+  alive: number;
+  respawnAt: number[];
+}
+
 interface Room {
   code: string;
   mapType: string;
@@ -138,6 +153,9 @@ interface Room {
   npcs: Map<number, Npc>;
   cargo: Map<number, Cargo>;
   spawns: SpawnState[];
+  /** Aşama 11: maden noktaları */
+  resGroups: ResGroupState[];
+  resources: Map<number, ResourceNode>;
   fx: Array<{ f: Fx; x: number; y: number }>;
 }
 
@@ -236,6 +254,9 @@ interface Player {
   noticeAt: Map<string, number>;
   // --- görevler (Aşama 10)
   quest: QuestState;
+  // --- madencilik (Aşama 11): ambardaki kaynak / kapasite
+  cargoUsed: number;
+  cargoCap: number;
 }
 
 const send = (ws: WebSocket | null, msg: ServerMessage) => {
@@ -459,6 +480,7 @@ export class GameServer {
       p = this.createPlayer(ticket, ws, connId, map);
       await this.reloadStats(p, 'ship', false);
       p.counts = await this.store.ammoCounts(p.playerId);
+      p.cargoUsed = await this.store.resourceLoad(p.playerId);
       p.shield = p.maxShield;
       this.byPlayer.set(p.playerId, p);
       await this.joinRoom(p, map);
@@ -552,6 +574,8 @@ export class GameServer {
       csDirty: true,
       noticeAt: new Map(),
       quest: { interests: [], types: new Set(), cycle: '', resetHour: 5, killMinShare: 0.2, pending: new Map(), dist: 0, loaded: false },
+      cargoUsed: 0,
+      cargoCap: 0,
     };
   }
 
@@ -673,6 +697,7 @@ export class GameServer {
     if (!loading) {
       loading = (async () => {
         const spawns = await this.content.spawnsFor(this.o.db, map.map.code);
+        const resGroups = await this.content.resourceNodesFor(this.o.db, map.map.code);
         const room: Room = {
           code: map.map.code,
           mapType: map.map.mapType,
@@ -686,7 +711,10 @@ export class GameServer {
           cargo: new Map(),
           spawns: spawns.map((s) => ({ spawn: s, type: this.content.npcTypes.get(s.typeId)!, alive: 0, respawnAt: [] })),
           fx: [],
+          resGroups: resGroups.map((g) => ({ group: g, alive: 0, respawnAt: [] })),
+          resources: new Map(),
         };
+        for (const g of room.resGroups) for (let i = 0; i < g.group.maxCount; i++) this.spawnResource(room, g);
         for (const sp of room.spawns) for (let i = 0; i < sp.spawn.maxAlive; i++) this.spawnNpc(room, sp);
         this.rooms.set(room.code, room);
         return room;
@@ -791,6 +819,13 @@ export class GameServer {
       }
       for (const n of room.npcs.values()) this.stepNpc(room, n);
       this.cargoTick(room);
+      for (const g of room.resGroups) {
+        while (g.respawnAt.length && g.respawnAt[0]! <= now) {
+          g.respawnAt.shift();
+          this.spawnResource(room, g);
+        }
+      }
+      this.miningTick(room);
     }
     if (this.tickNo % SNAPSHOT_EVERY === 0) this.broadcast();
     if (this.tickNo % QUEST_FLUSH_TICKS === 0) this.flushQuests([...this.byPlayer.values()]);
@@ -1300,6 +1335,58 @@ export class GameServer {
     }
   }
 
+  // ================================================================== madencilik (Aşama 11)
+  private spawnResource(room: Room, g: ResGroupState) {
+    const a = g.group.area;
+    const ang = this.rng() * Math.PI * 2;
+    const rad = Math.sqrt(this.rng()) * a.r;
+    const x = Math.max(50, Math.min(room.width - 50, a.x + Math.cos(ang) * rad));
+    const y = Math.max(50, Math.min(room.height - 50, a.y + Math.sin(ang) * rad));
+    const entityId = this.nextEntityId++;
+    const color = g.group.code === 'res.kuvarsit' ? '#C9B8FF' : g.group.code === 'res.ferrolit' ? '#D98C5F' : '#9FE3F0';
+    room.resources.set(entityId, {
+      entityId,
+      uuid: randomUUID(),
+      group: g,
+      x,
+      y,
+      info: { id: entityId, k: 'r', n: g.group.name, cc: '', c: color, s: g.group.code.replace('res.', 'res-'), l: 0 },
+    });
+    g.alive++;
+  }
+
+  /** Maden noktasının üzerine gelen pilot kaynağı toplar (ambar doluysa toplanmaz). */
+  private miningTick(room: Room) {
+    if (room.resources.size === 0) return;
+    const radius = this.content.miningRadius;
+    for (const rn of [...room.resources.values()]) {
+      for (const p of room.players.values()) {
+        if (p.dead || dist(p.state, rn) > radius) continue;
+        const free = p.cargoCap - p.cargoUsed;
+        if (free <= 0) {
+          this.notice(p, `Ambarın dolu (${p.cargoUsed}/${p.cargoCap}). Kaynakları Pazar'da sat veya rafineride işle.`, 'info');
+          continue;
+        }
+        const g = rn.group;
+        const rolled = g.group.yieldMin + Math.floor(this.rng() * (g.group.yieldMax - g.group.yieldMin + 1));
+        const qty = Math.min(rolled, free);
+        room.resources.delete(rn.entityId);
+        g.alive--;
+        g.respawnAt.push(this.now() + g.group.respawnMs);
+        g.respawnAt.sort((a, b) => a - b);
+        p.cargoUsed += qty;
+        p.csDirty = true;
+        this.questEvent(p, { type: 'collect_resource', amount: qty, resource: g.group.code, map: room.code, mapType: room.mapType });
+        const picker = p;
+        void this.job('mining', async () => {
+          const res = await this.store.collectResource(rn.uuid, picker.playerId, g.group.code, qty);
+          this.sendReward(picker, 'Kaynak toplandı', res);
+        });
+        break;
+      }
+    }
+  }
+
   // ================================================================== kargo
   private cargoTick(room: Room) {
     const now = this.now();
@@ -1376,6 +1463,13 @@ export class GameServer {
           if (!p.visible.has(box.entityId)) entered.push(box.info);
           entities.push([box.entityId, Math.round(box.x), Math.round(box.y), 0, 0, 0, 100, 0]);
         }
+        // Maden noktaları da kargo algılama menzilinde görünür (madde 18)
+        for (const rn of room.resources.values()) {
+          if (dist(rn, p.state) > cargoRange) continue;
+          seen.add(rn.entityId);
+          if (!p.visible.has(rn.entityId)) entered.push(rn.info);
+          entities.push([rn.entityId, Math.round(rn.x), Math.round(rn.y), 0, 0, 0, 100, 0]);
+        }
         const left = [...p.visible].filter((id) => !seen.has(id));
         p.visible = seen;
         if (entered.length) send(p.ws, { t: 'enter', e: entered });
@@ -1391,6 +1485,7 @@ export class GameServer {
             counts: Object.fromEntries([...AMMO_CODES, ...ROCKET_CODES].map((c) => [c, p.counts.get(c) ?? 0])),
             rocketCooldownMs: Math.max(0, p.rocketReadyAt - this.now()),
             laserRange: p.laserRange,
+            cargo: [p.cargoUsed, p.cargoCap],
           });
         }
         // Yavaş bağlantıda arabellek şişerse anlık görüntü atlanır (bir sonraki zaten tam durumu taşır).
@@ -1585,6 +1680,7 @@ export class GameServer {
     p.laserInterval = volleyIntervalMs(s.damagePerVolley, s.damagePerSecond);
     p.laserRange = s.laserRange;
     p.repairPerSec = s.repairPerSecond;
+    p.cargoCap = s.cargo;
     p.maxHp = ship.maxHitpoints;
     if (reason === 'ship' || reason === 'repair' || p.shipId === null) {
       p.hp = ship.hitpoints;
@@ -1605,6 +1701,7 @@ export class GameServer {
   private async reloadInventory(p: Player) {
     await this.flushCombat([p]);
     p.counts = await this.store.ammoCounts(p.playerId);
+    p.cargoUsed = await this.store.resourceLoad(p.playerId);
     // Okuma sırasında harcanan mühimmat da düşülür
     for (const [code, n] of p.pendingUse) p.counts.set(code, Math.max(0, (p.counts.get(code) ?? 0) - n));
     p.csDirty = true;
@@ -1722,6 +1819,12 @@ export class GameServer {
   }
 
   /** Test/izleme: bir haritadaki NPC'lerin özeti. */
+  /** Test yardımcısı: haritadaki maden noktaları */
+  resourcesOn(mapCode: string) {
+    const room = this.rooms.get(mapCode);
+    return room ? [...room.resources.values()].map((r) => ({ id: r.entityId, code: r.group.group.code, x: r.x, y: r.y })) : [];
+  }
+
   npcsOn(mapCode: string) {
     const room = this.rooms.get(mapCode);
     return room ? [...room.npcs.values()].map((n) => ({ id: n.entityId, code: n.type.code, x: n.state.x, y: n.state.y, hp: n.hp, shield: n.shield, target: n.target?.playerId ?? null })) : [];

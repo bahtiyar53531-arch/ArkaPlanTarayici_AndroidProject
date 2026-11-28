@@ -18,6 +18,8 @@ export const ITEM_CATEGORIES = [
   'pet',
   'pet_module',
   'ship_design',
+  /** Aşama 11: kaynaklar (cevher ve rafineri ürünleri, yığınlanabilir) */
+  'resource',
 ] as const;
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
@@ -33,6 +35,7 @@ export const ITEM_CATEGORY_LABELS_TR: Record<ItemCategory, string> = {
   pet: 'PET',
   pet_module: 'PET modülü',
   ship_design: 'Gemi tasarımı',
+  resource: 'Kaynak',
 };
 
 export const SHIP_CLASS_LABELS_TR: Record<string, string> = {
@@ -78,6 +81,7 @@ export const ITEM_STATS_SCHEMAS = {
   pet: z.strictObject({ moduleSlots: z.number().int().min(1).max(8), hitpoints: pos }),
   pet_module: z.strictObject({ kind: z.enum(['collector', 'repair', 'guard', 'follow']), value: pos }),
   ship_design: z.strictObject({ spriteKey: z.string().regex(/^ship-[a-z0-9-]+$/) }),
+  resource: z.strictObject({ tier: z.number().int().min(1).max(4) }),
 } satisfies Record<ItemCategory, z.ZodType>;
 
 export type ItemStats<C extends ItemCategory> = z.infer<(typeof ITEM_STATS_SCHEMAS)[C]>;
@@ -369,11 +373,11 @@ export interface HangarResponse {
 
 export interface ShopOffer {
   id: number;
-  type: 'item' | 'ship';
+  type: 'item' | 'ship' | 'bundle';
   code: string;
   name: string;
   description: string;
-  category: ItemCategory | 'ship';
+  category: ItemCategory | 'ship' | 'bundle';
   rarity: string;
   iconKey: string;
   stats: Record<string, unknown>;
@@ -388,6 +392,8 @@ export interface ShopOffer {
   owned: boolean;
   limitReached: boolean;
   requiresShip: string | null;
+  /** Aşama 11: paket içeriği (type = 'bundle') */
+  bundle: Array<{ code: string; name: string; category: ItemCategory; quantity: number }> | null;
 }
 
 export interface ShopResponse {
@@ -401,4 +407,13 @@ export const ITEM_LEDGER_REASON_LABELS_TR: Record<string, string> = {
   shop_purchase: 'Mağazadan alındı',
   item_sell: 'Satıldı',
   admin_grant: 'Yönetici işlemi',
+  npc_reward: 'NPC ödülü',
+  cargo_loot: 'Kargo kutusu',
+  ammo_used: 'Savaşta harcandı',
+  quest_reward: 'Görev ödülü',
+  mining: 'Madencilik',
+  crafting_input: 'Üretimde kullanıldı',
+  crafting_output: 'Üretildi',
+  auction_win: 'Açık artırma kazancı',
+  daily_login: 'Günlük giriş ödülü',
 };

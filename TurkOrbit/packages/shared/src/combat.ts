@@ -225,6 +225,8 @@ export interface CombatState {
   /** Roketin yeniden hazır olmasına kalan süre (ms) */
   rocketCooldownMs: number;
   laserRange: number;
+  /** Aşama 11: gemi ambarındaki kaynak / kapasite */
+  cargo: [number, number];
 }
 
 export interface RewardMessage {

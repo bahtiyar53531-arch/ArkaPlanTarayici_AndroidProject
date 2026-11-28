@@ -10,7 +10,8 @@
 | [database/migrations/0004_world.sql](../database/migrations/0004_world.sql) | ✅ **Uygulanan migration** (Aşama 7). |
 | [database/migrations/0005_combat.sql](../database/migrations/0005_combat.sql) | ✅ **Uygulanan migration** (Aşama 9). |
 | [database/migrations/0006_quests.sql](../database/migrations/0006_quests.sql) | ✅ **Uygulanan migration** (Aşama 10). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 11–17). 0001 → 0006 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 94 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0007_economy.sql](../database/migrations/0007_economy.sql) | ✅ **Uygulanan migration** (Aşama 11). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 12–17). 0001 → 0007 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 96 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -104,6 +105,20 @@ Aşama 8'de veritabanı şeması değişmedi. Anlık oyun durumu bellekte (oyun 
 
 Görev ödülleri `currency_ledger` / `item_ledger` defterlerine `quest_reward` gerekçesiyle, idempotent anahtarla yazılır.
 
+## 1h. Aşama 11'de uygulanan tablolar (0007)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `item_types` (`resource`) | 7 kaynak eşyası | Kategori ve yığın kısıtları `resource` ile genişletildi; Yıldız Özü `sell_price = 0` (satılamaz) |
+| `resource_nodes` | 45 maden noktası grubu (en fazla 414 nokta) | Kaynak bölgelerinden üretildi; daire alan; `yield_max >= yield_min`; `is_enabled` |
+| `crafting_recipes` | 12 tarif (4 rafineri, 8 atölye) | `inputs` JSON dizisi (boş olamaz); süre, seviye |
+| `player_crafting_jobs` | Üretim kuyruğu | Başlatma anındaki çıktı saklanır; `ready_at >= started_at`; `idempotency_key` benzersiz; teslimde `claimed_at` zorunlu |
+| `auction_lots` | 9 açık artırma lotu | Tür saatlik/günlük/haftalık; taban fiyat > 0 |
+| `auctions` | Dönem açık artırmaları | `UNIQUE (server_id, lot_id, period_key)`; `ends_at > starts_at`; teklif ≥ taban |
+| `auction_bids` | Teklifler | `idempotency_key` benzersiz; iade edilen teklif `refunded` |
+| `daily_login_rewards`, `player_daily_logins` | 7 günlük takvim, oyuncu girişleri | Birincil anahtar (oyuncu, oyun günü) → günde tek ödül |
+| `shop_offers` (paket) | `title`, `description`, `bundle_items` | `offer_type = 'bundle'` için içerik zorunlu (CHECK) |
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
@@ -112,11 +127,11 @@ Görev ödülleri `currency_ledger` / `item_ledger` defterlerine `quest_reward` 
 | İçerik sürümleme | `content_revisions, approval_requests` | 14 (tasarım şimdiden) |
 | Eşya, envanter, konfigürasyon, PET | ✅ 0003'te uygulandı | 6 ✅ |
 | Yetenekler | `skill_nodes, player_skills` | 9 |
-| Harita | ✅ `map_portals, map_zones` 0004'te uygulandı; taslakta `resource_nodes` (madencilik) | 7 ✅ / 11 |
+| Harita | ✅ `map_portals, map_zones` 0004'te, `resource_nodes` 0007'de uygulandı | 7 ✅ / 11 ✅ |
 | NPC ve kapılar | ✅ `npc_types, npc_spawns` 0005'te uygulandı; taslakta `gates, gate_waves, player_gates` (Yıldız Kapıları) | 9 ✅ / 10-11 |
 | Ödüller | ✅ `reward_tables, reward_entries` 0005'te uygulandı | 9 ✅ |
 | Görevler | ✅ `quests, quest_objectives, player_quests` + `player_quest_cycles` 0006'da uygulandı | 10 ✅ |
-| Ekonomi | `currencies, wallets, currency_ledger, item_ledger, shop_categories, shop_offers, auctions, auction_bids, crafting_recipes, daily_login_rewards, player_daily_logins` | 11 |
+| Ekonomi | ✅ Cüzdan/defter/mağaza 0002–0003'te; açık artırma, üretim, günlük ödül, paketler 0007'de uygulandı | 11 ✅ |
 | Sosyal | `clans, clan_ranks, clan_members, clan_applications, clan_diplomacy, clan_treasury_ledger, friendships, player_blocks, chat_messages, reports, notifications` | 12 |
 | Etkinlik/sıralama | `events, leaderboard_snapshots` | 12 |
 | Forum | `forum_categories, forum_moderators, forum_threads, forum_posts, forum_likes, forum_follows` | 13 |

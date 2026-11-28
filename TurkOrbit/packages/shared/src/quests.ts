@@ -28,6 +28,7 @@ export const QUEST_CHAIN_NAMES: Record<string, string> = {
   'cekirdege-yolculuk': 'Çekirdeğe Yolculuk',
   'usta-nisanci': 'Usta Nişancı',
   'sirket-onuru': 'Şirket Onuru',
+  'altayin-mirasi': 'Altay\'ın Mirası',
 };
 
 export const OBJECTIVE_TYPES = [
@@ -42,6 +43,9 @@ export const OBJECTIVE_TYPES = [
   'upgrade_item',
   'buy_item',
   'reach_level',
+  /** Aşama 11: madencilik ve üretim */
+  'collect_resource',
+  'craft_item',
 ] as const;
 export type ObjectiveType = (typeof OBJECTIVE_TYPES)[number];
 
@@ -61,6 +65,10 @@ export interface ObjectiveParams {
   category?: string[];
   /** fire_rockets: roket kodu */
   rocket?: string[];
+  /** collect_resource: kaynak kodu */
+  resource?: string[];
+  /** craft_item: üretilen eşya kodu */
+  item?: string[];
 }
 
 /** Oyun sunucusunun veya hangarın ürettiği olay. amount: kaç birim (öldürme, hasar, mesafe…). */
@@ -77,6 +85,8 @@ export interface QuestEvent {
   level?: number;
   category?: string;
   rocket?: string;
+  resource?: string;
+  item?: string;
 }
 
 export const questEventSchema = z.strictObject({
@@ -91,6 +101,8 @@ export const questEventSchema = z.strictObject({
   level: z.number().int().min(0).max(100).optional(),
   category: z.string().max(40).optional(),
   rocket: z.string().max(40).optional(),
+  resource: z.string().max(40).optional(),
+  item: z.string().max(60).optional(),
 });
 
 /** "{c}" yer tutucusunu şirket önekiyle değiştirir. */
@@ -117,6 +129,8 @@ export function objectiveMatches(type: ObjectiveType, p: ObjectiveParams, e: Que
   if (p.min_level !== undefined && (e.level ?? 0) < p.min_level) return false;
   if (p.category && (!e.category || !p.category.includes(e.category))) return false;
   if (p.rocket && (!e.rocket || !p.rocket.includes(e.rocket))) return false;
+  if (p.resource && (!e.resource || !p.resource.includes(e.resource))) return false;
+  if (p.item && (!e.item || !p.item.includes(e.item))) return false;
   return true;
 }
 

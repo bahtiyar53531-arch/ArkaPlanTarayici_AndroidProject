@@ -2,7 +2,7 @@
 
 PC, web tarayıcısı, Android ve iOS'ta **aynı hesapla** oynanan, sunucu otoriteli gerçek zamanlı uzay MMO oyunu ve platformu.
 
-> **Durum (28.11.2026):** Aşama 1–10 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili**, **hangar/ekipman**, **harita/oyun motoru**, **gerçek zamanlı çok oyunculu dünya**, **NPC ve savaş** ve **görev sistemi** (300 görev, olay tabanlı sunucu ilerlemesi, 05:00 TSİ günlük/haftalık sıfırlama, defterli ödül, oyun içi görev izleyici). Ekonomi Aşama 11. Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md) · [Aşama 7](Documentation/DevelopmentNotes/Asama-07-Raporu.md) · [Aşama 8](Documentation/DevelopmentNotes/Asama-08-Raporu.md) · [Aşama 9](Documentation/DevelopmentNotes/Asama-09-Raporu.md) · [Aşama 10](Documentation/DevelopmentNotes/Asama-10-Raporu.md).
+> **Durum (28.11.2026):** Aşama 1–11 tamamlandı: araştırma (kısmen, ağ kısıtı), mimari, veritabanı/altyapı, **kayıt/giriş**, **oyuncu profili**, **hangar/ekipman**, **harita/oyun motoru**, **gerçek zamanlı çok oyunculu dünya**, **NPC ve savaş**, **görev sistemi** (318 görev, 05:00 TSİ sıfırlama) ve **ekonomi** (madencilik ve gemi ambarı, rafineri/atölye üretimi, sistem açık artırmaları, günlük giriş ödülü, mağaza paketleri; tümü defterli ve sunucu taraflı). Klan ve sosyal Aşama 12. Raporlar: [Aşama 1–4](Documentation/DevelopmentNotes/Asama-01-Raporu.md) · [Aşama 5](Documentation/DevelopmentNotes/Asama-05-Raporu.md) · [Aşama 6](Documentation/DevelopmentNotes/Asama-06-Raporu.md) · [Aşama 7](Documentation/DevelopmentNotes/Asama-07-Raporu.md) · [Aşama 8](Documentation/DevelopmentNotes/Asama-08-Raporu.md) · [Aşama 9](Documentation/DevelopmentNotes/Asama-09-Raporu.md) · [Aşama 10](Documentation/DevelopmentNotes/Asama-10-Raporu.md) · [Aşama 11](Documentation/DevelopmentNotes/Asama-11-Raporu.md).
 
 ## Hızlı başlangıç
 
@@ -28,7 +28,7 @@ Ayrıntılı kurulum ve dosya yerleştirme: [Documentation/Asama-01-Kayit-Giris/
 | `npm run typecheck` | TypeScript denetimi |
 | `npm run build` | Üretim derlemesi |
 | `npm run admin:grant-role -- --user X --role super_admin --reason "..."` | Sunucu tarafı rol atama (denetim kaydına yazılır) |
-| `npm run package:phase -- Asama-10-Gorev-Sistemi` | Aşama ZIP teslimatı |
+| `npm run package:phase -- Asama-11-Ekonomi` | Aşama ZIP teslimatı |
 
 ## Belgeler
 

@@ -143,8 +143,8 @@ export type SelfStats = [number, number, number, number, number];
 
 export interface EntityInfo {
   id: number;
-  /** tür: p = pilot, n = NPC, c = kargo kutusu */
-  k: 'p' | 'n' | 'c';
+  /** tür: p = pilot, n = NPC, c = kargo kutusu, r = maden noktası (Aşama 11) */
+  k: 'p' | 'n' | 'c' | 'r';
   /** ad (pilot adı / NPC türü) */
   n: string;
   /** şirket kodu (NPC ve kargo için boş) ve renk */

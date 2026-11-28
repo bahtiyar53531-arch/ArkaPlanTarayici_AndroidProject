@@ -203,8 +203,9 @@ describe('mağaza', () => {
   it('kategoriler ve teklifler listelenir; fiyatlar sunucudan gelir', async () => {
     const { client } = await pilot('VitrinPilot');
     const s = await shop(client);
-    expect(s.categories.map((c) => c.code)).toEqual(['gemiler', 'lazerler', 'mermiler', 'roketler', 'jeneratorler', 'ekstralar', 'droneler', 'pet', 'tasarimlar']);
-    const ships = s.categories[0]!.offers;
+    // Aşama 11: 'paketler' kategorisi en başta
+    expect(s.categories.map((c) => c.code)).toEqual(['paketler', 'gemiler', 'lazerler', 'mermiler', 'roketler', 'jeneratorler', 'ekstralar', 'droneler', 'pet', 'tasarimlar']);
+    const ships = s.categories.find((c) => c.code === 'gemiler')!.offers;
     expect(ships).toHaveLength(9);
     expect(ships[0]).toMatchObject({ code: 'dogan', currency: 'KREDI', finalPrice: 40000, minLevel: 3, owned: false });
     expect(ships[0]!.ship).toMatchObject({ hitpoints: 16000, slots: { laser: 3, generator: 3, extra: 1, drone: 1 } });
@@ -248,7 +249,7 @@ describe('mağaza', () => {
     expect((await buy(client, id)).statusCode).toBe(200);
     expect((await buy(client, id)).json().error.code).toBe('SHIP_OWNED');
     const s = await shop(client);
-    expect(s.categories[0]!.offers.find((o) => o.code === 'dogan')!.owned).toBe(true);
+    expect(s.categories.find((c) => c.code === 'gemiler')!.offers.find((o) => o.code === 'dogan')!.owned).toBe(true);
   });
 
   it('eşzamanlı 5 satın almadan yalnızca bakiyenin karşıladığı 2 tanesi gerçekleşir', async () => {

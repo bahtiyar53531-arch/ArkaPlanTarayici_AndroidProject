@@ -42,6 +42,11 @@ export function PilotPanel({ c }: { c: GameController }) {
       <div className="hud-map">
         <b>{map.code}</b> {map.name} {map.pvpEnabled ? <span className="hud-tag danger">PvP</span> : <span className="hud-tag ok">Güvenli</span>}
       </div>
+      {s.combat.cargo[1] > 0 && (
+        <div className={`hud-cargo${s.combat.cargo[0] >= s.combat.cargo[1] ? ' full' : ''}`} data-testid="hud-cargo" title="Gemi ambarındaki kaynak">
+          Ambar {fmt(s.combat.cargo[0])} / {fmt(s.combat.cargo[1])}
+        </div>
+      )}
       {c.settings.hud.showCoordinates && (
         <div className="hud-coords" data-testid="hud-coords">
           {Math.round(s.position.x)} / {Math.round(s.position.y)}
@@ -122,10 +127,10 @@ export function Minimap({ c }: { c: GameController }) {
       ctx.stroke();
       for (const o of c.ships.values()) {
         if (!Number.isFinite(o.x)) continue;
-        if (o.info.k === 'c') {
-          // Kargo kutusu (yalnızca kargo algılama menzilinde gönderilir)
-          ctx.fillStyle = '#F5B700';
-          ctx.fillRect(o.x * sx - 2, o.y * sy - 2, 4, 4);
+        if (o.info.k === 'c' || o.info.k === 'r') {
+          // Kargo kutusu ve maden noktası (yalnızca kargo algılama menzilinde gönderilir)
+          ctx.fillStyle = o.info.k === 'c' ? '#F5B700' : o.info.c;
+          ctx.fillRect(o.x * sx - 2, o.y * sy - 2, o.info.k === 'c' ? 4 : 3, o.info.k === 'c' ? 4 : 3);
           continue;
         }
         ctx.beginPath();

@@ -194,12 +194,14 @@ export function ItemIcon({ iconKey, size = 40, color = '#29c5ff' }: { iconKey: s
     drone: <g {...common}><circle cx="20" cy="20" r="5" /><path d="M15 15 L9 9 M25 15 L31 9 M15 25 L9 31 M25 25 L31 31" /><circle cx="8" cy="8" r="3" /><circle cx="32" cy="8" r="3" /><circle cx="8" cy="32" r="3" /><circle cx="32" cy="32" r="3" /></g>,
     pet: <g {...common}><rect x="9" y="12" width="22" height="18" rx="6" /><circle cx="16" cy="21" r="2" /><circle cx="24" cy="21" r="2" /><path d="M20 12 V6 M17 6 H23" /></g>,
     petmod: <g {...common}><rect x="9" y="9" width="22" height="22" rx="4" /><path d="M14 4 V9 M20 4 V9 M26 4 V9 M14 31 V36 M20 31 V36 M26 31 V36" /><rect x="15" y="15" width="10" height="10" rx="2" /></g>,
+    bundle: <g {...common}><rect x="7" y="15" width="26" height="18" rx="3" /><path d="M5 11 H35 V15 H5 Z" /><path d="M20 11 V33" /><path d="M20 11 C16 4 10 6 13 10 M20 11 C24 4 30 6 27 10" /></g>,
+    resource: <g {...common}><path d="M20 6 L27 18 L20 33 L13 18 Z" /><path d="M13 18 H27" /><path d="M10 24 L14 19 M30 24 L26 19" opacity=".6" /></g>,
     design: <g {...common}><path d="M20 6 C28 6 34 12 34 19 C34 24 30 25 27 24 C24 23 23 26 24 29 C25 33 22 34 20 34 C12 34 6 28 6 20 C6 12 12 6 20 6 Z" /><circle cx="14" cy="16" r="2" /><circle cx="22" cy="12" r="2" /><circle cx="28" cy="17" r="2" /></g>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" className="item-icon">
       <rect x="1" y="1" width="38" height="38" rx="9" fill="#0a1129" stroke="#23305e" />
-      {glyph[iconKey] ?? <circle cx="20" cy="20" r="8" {...common} />}
+      {glyph[iconKey] ?? (iconKey.startsWith('res-') ? glyph.resource : <circle cx="20" cy="20" r="8" {...common} />)}
     </svg>
   );
 }

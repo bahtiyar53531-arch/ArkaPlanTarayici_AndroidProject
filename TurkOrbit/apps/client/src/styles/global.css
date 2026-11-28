@@ -414,6 +414,11 @@ select, .motto-form input {
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); margin: 8px 0 12px; }
 .tab { background: transparent; border: 0; border-bottom: 3px solid transparent; color: var(--muted); font: inherit; font-weight: 700; padding: 10px 12px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; min-height: var(--tap); }
 .tab.active { color: var(--text); border-bottom-color: var(--cyan); }
+@media (max-width: 640px) {
+  .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs .tab { flex: none; white-space: nowrap; }
+}
 
 .slot-group { margin-bottom: 12px; }
 .slot-group-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
@@ -519,3 +524,24 @@ select, .motto-form input {
 .quest-done summary { cursor: pointer; color: var(--muted); font-weight: 700; padding: 6px 0; min-height: var(--tap); display: flex; align-items: center; }
 .quest-board.compact .quest { padding: 10px 12px; }
 .quest-board.compact .quest-title { font-size: 15px; }
+
+/* ================================================================== Paketler (Aşama 11) */
+.bundle-list { margin: 0; padding-left: 18px; color: #cfd7f5; }
+.bundle-list li { margin: 2px 0; }
+
+/* ================================================================== Pazar (Aşama 11) */
+.daily-calendar { list-style: none; margin: 12px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.daily-day { position: relative; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: #0a1129; display: flex; flex-direction: column; gap: 4px; min-height: 92px; }
+.daily-day.today { border-color: #f5b700; background: linear-gradient(180deg, #2a1f0a, #0a1129 75%); }
+.daily-day.done { opacity: 0.6; }
+.daily-num { font-weight: 800; font-size: 14px; color: var(--muted); }
+.daily-day.today .daily-num { color: #f5b700; }
+.daily-reward { font-size: 13px; font-weight: 700; color: #dbe4ff; }
+.daily-check { position: absolute; top: 8px; right: 10px; color: var(--ok); font-weight: 800; }
+.recipe-inputs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.recipe-inputs .ok { color: #a7f3d0; }
+.recipe-inputs .missing { color: #fca5a5; }
+.craft-job { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.craft-job > div { flex: 1; min-width: 0; }
+.inv-actions input { width: 100%; min-height: 36px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-strong); background: #070c22; color: var(--text); font: inherit; }
+.auction .btn-secondary { width: 100%; }

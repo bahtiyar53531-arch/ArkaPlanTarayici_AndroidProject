@@ -188,6 +188,7 @@ async function main() {
     const c = new pg.Client({ connectionString: DB_URL });
     await c.connect();
     await c.query(`UPDATE npc_spawns SET is_enabled = false`);
+    await c.query(`UPDATE resource_nodes SET is_enabled = false`); // madencilik adımları kendi test noktalarını ekler
     await c.query(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-e2e', 'E2E')`);
     await c.query(
       `INSERT INTO npc_types (code, name, family, level, sprite_key, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id)
@@ -206,6 +207,11 @@ async function main() {
                    ('test-e2e-av', 'main', 'Deneme Avı', 'E2E görevi', (SELECT id FROM reward_tables WHERE code = 'quest.test-e2e-av'))`);
     await c.query(`INSERT INTO quest_objectives (quest_id, sort_order, objective_type, params, target, label) VALUES
                    ((SELECT id FROM quests WHERE code = 'test-e2e-av'), 1, 'kill_npc', '{"family":["cakal"],"maps":["{c}-1"]}', 1, 'Çakal ailesinden NPC yok et ({c}-1)')`);
+    // Aşama 11: K-1'de uzak bir test maden noktası ve 1 sn'lik test tarifi
+    await c.query(`INSERT INTO resource_nodes (map_id, item_type_id, area, max_count, respawn_seconds, yield_min, yield_max)
+                   VALUES ((SELECT id FROM maps WHERE code = 'K-1'), (SELECT id FROM item_types WHERE code = 'res.ferrolit'), '{"type":"circle","x":3000,"y":3000,"r":1}', 1, 600, 12, 12)`);
+    await c.query(`INSERT INTO crafting_recipes (code, name, category, output_item_type_id, output_quantity, inputs, duration_seconds, sort_order)
+                   VALUES ('test-e2e-roket', 'Deneme Roketi', 'craft', (SELECT id FROM item_types WHERE code = 'rocket.yildirim'), 5, '[{"item":"res.ferrolit","qty":2},{"currency":"KREDI","qty":10}]', 1, 99)`);
     await c.end();
   }
   const redisFlush = spawnSync('redis-cli', ['-u', REDIS_URL, 'FLUSHDB'], { encoding: 'utf8' });
@@ -583,6 +589,75 @@ async function main() {
     expect(rb.status === 409, `B: ${rb.status}`);
     const l = await db.query(`SELECT l.delta FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id WHERE u.username = 'AnadoluKartali' AND l.reason = 'quest_reward'`);
     expect(l.rows.length === 1 && Number(l.rows[0].delta) === 400, JSON.stringify(l.rows));
+  });
+  // ---------------------------------------------------------------- Aşama 11: ekonomi
+  await step('Günlük ödül (Aşama 11): A (web) ve B (Android) kendi ödülünü alır; tekrar isteği ödül vermez', async () => {
+    const a1 = await pc.req('POST', '/market/daily/claim', { serverCode: 'TR1' });
+    expect(a1.status === 200 && a1.json.replay === false && a1.json.reward.day === 1, JSON.stringify(a1.json));
+    const a2 = await pc.req('POST', '/market/daily/claim', { serverCode: 'TR1' });
+    expect(a2.json.replay === true, 'ikinci istek ödül vermemeli');
+    const b1 = await app.req('POST', '/market/daily/claim', { serverCode: 'TR1' });
+    expect(b1.status === 200 && b1.json.replay === false, JSON.stringify(b1.json));
+    const n = await db.query(`SELECT count(*)::int AS n FROM player_daily_logins`);
+    expect(n.rows[0].n === 2, `kayıt sayısı ${n.rows[0].n}`);
+  });
+  await step('Madencilik: A oyunda maden noktasına gelince kaynak ambara girer (WebSocket); Pazar\'da satar', async () => {
+    await place('AnadoluKartali', 3000, 3000, 'K-1');
+    const g = await GameConn.open(pc);
+    const r = await g.wait('reward', (m) => m.source === 'Kaynak toplandı', 5000);
+    expect(r.items[0]?.code === 'res.ferrolit' && r.items[0]?.amount === 12, JSON.stringify(r));
+    const cs = await g.wait('cs', (m) => m.cargo?.[0] === 12, 3000);
+    expect(cs.cargo[1] > 0, JSON.stringify(cs.cargo));
+    await g.close();
+    await waitOffline('AnadoluKartali');
+    const c = (await pc.req('GET', '/market/crafting?server=TR1')).json.crafting;
+    const fer = c.resources.find((x) => x.code === 'res.ferrolit');
+    expect(fer.quantity === 12 && c.cargo.used === 12, JSON.stringify({ fer, cargo: c.cargo }));
+    const before = (await pc.req('GET', '/hangar?server=TR1')).json.hangar.currencies.find((x) => x.code === 'KREDI').balance;
+    const sell = await pc.req('POST', `/hangar/items/${fer.itemId}/sell`, { serverCode: 'TR1', quantity: 4, requestId: crypto.randomUUID() });
+    expect(sell.status === 200, JSON.stringify(sell.json));
+    const after = (await pc.req('GET', '/hangar?server=TR1')).json.hangar.currencies.find((x) => x.code === 'KREDI').balance;
+    expect(after === before + 40, `${before} → ${after}`);
+  });
+  await step('Üretim: A tarifi başlatır (girdiler hemen düşer); süre dolmadan teslim alamaz; dolunca roketler envantere girer', async () => {
+    const start = await pc.req('POST', '/market/crafting/start', { serverCode: 'TR1', recipe: 'test-e2e-roket', batches: 2, requestId: crypto.randomUUID() });
+    expect(start.status === 200 && start.json.crafting.jobs.length === 1, JSON.stringify(start.json));
+    const job = start.json.crafting.jobs[0];
+    expect(start.json.crafting.resources.find((x) => x.code === 'res.ferrolit').quantity === 4, 'girdiler düşülmeli (8 - 4)');
+    const early = await pc.req('POST', '/market/crafting/claim', { serverCode: 'TR1', jobId: job.id });
+    expect(early.status === 409 && early.json.error.code === 'CRAFT_NOT_READY', JSON.stringify(early.json));
+    await new Promise((r) => setTimeout(r, 2200));
+    const claim = await pc.req('POST', '/market/crafting/claim', { serverCode: 'TR1', jobId: job.id });
+    expect(claim.status === 200 && claim.json.claimed.quantity === 10, JSON.stringify(claim.json));
+    const again = await pc.req('POST', '/market/crafting/claim', { serverCode: 'TR1', jobId: job.id });
+    expect(again.json.replay === true, 'ikinci teslim alma yeniden vermemeli');
+  });
+  await step('Açık artırma: A teklif verir (emanet), B geçer; A\'ya iade edilir; teklif fiyatı istemciden değil sunucu kuralından', async () => {
+    const list = (await pc.req('GET', '/market/auctions?server=TR1')).json.auctions;
+    const lot = list.open.find((x) => x.item.code === 'res.nebulit' && x.type === 'hourly');
+    expect(lot && lot.nextMinBid === 4000, JSON.stringify(lot));
+    const a = await pc.req('POST', '/market/auctions/bid', { serverCode: 'TR1', auctionId: lot.id, amount: 4000, requestId: crypto.randomUUID() });
+    expect(a.status === 200, JSON.stringify(a.json));
+    const low = await app.req('POST', '/market/auctions/bid', { serverCode: 'TR1', auctionId: lot.id, amount: 4100, requestId: crypto.randomUUID() });
+    expect(low.status === 409 && low.json.error.code === 'BID_TOO_LOW', JSON.stringify(low.json));
+    const b = await app.req('POST', '/market/auctions/bid', { serverCode: 'TR1', auctionId: lot.id, amount: 4200, requestId: crypto.randomUUID() });
+    expect(b.status === 200 && b.json.auctions.open.find((x) => x.id === lot.id).leading === true, JSON.stringify(b.json));
+    const led = await db.query(
+      `SELECT u.username, l.reason, l.delta::int AS d FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id
+       WHERE l.reason LIKE 'auction%' ORDER BY l.id`,
+    );
+    expect(JSON.stringify(led.rows.map((x) => [x.username, x.reason, x.d])) === JSON.stringify([['AnadoluKartali', 'auction_bid', -4000], ['AnadoluKartali', 'auction_refund', 4000], ['GokBoru', 'auction_bid', -4200]]), JSON.stringify(led.rows));
+  });
+  await step('Mağaza paketi: B (Android) indirimli Acemi Pilot Paketi\'ni alır; tüm içerik envantere girer; ikinci kez alamaz', async () => {
+    const shop = (await app.req('GET', '/shop?server=TR1')).json.shop;
+    const pkt = shop.categories.find((c) => c.code === 'paketler').offers.find((o) => o.name === 'Acemi Pilot Paketi');
+    expect(pkt && pkt.finalPrice === 300 && pkt.bundle.length === 4, JSON.stringify(pkt));
+    const r1 = await app.req('POST', '/shop/purchase', { serverCode: 'TR1', offerId: pkt.id, packs: 1, requestId: crypto.randomUUID() });
+    expect(r1.status === 200, JSON.stringify(r1.json));
+    const r2 = await app.req('POST', '/shop/purchase', { serverCode: 'TR1', offerId: pkt.id, packs: 1, requestId: crypto.randomUUID() });
+    expect(r2.status === 409 && r2.json.error.code === 'PURCHASE_LIMIT', JSON.stringify(r2.json));
+    const inv = (await app.req('GET', '/hangar?server=TR1')).json.hangar.inventory;
+    expect(inv.some((i) => i.code === 'extra.kargo'), 'kargo genişletici envanterde olmalı');
   });
   await step('Ayarlar cihaz sınıfına göre ayrı saklanır; geçersiz değer reddedilir; B, A\'nın ayarını görmez', async () => {
     const d = (await pc.req('GET', '/settings?deviceClass=desktop')).json.settings;

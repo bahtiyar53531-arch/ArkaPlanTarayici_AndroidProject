@@ -35,6 +35,7 @@ const SHOTS7 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri
 const SHOTS8 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-08');
 const SHOTS9 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-09');
 const SHOTS10 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-10');
+const SHOTS11 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-11');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -49,6 +50,7 @@ mkdirSync(SHOTS7, { recursive: true });
 mkdirSync(SHOTS8, { recursive: true });
 mkdirSync(SHOTS9, { recursive: true });
 mkdirSync(SHOTS10, { recursive: true });
+mkdirSync(SHOTS11, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -123,7 +125,7 @@ let browser;
 let db;
 const fpsReadings = {};
 try {
-  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8, 9, 10)\n');
+  console.log('TÜRK ORBIT — arayüz testi (Aşama 1, 5, 6, 7, 8, 9, 10, 11)\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   const c = new pg.Client({ connectionString: DB_URL });
   await c.connect();
@@ -138,6 +140,7 @@ try {
     const s = new pg.Client({ connectionString: DB_URL });
     await s.connect();
     await s.query(`UPDATE npc_spawns SET is_enabled = false`);
+    await s.query(`UPDATE resource_nodes SET is_enabled = false`); // madencilik adımları kendi test noktalarını ekler
     await s.query(`INSERT INTO reward_tables (code, name) VALUES ('npc.test-cakal', 'Eğitim'), ('npc.test-akrep', 'Eğitim')`);
     await s.query(
       `INSERT INTO npc_types (code, name, family, level, sprite_key, scale, color_hex, hitpoints, shield, shield_absorb, damage, attack_rate_ms, attack_range, speed, ai, experience, reward_table_id) VALUES
@@ -176,6 +179,16 @@ try {
     await s.query(
       `INSERT INTO quest_objectives (quest_id, sort_order, objective_type, params, target, label)
        VALUES ((SELECT id FROM quests WHERE code = 'test-ui-av'), 1, 'kill_npc', '{"family":["cakal"],"maps":["{c}-1"]}', 1, 'Çakal ailesinden NPC yok et ({c}-1)')`,
+    );
+    // Aşama 11: G-1'de test maden noktaları (biri toplanacak, üçü görünecek) ve 2 sn'lik test tarifi
+    await s.query(
+      `INSERT INTO resource_nodes (map_id, item_type_id, area, max_count, respawn_seconds, yield_min, yield_max) VALUES
+       ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM item_types WHERE code = 'res.titanyum'), '{"type":"circle","x":13600,"y":5700,"r":1}', 1, 600, 30, 30),
+       ((SELECT id FROM maps WHERE code = 'G-1'), (SELECT id FROM item_types WHERE code = 'res.kuvarsit'), '{"type":"circle","x":13950,"y":5650,"r":140}', 3, 600, 5, 5)`,
+    );
+    await s.query(
+      `INSERT INTO crafting_recipes (code, name, category, output_item_type_id, output_quantity, inputs, duration_seconds, sort_order)
+       VALUES ('test-ui-tarif', 'Eğitim Roketi', 'craft', (SELECT id FROM item_types WHERE code = 'rocket.yildirim'), 10, '[{"item":"res.titanyum","qty":5},{"currency":"KREDI","qty":10}]', 2, 0)`,
     );
     await s.end();
   }
@@ -360,6 +373,7 @@ try {
   await step('Mağaza: gemiler listelenir; lazer satın alınır ve bakiye düşer', async () => {
     await pc.getByRole('link', { name: 'Mağaza', exact: true }).first().click();
     await pc.getByRole('heading', { name: 'Mağaza' }).waitFor();
+    await pc.getByRole('tab', { name: 'Gemiler' }).click(); // Aşama 11: mağaza "Paketler" ile açılır
     await pc.getByText('Doğan', { exact: true }).waitFor();
     await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS6, '02-magaza-gemiler.jpg'), fullPage: true });
     await pc.getByRole('tab', { name: 'Lazerler' }).click();
@@ -651,6 +665,76 @@ try {
     await teleport(pc, A.username, 2200, 6250, 'G-2');
   });
 
+  console.log('Aşama 11 — Pazar ve madencilik (masaüstü)');
+  await step('Madencilik: maden noktasına gelen gemi kaynağı toplar; "Kaynak toplandı" bildirimi ve ambar göstergesi', async () => {
+    await teleport(pc, A.username, 13600, 5650, 'G-1');
+    await pc.getByText(/Kaynak toplandı: 30 × Titanyum Tozu/).waitFor({ timeout: 10000 });
+    await pc.getByTestId('hud-cargo').getByText(/^Ambar 30 \//).waitFor({ timeout: 6000 });
+    await sleep(600);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '01-madencilik-ambar.jpg') });
+    const l = await db.query(
+      `SELECT l.delta FROM item_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id WHERE u.username = $1 AND l.reason = 'mining'`,
+      [A.username],
+    );
+    if (l.rows.length !== 1 || Number(l.rows[0].delta) !== 30) throw new Error(`madencilik defteri: ${JSON.stringify(l.rows)}`);
+  });
+  await step('Pazar: günlük ödül alınır; takvimde 1. gün işaretlenir', async () => {
+    await pc.goto(`${WEB}/pazar`);
+    await pc.getByRole('heading', { name: 'Pazar' }).waitFor();
+    const panel = pc.getByTestId('daily-panel');
+    await panel.getByRole('button', { name: '1. gün ödülünü al' }).click();
+    await panel.getByText('1. gün ödülü alındı: 2.000 Kredi').waitFor();
+    await panel.getByText('Bugünün ödülü alındı').waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '02-gunluk-odul.jpg') });
+  });
+  await step('Pazar > Kaynaklar: Titanyum Tozu satılır; ambar azalır', async () => {
+    await pc.getByTestId('market-tab-resources').click();
+    const card = pc.getByTestId('resource-res.titanyum');
+    await card.getByText('Elinde: 30', { exact: false }).waitFor();
+    await card.getByLabel('Titanyum Tozu satış miktarı').fill('10');
+    await card.getByRole('button', { name: /^Sat/ }).click();
+    await pc.getByText('10 Titanyum Tozu satıldı: +140 Kredi').waitFor();
+    await pc.getByTestId('cargo-badge').getByText(/^Ambar 20 \//).waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '03-kaynaklar-satis.jpg') });
+  });
+  await step('Pazar > Üretim: tarif başlatılır (girdi düşer), süre dolunca "Teslim al" ile ürün envantere girer', async () => {
+    await pc.getByTestId('market-tab-crafting').click();
+    await pc.getByTestId('recipe-test-ui-tarif').getByRole('button', { name: 'Üret' }).click();
+    await pc.getByText('Eğitim Roketi üretimi başladı (1 adet).').waitFor();
+    const job = pc.getByTestId('job-test-ui-tarif');
+    await job.waitFor();
+    await job.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '04-uretim-kuyrugu.jpg') });
+    await job.getByRole('button', { name: 'Teslim al' }).click({ timeout: 8000 });
+    await pc.getByText('Teslim alındı: 10 × Yıldırım R-1').waitFor();
+  });
+  await step('Pazar > Açık artırma: teklif verilir; tutar emanete alınır; en yüksek teklif sende', async () => {
+    await pc.getByTestId('market-tab-auctions').click();
+    const card = pc.getByTestId('auction-res.nebulit-hourly');
+    await card.getByRole('button', { name: 'Teklif ver (en az 4.000)' }).click();
+    await pc.getByText(/Nebulit için 4\.000 Kredi teklif verdin/).waitFor();
+    await card.getByText('En yüksek teklif senin').waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '05-acik-artirma.jpg') });
+    const l = await db.query(
+      `SELECT l.delta FROM currency_ledger l JOIN players p ON p.id = l.player_id JOIN users u ON u.id = p.user_id WHERE u.username = $1 AND l.reason = 'auction_bid'`,
+      [A.username],
+    );
+    if (l.rows.length !== 1 || Number(l.rows[0].delta) !== -4000) throw new Error(`teklif defteri: ${JSON.stringify(l.rows)}`);
+  });
+  await step('Mağaza: Paketler kategorisi en başta; indirimli Acemi Pilot Paketi satın alınır', async () => {
+    await pc.goto(`${WEB}/magaza`);
+    const card = pc.locator('.offer').filter({ hasText: 'Acemi Pilot Paketi' });
+    await card.getByText('-%40').waitFor();
+    await card.getByText('3.000 × IŞK-1 Batarya').waitFor();
+    await card.scrollIntoViewIfNeeded();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '06-magaza-paket.jpg') });
+    await card.getByRole('button', { name: 'Satın al' }).click();
+    await card.getByRole('button', { name: 'Onayla' }).click();
+    await pc.getByText(/Acemi Pilot Paketi satın alındı \(300 Akçe\)/).waitFor();
+    // Telefon adımları G-2'de devam eder
+    await teleport(pc, A.username, 2200, 6250, 'G-2');
+  });
+
   console.log('iPhone 13 görünümü');
   await step('Aynı hesapla telefondan giriş', async () => {
     await phone.goto(`${WEB}/giris`);
@@ -783,6 +867,14 @@ try {
     if (y <= 0) throw new Error('sayfa kaydırılmadı');
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS10, '07-mobil-gorevler-sayfasi.jpg'), fullPage: true });
   });
+  await step('Telefonda Pazar: günlük takvim (PC\'de alınan ödül görünür) ve üretim tarifleri', async () => {
+    await phone.goto(`${WEB}/pazar`);
+    await phone.getByTestId('daily-panel').getByText('Bugünün ödülü alındı').waitFor();
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '07-mobil-pazar-gunluk.jpg'), fullPage: true });
+    await phone.getByTestId('market-tab-crafting').click();
+    await phone.getByTestId('recipe-nebulit').waitFor();
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '08-mobil-uretim.jpg') });
+  });
   await step('Oyun ekranlarında JavaScript hatası oluşmadı', async () => {
     if (pageErrors.length) throw new Error(pageErrors.join(' | '));
   });
@@ -832,7 +924,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

@@ -116,6 +116,23 @@ export class CombatStore {
     return left;
   }
 
+  /** Aşama 11: toplanan kaynak envantere (defter: mining). Aynı maden noktası iki kez verilemez. */
+  async collectResource(nodeUuid: string, playerId: string, code: string, quantity: number): Promise<GrantResult> {
+    return withTransaction(this.db, (c) =>
+      grantRewards(c, this.items, playerId, [{ type: 'item', code, amount: quantity }], { key: `mine:${nodeUuid}`, reason: 'mining', refType: 'resource_node', refId: nodeUuid }),
+    );
+  }
+
+  /** Gemi ambarındaki toplam kaynak (tüm kaynak eşyalarının adedi). */
+  async resourceLoad(playerId: string): Promise<number> {
+    const r = await this.db.query<{ n: string }>(
+      `SELECT COALESCE(sum(pi.quantity), 0) AS n FROM player_items pi JOIN item_types it ON it.id = pi.item_type_id
+       WHERE pi.player_id = $1 AND it.category = 'resource'`,
+      [playerId],
+    );
+    return Number(r.rows[0]?.n ?? 0);
+  }
+
   async ammoCounts(playerId: string): Promise<Map<string, number>> {
     const r = await this.db.query<{ code: string; quantity: number }>(
       `SELECT it.code, pi.quantity FROM player_items pi JOIN item_types it ON it.id = pi.item_type_id

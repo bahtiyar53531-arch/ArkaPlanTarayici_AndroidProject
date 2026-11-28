@@ -7,6 +7,8 @@ import { Redis } from 'ioredis';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { GameServer } from '../src/game/server.js';
+import { withTransaction } from '../src/db/pool.js';
+import { grantItem } from '../src/modules/economy/inventory.js';
 import { call, createTestContext, newClient, registerAndLogin, resetDatabase, WEB_ORIGIN, type Client, type TestContext } from './helpers.js';
 
 let ctx: TestContext;
@@ -21,12 +23,14 @@ beforeAll(async () => {
 afterAll(async () => {
   await cleanupContent();
   await ctx.rt.db.query('UPDATE npc_spawns SET is_enabled = true');
+  await ctx.rt.db.query('UPDATE resource_nodes SET is_enabled = true');
   await ctx.close();
 });
 beforeEach(async () => {
   await resetDatabase(ctx.rt);
   await cleanupContent();
   await ctx.rt.db.query('UPDATE npc_spawns SET is_enabled = false');
+  await ctx.rt.db.query('UPDATE resource_nodes SET is_enabled = false');
 });
 afterEach(async () => {
   for (const c of clients) c.ws.terminate();
@@ -38,6 +42,7 @@ afterEach(async () => {
 });
 
 async function cleanupContent() {
+  await ctx.rt.db.query(`DELETE FROM resource_nodes WHERE zone_id IS NULL`); // test maden noktaları
   await ctx.rt.db.query(`DELETE FROM player_quests WHERE quest_id IN (SELECT id FROM quests WHERE code LIKE 'test-%')`);
   await ctx.rt.db.query(`DELETE FROM quests WHERE code LIKE 'test-%'`);
   await ctx.rt.db.query(`DELETE FROM reward_tables WHERE code LIKE 'quest.test-%'`);
@@ -674,5 +679,51 @@ describe('görevler (oyun sunucusu, Aşama 10)', () => {
     await c.waitFor('notice', (m) => m.text === 'Başarım kazanıldı: Kanatlandın');
     const ach = await ctx.rt.db.query(`SELECT a.code FROM player_achievements pa JOIN achievements a ON a.id = pa.achievement_id WHERE pa.player_id = $1 ORDER BY a.code`, [playerId]);
     expect(ach.rows.map((r) => r.code)).toEqual(expect.arrayContaining(['level_5', 'pilot_created']));
+  });
+});
+
+describe('madencilik (Aşama 11)', () => {
+  async function addResourceNode(map: string, x: number, y: number, code: string, count: number, yieldMin: number, yieldMax: number) {
+    await ctx.rt.db.query(
+      `INSERT INTO resource_nodes (map_id, item_type_id, area, max_count, respawn_seconds, yield_min, yield_max)
+       VALUES ((SELECT id FROM maps WHERE code = $1), (SELECT id FROM item_types WHERE code = $2), $3, $4, 600, $5, $6)`,
+      [map, code, JSON.stringify({ type: 'circle', x, y, r: 1 }), count, yieldMin, yieldMax],
+    );
+  }
+  async function give(playerId: string, code: string, n: number) {
+    const it = (await ctx.rt.db.query('SELECT id, stackable FROM item_types WHERE code = $1', [code])).rows[0];
+    await withTransaction(ctx.rt.db, (c) => grantItem(c, playerId, it, n, { reason: 'admin_grant' }));
+  }
+
+  it('maden noktasına gelince kaynak ambara girer (defterli, görev ilerler); ambar dolunca toplanmaz ve bildirilir', async () => {
+    await addResourceNode('K-1', 5100, 5000, 'res.ferrolit', 2, 4, 4);
+    await start();
+    const { playerId, client } = await pilot('MadenPilot'); // Kırlangıç: ambar 100
+    await accept(client, 'altayin-mirasi-01'); // 10 kaynak topla
+    await give(playerId, 'res.titanyum', 97);
+    await place(playerId, 5100, 5000);
+    const { c } = await join(client);
+    await server!.idle();
+    expect(server!.resourcesOn('K-1')).toHaveLength(2);
+    await run(c, 2);
+    // Kalan maden noktası istemciye "r" türünde varlık olarak bildirildi (kargo algılama menzilinde)
+    expect(c.all('enter').flatMap((m) => m.e).filter((x) => x.k === 'r').map((x) => x.n)).toEqual(['Ferrolit']);
+    await server!.idle();
+    await c.flush();
+    const reward = await c.waitFor('reward', (m) => m.source === 'Kaynak toplandı');
+    expect(reward.items).toEqual([{ code: 'res.ferrolit', name: 'Ferrolit', amount: 3 }]); // 4 düştü, ambarda 3 yer vardı
+    await run(c, 4);
+    expect(c.last('cs')!.cargo).toEqual([100, 100]);
+    await c.waitFor('notice', (m) => m.text === "Ambarın dolu (100/100). Kaynakları Pazar'da sat veya rafineride işle.");
+    expect(server!.resourcesOn('K-1')).toHaveLength(1); // dolu ambarla ikinci nokta alınmadı
+    const led = await ctx.rt.db.query(
+      `SELECT l.reason, l.delta::int AS d FROM item_ledger l JOIN item_types it ON it.id = l.item_type_id WHERE l.player_id = $1 AND it.code = 'res.ferrolit'`,
+      [playerId],
+    );
+    expect(led.rows).toEqual([{ reason: 'mining', d: 3 }]);
+    await server!.flushQuestEvents();
+    await c.flush();
+    const qp = await c.waitFor('qp', (m) => m.u.some((x) => x.code === 'altayin-mirasi-01'));
+    expect(qp.u.find((x) => x.code === 'altayin-mirasi-01')!.objectives[0]).toMatchObject({ current: 3, target: 10 });
   });
 });

@@ -91,14 +91,7 @@ CREATE TABLE player_skills (
 -- ============================================================ 7. HARİTALAR VE KAPILAR
 -- ✅ Portallar ve bölgeler Aşama 7 → 0004_world.sql. Kaynak düğümleri (Aşama 11) ve kapılar (Aşama 9) aşağıda.
 
-CREATE TABLE resource_nodes (
-  id           serial PRIMARY KEY,
-  map_id       integer NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
-  item_type_id integer NOT NULL REFERENCES item_types(id),
-  area         jsonb NOT NULL,
-  max_count    smallint NOT NULL,
-  respawn_seconds integer NOT NULL
-);
+-- resource_nodes → 0007_economy.sql (Aşama 11)
 
 -- ============================================================ 8. NPC VE YAPAY ZEKÂ
 -- (Aşama 9 → 0005_combat.sql: npc_types, npc_spawns, reward_tables, reward_entries, combat_deaths, npc_kill_log.)
@@ -144,51 +137,9 @@ ALTER TABLE achievements ADD COLUMN reward_table_id integer REFERENCES reward_ta
 -- ============================================================ 10. GÖREVLER (0006'da uygulandı)
 -- (Aşama 10 → 0006_quests.sql: quests, quest_objectives, player_quests, player_quest_cycles.)
 
--- ============================================================ 11. EKONOMİ (Aşama 11)
-
-CREATE TABLE auctions (
-  id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  server_id      smallint NOT NULL REFERENCES game_servers(id),
-  item_type_id   integer NOT NULL REFERENCES item_types(id),
-  quantity       bigint NOT NULL DEFAULT 1,
-  auction_type   text NOT NULL CHECK (auction_type IN ('hourly', 'daily', 'weekly')),
-  currency_code  text NOT NULL REFERENCES currencies(code),
-  min_bid        bigint NOT NULL,
-  current_bid    bigint,
-  current_bidder uuid REFERENCES players(id),
-  starts_at      timestamptz NOT NULL,
-  ends_at        timestamptz NOT NULL,
-  status         text NOT NULL DEFAULT 'open' CHECK (status IN ('scheduled', 'open', 'settled', 'cancelled'))
-);
-CREATE TABLE auction_bids (
-  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  auction_id  bigint NOT NULL REFERENCES auctions(id) ON DELETE CASCADE,
-  player_id   uuid NOT NULL REFERENCES players(id),
-  amount      bigint NOT NULL CHECK (amount > 0),
-  refunded    boolean NOT NULL DEFAULT false,
-  created_at  timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE crafting_recipes (
-  id            serial PRIMARY KEY,
-  code          text NOT NULL UNIQUE,
-  output_item_type_id integer NOT NULL REFERENCES item_types(id),
-  output_quantity integer NOT NULL DEFAULT 1,
-  inputs        jsonb NOT NULL,                 -- [{"item":"res.kuvars","qty":20},{"currency":"KREDI","qty":500}]
-  duration_seconds integer NOT NULL DEFAULT 0
-);
-
-CREATE TABLE daily_login_rewards (
-  day_number      smallint PRIMARY KEY,
-  reward_table_id integer NOT NULL REFERENCES reward_tables(id)
-);
-CREATE TABLE player_daily_logins (
-  player_id  uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  login_date date NOT NULL,
-  streak     smallint NOT NULL,
-  claimed    boolean NOT NULL DEFAULT false,
-  PRIMARY KEY (player_id, login_date)
-);
+-- ============================================================ 11. EKONOMİ (0007'de uygulandı)
+-- (Aşama 11 → 0007_economy.sql: resource_nodes, crafting_recipes, player_crafting_jobs, auction_lots, auctions,
+--  auction_bids, daily_login_rewards, player_daily_logins; shop_offers paket sütunları.)
 
 -- ============================================================ 12. KLAN, GRUP, SOSYAL (Aşama 12)
 CREATE TABLE clans (

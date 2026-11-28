@@ -168,4 +168,7 @@ export const LEDGER_REASON_LABELS_TR: Record<string, string> = {
   shop_purchase: 'Mağaza alışverişi',
   auction_bid: 'Açık artırma teklifi',
   auction_refund: 'Açık artırma iadesi',
+  cargo_loot: 'Kargo kutusu',
+  crafting_input: 'Üretim ücreti',
+  daily_login: 'Günlük giriş ödülü',
 };

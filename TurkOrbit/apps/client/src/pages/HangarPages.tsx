@@ -407,6 +407,7 @@ const INVENTORY_FILTERS: Array<{ key: string; label: string; cats: ItemCategory[
   { key: 'other', label: 'Ekstra ve drone', cats: ['extra', 'drone'] },
   { key: 'pet', label: 'PET', cats: ['pet', 'pet_module'] },
   { key: 'design', label: 'Tasarımlar', cats: ['ship_design'] },
+  { key: 'resource', label: 'Kaynaklar', cats: ['resource'] },
 ];
 
 function InventoryPanel({ hangar, busy, onUpgrade, onSell }: {
@@ -575,7 +576,7 @@ function OfferCard({ offer: o, playerLevel, balance, busy, onBuy }: {
       <h3 className="offer-name" style={{ color: RARITY_COLORS[o.rarity] }}>
         {o.name}{o.quantity > 1 ? <span className="muted"> ×{fmt(o.quantity)}</span> : null}
       </h3>
-      <div className="muted small">{o.ship ? SHIP_CLASS_LABELS_TR[o.ship.shipClass] : ITEM_CATEGORY_LABELS_TR[o.category as ItemCategory]}</div>
+      <div className="muted small">{o.ship ? SHIP_CLASS_LABELS_TR[o.ship.shipClass] : o.bundle ? 'Paket' : ITEM_CATEGORY_LABELS_TR[o.category as ItemCategory]}</div>
       <p className="offer-desc">{o.description}</p>
       {o.ship ? (
         <dl className="kv compact">
@@ -584,6 +585,14 @@ function OfferCard({ offer: o, playerLevel, balance, busy, onBuy }: {
           <dt>Kargo</dt><dd>{fmt(o.ship.cargoCapacity)}</dd>
           <dt>Slotlar</dt><dd>{o.ship.slots.laser} lazer · {o.ship.slots.generator} jen. · {o.ship.slots.extra} ekstra · {o.ship.slots.drone} drone</dd>
         </dl>
+      ) : o.bundle ? (
+        <ul className="bundle-list small" aria-label="Paket içeriği">
+          {o.bundle.map((b) => (
+            <li key={b.code}>
+              {fmt(b.quantity)} × {b.name}
+            </li>
+          ))}
+        </ul>
       ) : (
         <div className="small offer-stats">{formatItemStats(o.category as ItemCategory, o.stats)}</div>
       )}

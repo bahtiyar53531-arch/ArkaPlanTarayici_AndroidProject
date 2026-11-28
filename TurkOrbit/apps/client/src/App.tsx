@@ -13,6 +13,7 @@ import { NotFoundPage, PrivacyPage, TermsPage } from './pages/InfoPages';
 import { HangarPage, ShopPage } from './pages/HangarPages';
 import { PilotPage, PublicPilotPage } from './pages/PilotPages';
 import { QuestsPage } from './pages/QuestPages';
+import { MarketPage } from './pages/MarketPages';
 
 // Oyun ekranı (Phaser dahil) ayrı parça olarak yalnızca /oyna açılınca indirilir.
 const GamePage = lazy(() => import('./pages/GamePage').then((m) => ({ default: m.GamePage })));
@@ -59,6 +60,7 @@ export function App() {
           <Route path="/hangar" element={<RequireAuth><HangarPage /></RequireAuth>} />
           <Route path="/magaza" element={<RequireAuth><ShopPage /></RequireAuth>} />
           <Route path="/gorevler" element={<RequireAuth><QuestsPage /></RequireAuth>} />
+          <Route path="/pazar" element={<RequireAuth><MarketPage /></RequireAuth>} />
           <Route path="/oyna" element={<RequireAuth><Suspense fallback={<Splash />}><GamePage /></Suspense></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

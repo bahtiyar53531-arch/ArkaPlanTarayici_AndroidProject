@@ -679,7 +679,8 @@ export class HangarService {
     const owned = new Set(ownedShips.rows.map((r) => r.ship_type_id));
     const bought = new Map(purchases.rows.map((p) => [p.offer_id, Number(p.packs)]));
     const hasPet = (petRow.rowCount ?? 0) > 0;
-    const list = offers.rows.map((o) => toShopOffer(o, { owned, bought, hasPet }));
+    const bundles = await bundleCatalog(this.db, offers.rows);
+    const list = offers.rows.map((o) => toShopOffer(o, { owned, bought, hasPet, bundles }));
     return {
       playerLevel: level,
       currencies: currencies.map((c) => ({ code: c.code, name: c.name, balance: c.balance })),
@@ -706,11 +707,12 @@ export class HangarService {
       }
       const o = (await c.query<OfferRow>(`${OFFER_SELECT} WHERE o.id = $1 AND ${OFFER_ACTIVE}`, [d.offerId])).rows[0];
       if (!o) throw err('OFFER_UNAVAILABLE', 404, 'Bu ürün şu anda satışta değil.');
-      const name = o.ship_name ?? o.item_name!;
+      const name = o.title ?? o.ship_name ?? o.item_name!;
+      const bundles = o.offer_type === 'bundle' ? await bundleCatalog(c, [o]) : new Map() as BundleCatalog;
       if (d.packs > o.max_per_purchase || (o.offer_type === 'ship' && d.packs !== 1)) {
         throw err('PURCHASE_LIMIT', 400, `Tek seferde en fazla ${o.max_per_purchase} paket alabilirsin.`);
       }
-      const minLevel = o.ship_min_level ?? o.item_min_level ?? 1;
+      const minLevel = o.offer_type === 'bundle' ? bundleMinLevel(o, bundles) : (o.ship_min_level ?? o.item_min_level ?? 1);
       if (levelForXp(pilot.experience) < minLevel) {
         throw err('LEVEL_TOO_LOW', 403, `${name} için en az seviye ${minLevel} olmalısın.`);
       }
@@ -745,6 +747,21 @@ export class HangarService {
         if ((await inventoryRowCount(c, pilot.id)) + newRows > max) {
           throw err('INVENTORY_FULL', 409, `Envanterin dolu (en fazla ${max} eşya). Bir şeyler sat veya kullan.`);
         }
+      } else if (o.offer_type === 'bundle') {
+        // Paket: yığınlanabilir eşya yeni bir satır açmıyorsa yer kaplamaz; diğerleri adet kadar satır
+        const max = (await getSetting<{ max_items: number }>(c, 'inventory'))?.max_items ?? 300;
+        let newRows = 0;
+        for (const b of o.bundle_items ?? []) {
+          const it = bundles.get(b.item);
+          if (!it) throw err('OFFER_UNAVAILABLE', 404, 'Bu paket şu anda satışta değil.');
+          if (it.stackable) {
+            const stack = await c.query('SELECT 1 FROM player_items WHERE player_id = $1 AND item_type_id = $2 AND is_stack', [pilot.id, it.id]);
+            newRows += (stack.rowCount ?? 0) > 0 ? 0 : 1;
+          } else newRows += b.qty * d.packs;
+        }
+        if ((await inventoryRowCount(c, pilot.id)) + newRows > max) {
+          throw err('INVENTORY_FULL', 409, `Envanterin dolu (en fazla ${max} eşya). Bir şeyler sat veya kullan.`);
+        }
       }
       const unit = finalPrice(o);
       const total = unit * d.packs;
@@ -765,6 +782,17 @@ export class HangarService {
           `INSERT INTO player_ships (player_id, ship_type_id, hitpoints, source) VALUES ($1, $2, $3, 'shop')`,
           [pilot.id, o.ship_type_id, o.ship_hitpoints],
         );
+      } else if (o.offer_type === 'bundle') {
+        for (const b of o.bundle_items ?? []) {
+          const it = bundles.get(b.item)!;
+          await grantItem(c, pilot.id, { id: it.id, stackable: it.stackable }, b.qty * d.packs, {
+            reason: 'shop_purchase',
+            source: 'shop',
+            refType: 'shop_offer',
+            refId: String(o.id),
+            idempotencyKey: `${key}:${b.item}`,
+          });
+        }
       } else {
         const ids = await grantItem(c, pilot.id, { id: o.item_type_id!, stackable: o.item_stackable! }, units, {
           reason: 'shop_purchase',
@@ -782,7 +810,7 @@ export class HangarService {
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [pilot.id, o.id, d.packs, unit, total, o.currency_code, key],
       );
-      await this.quests?.recordTx(c, pilot.id, [{ type: 'buy_item', amount: 1, category: o.item_category ?? 'ship' }]);
+      await this.quests?.recordTx(c, pilot.id, [{ type: 'buy_item', amount: 1, category: o.item_category ?? o.offer_type }]);
       this.log.info({ playerId: pilot.id, offer: o.id, packs: d.packs, total }, 'mağaza satın alma');
       return { offerId: o.id, packs: d.packs, total, currency: o.currency_code, replay: false };
     });
@@ -798,7 +826,10 @@ export class HangarService {
 interface OfferRow {
   id: number;
   category_id: number;
-  offer_type: 'item' | 'ship';
+  title: string | null;
+  description: string | null;
+  bundle_items: Array<{ item: string; qty: number }> | null;
+  offer_type: 'item' | 'ship' | 'bundle';
   item_type_id: number | null;
   ship_type_id: number | null;
   quantity: string;
@@ -835,7 +866,7 @@ interface OfferRow {
 
 const OFFER_SELECT = `
   SELECT o.id, o.category_id, o.offer_type, o.item_type_id, o.ship_type_id, o.quantity, o.currency_code, o.price,
-         o.discount_percent, o.discount_ends_at, o.max_per_purchase, o.per_player_limit,
+         o.discount_percent, o.discount_ends_at, o.max_per_purchase, o.per_player_limit, o.title, o.description, o.bundle_items,
          it.code AS item_code, it.name AS item_name, it.description AS item_description, it.category AS item_category,
          it.rarity AS item_rarity, it.icon_key AS item_icon, it.stats AS item_stats, it.min_level AS item_min_level,
          it.stackable AS item_stackable, it.requirements AS item_requirements,
@@ -858,13 +889,57 @@ function finalPrice(o: OfferRow): number {
   return discountActive ? Math.round((price * (100 - o.discount_percent)) / 100) : price;
 }
 
+/** Paket içeriği için eşya bilgisi (kod → ad, kategori, seviye) */
+type BundleCatalog = Map<string, { id: number; name: string; category: ItemCategory; stackable: boolean; min_level: number }>;
+
+async function bundleCatalog(db: Queryable, offers: OfferRow[]): Promise<BundleCatalog> {
+  const codes = [...new Set(offers.flatMap((o) => (o.bundle_items ?? []).map((b) => b.item)))];
+  if (codes.length === 0) return new Map();
+  const r = await db.query<{ id: number; code: string; name: string; category: ItemCategory; stackable: boolean; min_level: number }>(
+    'SELECT id, code, name, category, stackable, min_level FROM item_types WHERE code = ANY($1)',
+    [codes],
+  );
+  return new Map(r.rows.map((x) => [x.code, x]));
+}
+
+const bundleMinLevel = (o: OfferRow, cat: BundleCatalog) => Math.max(1, ...(o.bundle_items ?? []).map((b) => cat.get(b.item)?.min_level ?? 1));
+
 function toShopOffer(
   o: OfferRow,
-  ctx: { owned: Set<number>; bought: Map<number, number>; hasPet: boolean },
+  ctx: { owned: Set<number>; bought: Map<number, number>; hasPet: boolean; bundles: BundleCatalog },
 ): ShopOffer & { categoryId: number } {
-  const isShip = o.offer_type === 'ship';
   const fp = finalPrice(o);
   const bought = ctx.bought.get(o.id) ?? 0;
+  if (o.offer_type === 'bundle') {
+    return {
+      categoryId: o.category_id,
+      id: o.id,
+      type: 'bundle',
+      code: `bundle-${o.id}`,
+      name: o.title!,
+      description: o.description ?? '',
+      category: 'bundle',
+      rarity: 'epic',
+      iconKey: 'bundle',
+      stats: {},
+      ship: null,
+      quantity: 1,
+      currency: o.currency_code,
+      price: Number(o.price),
+      finalPrice: fp,
+      discountPercent: fp !== Number(o.price) ? o.discount_percent : 0,
+      maxPerPurchase: o.max_per_purchase,
+      minLevel: bundleMinLevel(o, ctx.bundles),
+      owned: false,
+      limitReached: o.per_player_limit !== null && bought >= o.per_player_limit,
+      requiresShip: null,
+      bundle: (o.bundle_items ?? []).map((b) => {
+        const it = ctx.bundles.get(b.item);
+        return { code: b.item, name: it?.name ?? b.item, category: it?.category ?? 'ammo', quantity: b.qty };
+      }),
+    };
+  }
+  const isShip = o.offer_type === 'ship';
   return {
     categoryId: o.category_id,
     id: o.id,
@@ -900,6 +975,7 @@ function toShopOffer(
     owned: isShip ? ctx.owned.has(o.ship_type_id!) : o.item_category === 'pet' && ctx.hasPet,
     limitReached: o.per_player_limit !== null && bought >= o.per_player_limit,
     requiresShip: o.item_requirements?.ship ?? null,
+    bundle: null,
   };
 }
 
