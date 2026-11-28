@@ -4,6 +4,7 @@ import type { Db } from '../../db/pool.js';
 import { AppError, Errors } from '../../lib/errors.js';
 import type { RateLimiter } from '../../lib/rate-limit.js';
 import type { AuthGuards } from '../auth/guards.js';
+import { getSetting, userHasPermission } from '../auth/repository.js';
 import type { GameBridge } from './bridge.js';
 
 /**
@@ -26,6 +27,11 @@ export function gameRoutes(app: FastifyInstance, opts: { bridge: GameBridge; gua
     const p = r.rows[0];
     if (!p) throw new AppError('PILOT_NOT_FOUND', 404, 'Bu sunucuda henüz bir pilotun yok.');
     if (p.is_maintenance) throw new AppError('SERVER_CLOSED', 503, `${p.server_name} sunucusu bakımda. Kısa süre sonra tekrar dene.`);
+    // Aşama 14: Yönetim Merkezi bakım modu — oyuna yalnızca personel girebilir (site, forum ve destek açık kalır)
+    const m = await getSetting<{ enabled?: boolean; message?: string }>(db, 'maintenance');
+    if (m?.enabled && !(await userHasPermission(db, auth.user.id, 'dashboard.view'))) {
+      throw new AppError('MAINTENANCE', 503, m.message ?? 'Türk Orbit bakımda. Kısa süre içinde geri döneceğiz.');
+    }
     const t = await bridge.issueTicket({ userId: auth.user.id, sessionId: auth.session.id, playerId: p.id, serverCode: d.serverCode });
     return { ...t, protocol: PROTOCOL_VERSION };
   });

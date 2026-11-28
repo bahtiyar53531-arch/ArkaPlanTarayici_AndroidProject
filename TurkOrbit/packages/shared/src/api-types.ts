@@ -89,6 +89,20 @@ export const ERROR_CODES = [
   'ATTACHMENT_TYPE',
   'ATTACHMENT_TOO_LARGE',
   'ATTACHMENT_LIMIT',
+  // Aşama 14 — Yönetim Merkezi
+  'USER_NOT_FOUND',
+  'CONTENT_NOT_FOUND',
+  'REVISION_CONFLICT',
+  'NO_CHANGES',
+  'APPROVAL_NOT_FOUND',
+  'APPROVAL_CLOSED',
+  'APPROVAL_SELF',
+  'ROLE_RANK',
+  'SANCTION_NOT_FOUND',
+  'REPORT_NOT_FOUND',
+  'QUEST_CODE_TAKEN',
+  'MAINTENANCE',
+  'MUTED',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

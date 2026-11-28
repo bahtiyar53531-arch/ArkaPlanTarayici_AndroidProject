@@ -352,11 +352,11 @@ export function TargetPanel({ c, onPilot }: { c: GameController; onPilot?: (name
     <div className={`hud-panel hud-target${enemy ? ' enemy' : ''}`} data-testid="target-panel">
       <div className="hud-target-head">
         <span className="hud-dot" style={{ background: t.info.c }} />
-        <b>{t.info.ct ? `[${t.info.ct}] ` : ''}{t.info.n}</b>
+        <b data-testid="target-name">{t.info.ct ? `[${t.info.ct}] ` : ''}{t.info.n}</b>
         <span className="hud-level">{t.info.k === 'n' ? `Sv ${t.info.l}${t.info.b ? ' · Kadim' : ''}` : `Sv ${t.info.l} · ${t.info.cc}`}</span>
         <button type="button" className="hud-x" aria-label="Hedefi bırak" onClick={() => c.selectTarget(null)}>×</button>
       </div>
-      <div className="hud-bar hp small"><span style={{ width: `${t.hp}%` }} /><em>%{t.hp}</em></div>
+      <div className="hud-bar hp small" data-testid="target-hp"><span style={{ width: `${t.hp}%` }} /><em>{t.info.mh ? `${fmt(Math.round((t.info.mh * t.hp) / 100))} / ${fmt(t.info.mh)}` : `%${t.hp}`}</em></div>
       <div className="hud-bar sh small"><span style={{ width: `${t.sh}%` }} /><em>%{t.sh}</em></div>
       {t.info.k === 'p' && onPilot && (
         <div className="hud-target-actions">

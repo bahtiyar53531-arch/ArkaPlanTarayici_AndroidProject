@@ -363,9 +363,23 @@ export class ForumService {
     return r;
   }
 
+  /** Aşama 14: Yönetim Merkezi'nden susturulan kullanıcı foruma da yazamaz (sohbetle aynı yaptırım). */
+  private async assertNotMuted(c: Queryable, userId: string) {
+    const r = await c.query<{ ends_at: Date }>(
+      `SELECT ends_at FROM sanctions WHERE user_id = $1 AND kind = 'mute' AND revoked_at IS NULL AND ends_at > $2 ORDER BY ends_at DESC LIMIT 1`,
+      [userId, this.clock()],
+    );
+    const until = r.rows[0]?.ends_at;
+    if (until) {
+      const t = until.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', dateStyle: 'medium', timeStyle: 'short' });
+      throw err('MUTED', 403, `Susturulduğun için ${t} (TSİ) tarihine kadar foruma yazamazsın.`);
+    }
+  }
+
   async createThread(user: ForumUser, input: unknown): Promise<{ id: number }> {
     const b = forumThreadCreateSchema.parse(input);
     return this.run(async (c) => {
+      await this.assertNotMuted(c, user.id);
       const cat = await this.categoryBySlug(c, b.category);
       if (cat.is_archived) throw err('FORUM_CATEGORY_NOT_FOUND', 404, 'Bu bölüm arşivlendi.');
       if (!(await this.canPostIn(c, user, cat.post_permission))) throw err('FORBIDDEN', 403, `"${cat.name}" bölümünde yalnızca ekip konu açabilir.`);
@@ -387,6 +401,7 @@ export class ForumService {
   async reply(user: ForumUser, threadId: number, input: unknown): Promise<{ postId: number; page: number }> {
     const b = forumReplySchema.parse(input);
     return this.run(async (c, out) => {
+      await this.assertNotMuted(c, user.id);
       // Konu satırı kilitlenir: aynı anda kilitlenen konuya yanıt yazılamaz
       const t = await this.threadRow(c, threadId, true);
       const mod = await this.canModerate(c, user.id, t.category_id);

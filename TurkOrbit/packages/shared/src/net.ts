@@ -173,6 +173,8 @@ export interface EntityInfo {
   b?: boolean;
   /** Aşama 12: pilotun klan etiketi */
   ct?: string;
+  /** Aşama 14: NPC'nin azami canı (Yönetim Merkezi'nden değişince yeniden gönderilir) */
+  mh?: number;
 }
 
 export interface ShipInfo {
@@ -223,6 +225,8 @@ export const CLOSE_CODES = {
   HELLO_TIMEOUT: 4008,
   RATE_LIMITED: 4009,
   VERSION: 4010,
+  /** Aşama 14: bakım modu (oyuna yalnızca personel girebilir) */
+  MAINTENANCE: 4011,
 } as const;
 
 /** İstemcinin yeniden bağlanmaması gereken kapanışlar (kullanıcı işlemi gerekir). */

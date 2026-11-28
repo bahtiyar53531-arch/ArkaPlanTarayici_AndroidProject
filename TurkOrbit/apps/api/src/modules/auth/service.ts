@@ -15,7 +15,7 @@ import {
   type SessionInfo,
 } from '@turkorbit/shared';
 import type { AppConfig } from '../../config/env.js';
-import { uniqueViolation, withTransaction, type Db } from '../../db/pool.js';
+import { uniqueViolation, withTransaction, type Db, type Queryable } from '../../db/pool.js';
 import { maskIp, normalizePlatform, parseUserAgent, safeIp } from '../../lib/client-info.js';
 import { hmacBase64Url, randomToken, safeEqual, sha256 } from '../../lib/crypto.js';
 import { AppError, Errors } from '../../lib/errors.js';
@@ -422,6 +422,23 @@ export class AuthService {
 
   async hasPermission(auth: AuthenticatedContext, permission: PermissionKey): Promise<boolean> {
     return repo.userHasPermission(this.d.db, auth.user.id, permission);
+  }
+
+  /**
+   * Aşama 14 — Yönetim Merkezi: kullanıcının TÜM oturumları iptal edilir ve oturum önbelleği temizlenir
+   * (ban/askı/kilit önbellekteki eski hesap durumuyla 30 sn daha geçerli kalmasın diye).
+   */
+  async revokeAllForUser(userId: string, reason: string, db: Queryable = this.d.db): Promise<number> {
+    const cached = await repo.activeSessionHashes(db, userId);
+    const hashes = await repo.revokeSessions(db, { userId }, reason);
+    await this.d.cache.del([...cached, ...hashes]).catch(() => undefined);
+    return hashes.length;
+  }
+
+  /** Hesap durumu değişince (askı kaldırma vb.) önbellekteki oturum kayıtları silinir. */
+  async dropSessionCache(userId: string, db: Queryable = this.d.db): Promise<void> {
+    const hashes = await repo.activeSessionHashes(db, userId);
+    await this.d.cache.del(hashes).catch(() => undefined);
   }
 
   async logout(auth: AuthenticatedContext): Promise<void> {

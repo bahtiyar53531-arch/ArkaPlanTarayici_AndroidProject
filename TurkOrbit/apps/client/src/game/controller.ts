@@ -154,6 +154,8 @@ export class GameController {
   private timers: Array<ReturnType<typeof setInterval>> = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  /** Aşama 14: son "kick" mesajının metni (kapanış gerekçesi olarak gösterilir) */
+  private kickMessage: string | null = null;
   private firstWelcome: { resolve: () => void; reject: (e: unknown) => void } | null = null;
   private jumpTimer: ReturnType<typeof setTimeout> | null = null;
   private lastNearbyAt = 0;
@@ -307,7 +309,9 @@ export class GameController {
     if (this.ws !== ws || this.disposed) return;
     this.ws = null;
     if (code === CLOSE_CODES.REPLACED) return this.end('replaced', 'Hesabınla başka bir cihazdan oyuna girildi.');
-    if (code === CLOSE_CODES.SESSION_ENDED) return this.end('ended', 'Oturumun sonlandırıldı. Tekrar giriş yap.');
+    // Sunucu kapanıştan önce gerekçeyi "kick" mesajıyla gönderir (ban, askı, bakım): o metin gösterilir
+    if (code === CLOSE_CODES.SESSION_ENDED) return this.end('ended', this.kickMessage ?? 'Oturumun sonlandırıldı. Tekrar giriş yap.');
+    if (code === CLOSE_CODES.MAINTENANCE) return this.end('ended', this.kickMessage ?? 'Türk Orbit bakımda. Kısa süre içinde geri döneceğiz.');
     if (code === CLOSE_CODES.VERSION) return this.end('ended', 'Oyun güncellendi. Devam etmek için sayfayı yenile.');
     if (NO_RECONNECT_CODES.includes(code) && this.state.reconnectAttempt >= 3) return this.end('ended', reason || 'Oyun sunucusuna bağlanılamadı.');
     this.scheduleReconnect();
@@ -466,6 +470,7 @@ export class GameController {
         break;
       case 'kick':
         this.state.connMessage = m.message;
+        this.kickMessage = m.message;
         break;
       case 'pong':
         this.state.ping = Math.round(performance.now() - m.c);

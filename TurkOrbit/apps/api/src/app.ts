@@ -29,6 +29,11 @@ import { ForumService } from './modules/forum/service.js';
 import { supportRoutes } from './modules/support/routes.js';
 import { SupportService } from './modules/support/service.js';
 import { LocalFileStore, type FileStore } from './lib/storage.js';
+import { ApprovalService } from './modules/admin/approvals.js';
+import { ContentService } from './modules/admin/content.js';
+import { AdminOverviewService } from './modules/admin/overview.js';
+import { AdminPlayerService } from './modules/admin/players.js';
+import { adminRoutes } from './modules/admin/routes.js';
 import type { Runtime } from './runtime.js';
 
 export interface BuiltApp {
@@ -47,6 +52,10 @@ export interface BuiltApp {
   files: FileStore;
   guards: AuthGuards;
   bridge: GameBridge;
+  approvals: ApprovalService;
+  adminPlayers: AdminPlayerService;
+  content: ContentService;
+  overview: AdminOverviewService;
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -162,6 +171,12 @@ export async function buildApp(
   const forum = new ForumService(rt.db, app.log, notifier, rt.redis, options.clock);
   const support = new SupportService(rt.db, app.log, { notifier, store: files, mailer: rt.mailer, publicWebUrl: config.publicWebUrl, ...(options.clock ? { clock: options.clock } : {}) });
   const world = new WorldService(rt.db, app.log);
+  // Aşama 14 — Yönetim Merkezi
+  const approvals = new ApprovalService(rt.db, app.log, options.clock);
+  const adminPlayers = new AdminPlayerService({ db: rt.db, log: app.log, auth, bridge, notifier, approvals, ...(options.clock ? { clock: options.clock } : {}) });
+  const content = new ContentService(rt.db, app.log, bridge, options.clock);
+  content.onQuestChange = () => quests.catalog.invalidate();
+  const overview = new AdminOverviewService(rt.db, app.log, bridge, approvals, options.clock);
 
   await app.register(
     async (api) => {
@@ -176,9 +191,10 @@ export async function buildApp(
       socialRoutes(api, { clans, social, guards, limiter: rt.limiter });
       forumRoutes(api, { service: forum, guards, limiter: rt.limiter });
       supportRoutes(api, { service: support, guards, limiter: rt.limiter });
+      adminRoutes(api, { guards, db: rt.db, limiter: rt.limiter, players: adminPlayers, content, overview, approvals, forum });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, forum, support, files, guards, bridge };
+  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, forum, support, files, guards, bridge, approvals, adminPlayers, content, overview };
 }

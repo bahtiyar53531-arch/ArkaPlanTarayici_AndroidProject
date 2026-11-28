@@ -96,7 +96,9 @@ export async function resetDatabase(rt: Runtime) {
          ('social', '{"max_friends": 200, "max_blocks": 500, "party_max": 8, "party_invite_seconds": 60, "notification_keep": 200}'::jsonb),
          ('chat', '{"max_length": 300, "rate_count": 5, "rate_window_seconds": 10, "history": 50, "mute_seconds": 60, "banned_words": ["amk", "aq", "orospu", "siktir", "yarrak", "pezevenk", "şerefsiz"]}'::jsonb),
          ('forum', '{"threads_per_page": 20, "posts_per_page": 20, "edit_window_minutes": 1440, "max_body": 20000}'::jsonb),
-         ('support', '{"max_attachment_bytes": 5242880, "max_attachments_per_message": 3, "attach_window_minutes": 30, "max_open_tickets": 5, "auto_close_days": 7}'::jsonb)
+         ('support', '{"max_attachment_bytes": 5242880, "max_attachments_per_message": 3, "attach_window_minutes": 30, "max_open_tickets": 5, "auto_close_days": 7}'::jsonb),
+         ('maintenance', '{"enabled": false, "message": "Türk Orbit bakımda. Kısa süre içinde geri döneceğiz."}'::jsonb),
+         ('admin', '{"grant_approval_threshold": {"KREDI": 1000000, "AKCE": 5000}, "grant_item_approval_threshold": 50, "approval_hours": 72}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

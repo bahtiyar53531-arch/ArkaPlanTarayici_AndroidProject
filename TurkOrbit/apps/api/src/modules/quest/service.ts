@@ -104,7 +104,12 @@ const CURRENCY_NAMES: Record<string, string> = { KREDI: 'Kredi', AKCE: 'Akçe', 
 /** Etkinlikler başlamadan bu kadar önce "yakında" olarak listelenir */
 const UPCOMING_MS = 14 * 86_400_000;
 
-/** Görev içeriği önbelleği (içerik Yönetim Merkezi gelene kadar yalnızca migration ile değişir). */
+/**
+ * Görev içeriği önbelleği. Aşama 14: Yönetim Merkezi görev oluşturup yayımlayabildiği için önbellek en fazla 2 sn'de bir,
+ * arka planda (isteği bekletmeden) veritabanındaki ucuz bir sürüm anahtarına (görev sayısı + son görev yayını zamanı) bakar;
+ * değiştiyse sonraki çağrıda yeniden yükler. Yayını yapan API süreci önbelleği anında geçersiz kılar; diğer API/oyun
+ * sunucusu süreçleri değişikliği birkaç saniye içinde görür.
+ */
 class QuestCatalog {
   byId = new Map<number, QuestDef>();
   byCode = new Map<string, QuestDef>();
@@ -112,10 +117,40 @@ class QuestCatalog {
   items = new Map<string, { id: number; name: string; stackable: boolean }>();
   private loadedAt = 0;
   private loading: Promise<void> | null = null;
+  private version = '';
+  private checkedAt = 0;
+  private checking: Promise<void> | null = null;
+
+  private async readVersion(db: Queryable): Promise<string> {
+    const r = await db.query<{ v: string }>(
+      `SELECT (SELECT count(*) FROM quests)::text || ':' ||
+              COALESCE((SELECT (extract(epoch FROM max(published_at)) * 1000)::bigint::text FROM content_revisions WHERE entity_type = 'quest'), '0') AS v`,
+    );
+    return r.rows[0]!.v;
+  }
 
   async ensure(db: Queryable, maxAgeMs = 60_000) {
-    if (Date.now() - this.loadedAt < maxAgeMs && this.byId.size) return;
-    this.loading ??= this.load(db).finally(() => (this.loading = null));
+    const fresh = Date.now() - this.loadedAt < maxAgeMs && this.byId.size > 0;
+    if (fresh) {
+      // Sürüm denetimi isteği BEKLETMEZ (çağıran bir transaction içinde olabilir; havuzdan ikinci bağlantı beklemesin).
+      // Değişiklik görülürse bir sonraki çağrı yeniden yükler.
+      if (Date.now() - this.checkedAt >= 2000 && !this.checking) {
+        this.checkedAt = Date.now();
+        this.checking = this.readVersion(db)
+          .then((v) => {
+            if (v !== this.version) this.loadedAt = 0;
+          })
+          .catch(() => undefined)
+          .finally(() => (this.checking = null));
+      }
+      return;
+    }
+    this.loading ??= (async () => {
+      const v = await this.readVersion(db);
+      await this.load(db);
+      this.version = v;
+      this.checkedAt = Date.now();
+    })().finally(() => (this.loading = null));
     await this.loading;
   }
 

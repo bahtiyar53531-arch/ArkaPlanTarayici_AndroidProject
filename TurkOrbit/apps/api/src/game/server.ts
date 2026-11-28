@@ -7,6 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { hostname } from 'node:os';
 import {
   AMMO_CODES,
   AMMO_LABELS,
@@ -62,7 +63,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { Db } from '../db/pool.js';
 import { AppError } from '../lib/errors.js';
 import type { Logger } from '../modules/auth/service.js';
-import { GAME_CHANNELS, GAME_KEYS, GameBridge, PRESENCE_TTL_SECONDS, type PlayerUpdateReason, type Presence } from '../modules/game/bridge.js';
+import { GAME_CHANNELS, GAME_KEYS, GameBridge, NODE_TTL_SECONDS, PRESENCE_TTL_SECONDS, type AdminGameEvent, type PlayerUpdateReason, type Presence } from '../modules/game/bridge.js';
 import { activeShipStats } from '../modules/hangar/stats.js';
 import { WorldService } from '../modules/world/service.js';
 import { syncAchievements } from '../modules/player/achievements.js';
@@ -110,6 +111,8 @@ export interface GameServerOptions {
   saveIntervalMs?: number;
   sessionCheckMs?: number;
   mapCheckMs?: number;
+  /** Aşama 14: Yönetim Merkezi nabız aralığı */
+  heartbeatMs?: number;
   /** Hasar varyansı, ödül zarı ve NPC dolaşımı için (testlerde sabitlenir) */
   rng?: Rng;
   /** Görev döngüleri (günlük/haftalık sıfırlama) için duvar saati (testlerde ayarlanır) */
@@ -288,6 +291,10 @@ interface Player {
   /** son gönderilen grup görünümü (değişmediyse tekrar gönderilmez) */
   partySent: string;
   chat: { times: number[]; mutedUntil: number; chain: Promise<unknown> };
+  /** Aşama 14: personel mi (bakım modunda oyuna girebilir) */
+  staff: boolean;
+  /** Aşama 14: Yönetim Merkezi susturması bitişi (ms; 0 = yok) */
+  adminMuteUntil: number;
 }
 
 /** Süreçler arası sohbet zarfı (Redis game:chat) */
@@ -307,6 +314,10 @@ const pct = (v: number, max: number) => (max > 0 ? Math.max(0, Math.min(100, Mat
 
 export class GameServer {
   readonly instanceId = randomUUID();
+  private readonly startedAt = new Date().toISOString();
+  /** Aşama 14: tik süresi (üstel hareketli ortalama, ms) */
+  private tickCost = 0;
+  private maintenance = { enabled: false, message: '' };
   private readonly world: WorldService;
   private readonly bridge: GameBridge;
   private readonly content = new GameContent();
@@ -389,6 +400,7 @@ export class GameServer {
     await this.content.load(this.o.db);
     await this.loadRelations();
     await this.loadSocialConfig();
+    await this.loadMaintenance();
     this.http = createServer((req, res) => {
       if (req.url === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -414,7 +426,9 @@ export class GameServer {
       let n = 0;
       const now = performance.now();
       while (now >= this.nextTickAt && n < 5) {
+        const t0 = performance.now();
         this.tick();
+        this.tickCost = this.tickCost * 0.95 + (performance.now() - t0) * 0.05;
         this.nextTickAt += TICK_MS;
         n++;
       }
@@ -427,7 +441,9 @@ export class GameServer {
       setInterval(() => void this.saveAll(), this.o.saveIntervalMs ?? 5000),
       setInterval(() => void this.checkSessions(), this.o.sessionCheckMs ?? 30_000),
       setInterval(() => void this.checkMaps(), this.o.mapCheckMs ?? 15_000),
+      setInterval(() => void this.heartbeat(), this.o.heartbeatMs ?? 5000),
     );
+    void this.heartbeat();
   }
 
   async close() {
@@ -441,6 +457,7 @@ export class GameServer {
     await this.idle();
     await this.saveAll();
     await Promise.all([...this.byPlayer.values()].map((p) => this.o.redis.del(GAME_KEYS.presence(p.playerId)).catch(() => 0)));
+    await this.o.redis.del(GAME_KEYS.node(this.instanceId)).catch(() => 0);
     for (const ws of this.pending) ws.close(CLOSE_CODES.SHUTDOWN, 'Sunucu yeniden başlatılıyor');
     await this.o.sub.unsubscribe().catch(() => undefined);
     await new Promise<void>((r) => (this.wss ? this.wss.close(() => r()) : r()));
@@ -535,11 +552,17 @@ export class GameServer {
       p.cargoUsed = await this.store.resourceLoad(p.playerId);
       p.shield = p.maxShield;
       await this.loadSocial(p);
+      await this.loadAdminState(p);
       // Oda pilot listeye eklenmeden önce yüklenir: periyodik işler (kayıt, grup, bakım) odası olmayan pilot görmez.
       await this.ensureRoom(map);
       this.byPlayer.set(p.playerId, p);
       await this.joinRoom(p, map);
       await this.o.db.query('UPDATE players SET last_online_at = now() WHERE id = $1', [p.playerId]);
+    }
+    if (this.maintenance.enabled && !p.staff) {
+      this.kickConnection(p, CLOSE_CODES.MAINTENANCE, this.maintenance.message);
+      await this.removePlayer(p);
+      return;
     }
     await this.writePresence(p);
     if (ws.readyState !== WebSocket.OPEN || p.ws !== ws) return;
@@ -640,6 +663,8 @@ export class GameServer {
       partyId: null,
       partySent: 'null',
       chat: { times: [], mutedUntil: 0, chain: Promise.resolve() },
+      staff: false,
+      adminMuteUntil: 0,
     };
   }
 
@@ -848,7 +873,7 @@ export class GameServer {
       entityId,
       type: t,
       spawn: sp,
-      info: { id: entityId, k: 'n', n: t.name, cc: '', c: t.color, s: t.spriteKey, l: t.level, z: t.scale, ...(t.isBoss ? { b: true } : {}) },
+      info: { id: entityId, k: 'n', n: t.name, cc: '', c: t.color, s: t.spriteKey, l: t.level, z: t.scale, mh: Math.round(t.hitpoints * hpMult), ...(t.isBoss ? { b: true } : {}) },
       state: { x, y, vx: 0, vy: 0, h: this.rng() * Math.PI * 2 - Math.PI },
       hp: Math.round(t.hitpoints * hpMult),
       maxHp: Math.round(t.hitpoints * hpMult),
@@ -1719,8 +1744,148 @@ export class GameServer {
   }
 
   // ================================================================== canlı değişiklikler (Redis)
+  // ================================================================== Yönetim Merkezi (Aşama 14)
+  private async onAdminEvent(e: AdminGameEvent) {
+    switch (e.type) {
+      case 'content':
+        await this.reloadContent();
+        break;
+      case 'ships': {
+        const ids = [...this.byPlayer.keys()];
+        if (ids.length === 0) return;
+        const r = await this.o.db.query<{ id: string }>(
+          `SELECT p.id FROM players p JOIN player_ships ps ON ps.id = p.active_ship_id WHERE ps.ship_type_id = $1 AND p.id = ANY($2::uuid[])`,
+          [e.shipTypeId, ids],
+        );
+        for (const row of r.rows) {
+          const p = this.byPlayer.get(row.id);
+          if (p) await this.reloadStats(p, 'stats', true);
+        }
+        break;
+      }
+      case 'map': {
+        const room = this.rooms.get(e.code);
+        if (room) room.pvp = e.pvp;
+        // Kapatılan haritadaki pilotlar beklemeden taşınır
+        await this.checkMaps();
+        break;
+      }
+      case 'social-config':
+        await this.loadSocialConfig();
+        break;
+      case 'sanction':
+        for (const p of [...this.byPlayer.values()].filter((x) => x.userId === e.userId)) {
+          if (e.kick) {
+            this.kickConnection(p, CLOSE_CODES.SESSION_ENDED, e.message ?? 'Oturumun sonlandırıldı. Tekrar giriş yap.');
+            await this.removePlayer(p);
+          } else {
+            await this.loadAdminState(p);
+          }
+        }
+        break;
+      case 'maintenance':
+        this.maintenance = { enabled: e.enabled, message: e.message };
+        if (e.enabled) {
+          for (const p of [...this.byPlayer.values()]) {
+            if (p.staff) continue;
+            this.kickConnection(p, CLOSE_CODES.MAINTENANCE, e.message);
+            await this.removePlayer(p);
+          }
+        }
+        break;
+      case 'announce':
+        for (const p of this.byPlayer.values()) send(p.ws, { t: 'notice', kind: 'info', text: `📢 ${e.text}` });
+        break;
+    }
+  }
+
+  /**
+   * Yayınlanan NPC/savaş içeriği canlı uygulanır: yeni doğan NPC yeni değerlerle doğar; yaşayan NPC'nin canı ve
+   * kalkanı ORANI KORUNARAK yeni azami değere ölçeklenir (yarı canlı NPC yarı canlı kalır). Bilgisi değişen NPC
+   * çevredeki pilotlara bir sonraki anlık görüntüde güncel adıyla ve azami canıyla yeniden gönderilir.
+   */
+  private async reloadContent() {
+    await this.content.load(this.o.db);
+    for (const room of this.rooms.values()) {
+      for (const sp of room.spawns) {
+        const t = this.content.npcTypes.get(sp.type.id);
+        if (t) sp.type = t;
+      }
+      const changed: number[] = [];
+      for (const n of room.npcs.values()) {
+        const t = this.content.npcTypes.get(n.type.id);
+        if (!t) continue;
+        const hpMult = n.spawn.spawn.overrides.hitpoints_mult ?? 1;
+        const maxHp = Math.max(1, Math.round(t.hitpoints * hpMult));
+        const maxShield = Math.round(t.shield * hpMult);
+        const hpRatio = n.maxHp > 0 ? n.hp / n.maxHp : 1;
+        const shRatio = n.maxShield > 0 ? n.shield / n.maxShield : 1;
+        n.type = t;
+        n.maxHp = maxHp;
+        n.hp = Math.max(1, Math.round(maxHp * hpRatio));
+        n.maxShield = maxShield;
+        n.shield = Math.round(maxShield * shRatio);
+        n.damage = Math.round(t.damage * (n.spawn.spawn.overrides.damage_mult ?? 1));
+        if (n.info.n !== t.name || n.info.mh !== maxHp || n.info.l !== t.level || n.info.c !== t.color) {
+          n.info = { ...n.info, n: t.name, l: t.level, c: t.color, mh: maxHp };
+          changed.push(n.entityId);
+        }
+      }
+      if (changed.length) for (const p of room.players.values()) for (const id of changed) p.visible.delete(id);
+    }
+    this.o.log.info({ npcTypes: this.content.npcTypes.size }, 'içerik Yönetim Merkezi yayınıyla yeniden yüklendi');
+  }
+
+  /** Personel mi + etkin susturma (bağlanırken ve yaptırım değişince) */
+  private async loadAdminState(p: Player) {
+    const r = await this.o.db.query<{ staff: boolean; mute: Date | null }>(
+      `SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_key = ur.role_key
+                      WHERE ur.user_id = $1 AND rp.permission_key = 'dashboard.view') AS staff,
+              (SELECT max(ends_at) FROM sanctions WHERE user_id = $1 AND kind = 'mute' AND revoked_at IS NULL AND ends_at > now()) AS mute`,
+      [p.userId],
+    );
+    p.staff = r.rows[0]?.staff ?? false;
+    p.adminMuteUntil = r.rows[0]?.mute ? r.rows[0].mute.getTime() : 0;
+  }
+
+  private async loadMaintenance() {
+    const m = await getSetting<{ enabled?: boolean; message?: string }>(this.o.db, 'maintenance');
+    this.maintenance = { enabled: m?.enabled === true, message: m?.message ?? 'Türk Orbit bakımda. Kısa süre içinde geri döneceğiz.' };
+  }
+
+  /** Yönetim Merkezi panosu için süreç nabzı (Redis, 15 sn ömürlü) */
+  private async heartbeat() {
+    if (this.closing) return;
+    let npcs = 0;
+    const maps: Record<string, number> = {};
+    for (const r of this.rooms.values()) {
+      npcs += r.npcs.size;
+      maps[r.code] = r.players.size;
+    }
+    const node = {
+      id: `${hostname()}-${this.instanceId.slice(0, 8)}`,
+      startedAt: this.startedAt,
+      at: new Date().toISOString(),
+      connections: this.localConns.size,
+      players: this.byPlayer.size,
+      rooms: this.rooms.size,
+      npcs,
+      tickMs: Math.round(this.tickCost * 100) / 100,
+      rssMb: Math.round(process.memoryUsage().rss / 1048576),
+      maps,
+    };
+    await this.o.redis.set(GAME_KEYS.node(this.instanceId), JSON.stringify(node), 'EX', NODE_TTL_SECONDS).catch((err: unknown) => {
+      this.o.log.warn({ err }, 'süreç nabzı yazılamadı');
+    });
+  }
+
+  /** Testler için: nabzı hemen yaz */
+  async writeHeartbeat() {
+    await this.heartbeat();
+  }
+
   private async subscribe() {
-    await this.o.sub.subscribe(GAME_CHANNELS.kick, GAME_CHANNELS.playerUpdated, GAME_CHANNELS.deliver, GAME_CHANNELS.relations, GAME_CHANNELS.chat);
+    await this.o.sub.subscribe(GAME_CHANNELS.kick, GAME_CHANNELS.playerUpdated, GAME_CHANNELS.deliver, GAME_CHANNELS.relations, GAME_CHANNELS.chat, GAME_CHANNELS.admin);
     this.o.sub.on('message', (channel: string, raw: string) => {
       let data: { playerId?: string; connId?: string; reason?: PlayerUpdateReason; msg?: ServerMessage; clanIds?: string[] };
       try {
@@ -1734,6 +1899,10 @@ export class GameServer {
       }
       if (channel === GAME_CHANNELS.relations) {
         this.bg(this.onRelationsChanged(data.clanIds ?? []));
+        return;
+      }
+      if (channel === GAME_CHANNELS.admin) {
+        this.bg(this.onAdminEvent(data as unknown as AdminGameEvent));
         return;
       }
       const p = data.playerId ? this.byPlayer.get(data.playerId) : undefined;
@@ -1983,6 +2152,11 @@ export class GameServer {
   private async handleChat(p: Player, msg: Extract<ClientMessage, { t: 'chat' }>) {
     const s = this.chatSettings;
     const now = Date.now();
+    if (p.adminMuteUntil > now) {
+      const until = new Date(p.adminMuteUntil).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', dateStyle: 'medium', timeStyle: 'short' });
+      this.notice(p, `Susturuldun: ${until} (TSİ) tarihine kadar sohbete yazamazsın.`);
+      return;
+    }
     if (p.chat.mutedUntil > now) {
       this.notice(p, `Çok hızlı mesaj gönderdin. ${Math.ceil((p.chat.mutedUntil - now) / 1000)} sn sonra tekrar yazabilirsin.`);
       return;

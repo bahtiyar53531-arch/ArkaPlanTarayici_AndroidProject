@@ -32,36 +32,7 @@
 
 -- ============================================================ 3. İÇERİK SÜRÜMLEME (15.13)
 -- Yönetim Merkezi'nde düzenlenen her içerik kaydı için önizleme/yayın/geri alma geçmişi.
-CREATE TABLE content_revisions (
-  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  entity_type   text NOT NULL,                  -- 'ship_type', 'npc_type', 'map', 'quest', 'shop_offer' ...
-  entity_id     text NOT NULL,
-  version       integer NOT NULL,
-  data          jsonb NOT NULL,                 -- kaydın o sürümdeki tam hali
-  status        text NOT NULL CHECK (status IN ('draft', 'published', 'superseded', 'rolled_back')),
-  hot_reloadable boolean NOT NULL DEFAULT true, -- false: oyun sunucusunun yeniden başlatılması gerekir
-  created_by    uuid REFERENCES users(id) ON DELETE SET NULL,
-  published_by  uuid REFERENCES users(id) ON DELETE SET NULL,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  published_at  timestamptz,
-  note          text,
-  UNIQUE (entity_type, entity_id, version)
-);
-
--- İki yetkili onayı gerektiren kritik işlemler (15.14)
-CREATE TABLE approval_requests (
-  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  action        text NOT NULL,                  -- ör. 'economy.grant', 'player.ban.permanent', 'content.publish'
-  payload       jsonb NOT NULL,
-  requested_by  uuid NOT NULL REFERENCES users(id),
-  reason        text NOT NULL,
-  status        text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'expired', 'executed')),
-  reviewed_by   uuid REFERENCES users(id),
-  reviewed_at   timestamptz,
-  expires_at    timestamptz NOT NULL,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  CHECK (reviewed_by IS NULL OR reviewed_by <> requested_by)
-);
+-- content_revisions ve approval_requests: ✅ Aşama 14'te uygulandı → database/migrations/0010_admin.sql
 
 -- ============================================================ 4-5. EŞYA, ENVANTER, KONFİGÜRASYON, PET
 -- ✅ Aşama 6'da uygulandı → database/migrations/0003_hangar.sql
@@ -174,21 +145,7 @@ CREATE TABLE leaderboard_snapshots (
 --  forum_follows, support_tickets, support_messages, support_attachments; support_ticket_seq.)
 
 -- ============================================================ 16. MODERASYON VE GÜVENLİK
-CREATE TABLE sanctions (
-  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind         text NOT NULL CHECK (kind IN ('warning', 'mute', 'suspension', 'ban', 'lock')),
-  reason       text NOT NULL,
-  public_reason text,                           -- oyuncuya gösterilen metin
-  starts_at    timestamptz NOT NULL DEFAULT now(),
-  ends_at      timestamptz,                     -- NULL = kalıcı
-  issued_by    uuid REFERENCES users(id),
-  revoked_at   timestamptz,
-  revoked_by   uuid REFERENCES users(id),
-  revoke_reason text,
-  created_at   timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX sanctions_user_idx ON sanctions(user_id, created_at DESC);
+-- sanctions: ✅ Aşama 14'te uygulandı → database/migrations/0010_admin.sql
 
 -- Oyun sunucusunun hile/anomali tespitleri (hız aşımı, imkânsız atış hızı, şüpheli ödül kazancı ...)
 CREATE TABLE anticheat_events (
