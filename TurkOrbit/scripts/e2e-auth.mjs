@@ -176,7 +176,7 @@ const env = {
 let server;
 let game;
 async function main() {
-  console.log('TÜRK ORBIT — Aşama 1 + 5 + 6 + 7 + 8 + 9 uçtan uca test\n');
+  console.log('TÜRK ORBIT — Aşama 1 + 5–12 uçtan uca test\n');
   await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
   await resetDb();
   const tsx = path.join(ROOT, 'node_modules/.bin/tsx');
@@ -658,6 +658,89 @@ async function main() {
     expect(r2.status === 409 && r2.json.error.code === 'PURCHASE_LIMIT', JSON.stringify(r2.json));
     const inv = (await app.req('GET', '/hangar?server=TR1')).json.hangar.inventory;
     expect(inv.some((i) => i.code === 'extra.kargo'), 'kargo genişletici envanterde olmalı');
+  });
+  // ------------------------------------------------------------------ Aşama 12: klan ve sosyal
+  const unread = async (cl) => (await cl.req('GET', '/notifications/unread?server=TR1')).json.unread;
+  await step('Klan (Aşama 12): A seviye 5 olunca klan kurar (ücret defterli); B (Android) başvurur → A bildirim alır → kabul; B davet edemez', async () => {
+    await db.query(`UPDATE players SET experience = 139300 FROM users u WHERE u.id = players.user_id AND u.username = 'AnadoluKartali'`);
+    await db.query(`UPDATE wallets SET balance = 80000 FROM players p JOIN users u ON u.id = p.user_id WHERE wallets.player_id = p.id AND u.username = 'AnadoluKartali' AND wallets.currency_code = 'KREDI'`);
+    const c1 = await pc.req('POST', '/clan/create', { serverCode: 'TR1', tag: 'akn', name: 'Akıncılar', requestId: crypto.randomUUID() });
+    expect(c1.status === 200 && c1.json.clan.tag === 'AKN' && c1.json.clan.myRank.isLeader, JSON.stringify(c1.json));
+    const led = await db.query(`SELECT delta::int AS d FROM currency_ledger WHERE reason = 'clan_create'`);
+    expect(led.rows.length === 1 && led.rows[0].d === -50000, JSON.stringify(led.rows));
+    const before = await unread(pc);
+    const ap = await app.req('POST', '/clan/apply', { serverCode: 'TR1', tag: 'AKN', message: 'Katılabilir miyim?' });
+    expect(ap.status === 200, JSON.stringify(ap.json));
+    expect((await unread(pc)) === before + 1, 'A başvuru bildirimi almalı');
+    const appId = (await pc.req('GET', '/clan?server=TR1')).json.clan.applications[0].id;
+    const ok = await pc.req('POST', '/clan/applications/decide', { serverCode: 'TR1', id: appId, accept: true });
+    expect(ok.json.clan.members === 2, JSON.stringify(ok.json));
+    const inv = await app.req('POST', '/clan/invite', { serverCode: 'TR1', pilotName: 'AnadoluKartali' });
+    expect(inv.status === 403 && inv.json.error.code === 'CLAN_PERMISSION', JSON.stringify(inv.json));
+    const pub = (await pc.req('GET', '/pilots/TR1/GokBoru')).json.pilot;
+    expect(pub.clan?.tag === 'AKN' && pub.clan.rank === 'Üye', JSON.stringify(pub.clan));
+  });
+  await step('Arkadaşlık: A, B\'ye istek gönderir → B (Android) bildirim alır ve kabul eder; A arkadaş listesinde B\'yi görür', async () => {
+    const r = await pc.req('POST', '/social/friends/request', { serverCode: 'TR1', pilotName: 'GokBoru' });
+    expect(r.status === 200 && r.json.outgoing.length === 1, JSON.stringify(r.json));
+    const n = (await app.req('GET', '/notifications?server=TR1')).json;
+    expect(n.items.some((x) => x.kind === 'friend_request'), JSON.stringify(n.items.map((x) => x.kind)));
+    const acc = await app.req('POST', '/social/friends/respond', { serverCode: 'TR1', pilotName: 'AnadoluKartali', accept: true });
+    expect(acc.json.friends[0]?.pilotName === 'AnadoluKartali', JSON.stringify(acc.json));
+    expect((await pc.req('GET', '/social/friends?server=TR1')).json.friends[0].pilotName === 'GokBoru', 'A listede B\'yi görmeli');
+  });
+  let sa = null;
+  let sb = null;
+  await step('Sohbet (WebSocket): A (web, K-1) genel ve klan kanalına yazar → B (Android, G-1) alır; B özel mesaj atar; küfür maskelenir', async () => {
+    await place('AnadoluKartali', 9000, 6000, 'K-1');
+    await place('GokBoru', 9000, 6000, 'G-1');
+    sa = await GameConn.open(pc);
+    sb = await GameConn.open(app);
+    sa.send({ t: 'chat', ch: 'global', b: 'Selam galaksi!' });
+    const g = await sb.wait('chat', (m) => m.m.b === 'Selam galaksi!');
+    expect(g.m.ch === 'global' && g.m.from.name === 'AnadoluKartali' && g.m.from.clanTag === 'AKN', JSON.stringify(g.m));
+    sa.send({ t: 'chat', ch: 'clan', b: 'Klan toplantısı' });
+    await sb.wait('chat', (m) => m.m.ch === 'clan' && m.m.b === 'Klan toplantısı');
+    sb.send({ t: 'chat', ch: 'dm', to: 'AnadoluKartali', b: 'Sana özel: siktir aq' });
+    const dm = await sa.wait('chat', (m) => m.m.ch === 'dm');
+    expect(dm.m.b === 'Sana özel: ****** **' && dm.m.to === 'AnadoluKartali', JSON.stringify(dm.m));
+    const h = (await app.req('GET', '/chat/history?server=TR1&channel=dm&with=AnadoluKartali')).json.messages;
+    expect(h.length === 1 && h[0].b === 'Sana özel: ****** **', JSON.stringify(h));
+  });
+  await step('Grup: A, B\'yi davet eder → B kabul eder; farklı haritadaki üyenin konumu ÜYENİN iznine göre (B "yalnızca harita" seçince koordinat gizlenir)', async () => {
+    sa.send({ t: 'party', a: 'invite', n: 'GokBoru' });
+    await sb.wait('pinv', (m) => m.from === 'AnadoluKartali');
+    sb.send({ t: 'party', a: 'accept', n: 'AnadoluKartali' });
+    const v = await sa.wait('party', (m) => m.p?.members.length === 2 && m.p.members[1].map !== null, 8000);
+    const bm = v.p.members.find((x) => x.name === 'GokBoru');
+    expect(bm.map.code === 'G-1' && bm.x === 9000 && bm.y === 6000 && bm.online, JSON.stringify(bm));
+    const s = await app.req('PUT', '/social/settings', { serverCode: 'TR1', locationSharing: 'map', friendsSeeOnline: true, dmPolicy: 'everyone', groupInvites: 'everyone', friendRequests: true });
+    expect(s.status === 200, JSON.stringify(s.json));
+    const v2 = await sa.wait('party', (m) => m.p?.members.find((x) => x.name === 'GokBoru')?.x === null && m.p.members.find((x) => x.name === 'GokBoru')?.map?.code === 'G-1', 8000);
+    expect(v2.p.members[0].leader && v2.p.members[0].name === 'AnadoluKartali', JSON.stringify(v2.p.members));
+    sb.send({ t: 'chat', ch: 'group', b: 'grup kanalından selam' });
+    await sa.wait('chat', (m) => m.m.ch === 'group' && m.m.b === 'grup kanalından selam');
+  });
+  await step('Engelleme: B, A\'yı engeller → A\'nın genel mesajı B\'ye iletilmez; A özel mesaj gönderemez; şikâyet kuyruğa düşer', async () => {
+    const blk = await app.req('POST', '/social/block', { serverCode: 'TR1', pilotName: 'AnadoluKartali' });
+    expect(blk.status === 200 && blk.json.blocked.length === 1 && blk.json.friends.length === 0, JSON.stringify(blk.json));
+    await sleep(300);
+    sa.send({ t: 'chat', ch: 'global', b: 'engellendikten sonra' });
+    await sa.wait('chat', (m) => m.m.b === 'engellendikten sonra');
+    await sleep(400);
+    expect(!sb.msgs.some((m) => m.t === 'chat' && m.m.b === 'engellendikten sonra'), 'engellenen pilotun mesajı iletildi');
+    sa.send({ t: 'chat', ch: 'dm', to: 'GokBoru', b: 'cevap ver' });
+    const nt = await sa.wait('notice', (m) => m.text.includes('özel mesaj kabul etmiyor'));
+    expect(nt.text === 'GokBoru şu an senden özel mesaj kabul etmiyor.', nt.text);
+    const msg = sb.msgs.find((m) => m.t === 'chat' && m.m.b === 'Selam galaksi!');
+    const rep = await app.req('POST', '/reports', { serverCode: 'TR1', targetType: 'chat_message', target: String(msg.m.id), reason: 'spam' });
+    expect(rep.status === 201, JSON.stringify(rep.json));
+    const q = await db.query(`SELECT status, snapshot->>'body' AS body FROM reports`);
+    expect(q.rows.length === 1 && q.rows[0].status === 'open' && q.rows[0].body === 'Selam galaksi!', JSON.stringify(q.rows));
+    await sa.close();
+    await sb.close();
+    await waitOffline('AnadoluKartali');
+    await waitOffline('GokBoru');
   });
   await step('Ayarlar cihaz sınıfına göre ayrı saklanır; geçersiz değer reddedilir; B, A\'nın ayarını görmez', async () => {
     const d = (await pc.req('GET', '/settings?deviceClass=desktop')).json.settings;

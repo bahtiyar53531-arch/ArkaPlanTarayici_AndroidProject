@@ -143,6 +143,19 @@ export function Minimap({ c }: { c: GameController }) {
           ctx.stroke();
         }
       }
+      // Aşama 12: grup üyeleri (aynı haritada; konumu üyenin iznine göre gelir) — yeşil halka
+      for (const m of s.party?.members ?? []) {
+        if (m.you || !m.online || !m.map || m.map.code !== c.map.map.code) continue;
+        const seen = m.entityId !== null ? c.ships.get(m.entityId) : undefined;
+        const x = seen && Number.isFinite(seen.x) ? seen.x : m.x;
+        const y = seen && Number.isFinite(seen.y) ? seen.y : m.y;
+        if (x === null || y === null) continue;
+        ctx.beginPath();
+        ctx.arc(x * sx, y * sy, 4.5, 0, Math.PI * 2);
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
       if (s.target) {
         ctx.strokeStyle = 'rgba(41,197,255,0.7)';
         ctx.setLineDash([3, 3]);
@@ -326,7 +339,7 @@ export function ConnectionBanner({ c }: { c: GameController }) {
 }
 
 // ====================================================================== hedef paneli
-export function TargetPanel({ c }: { c: GameController }) {
+export function TargetPanel({ c, onPilot }: { c: GameController; onPilot?: (name: string) => void }) {
   useController(c);
   const id = c.state.combat.target;
   if (id === null) return null;
@@ -339,12 +352,24 @@ export function TargetPanel({ c }: { c: GameController }) {
     <div className={`hud-panel hud-target${enemy ? ' enemy' : ''}`} data-testid="target-panel">
       <div className="hud-target-head">
         <span className="hud-dot" style={{ background: t.info.c }} />
-        <b>{t.info.n}</b>
+        <b>{t.info.ct ? `[${t.info.ct}] ` : ''}{t.info.n}</b>
         <span className="hud-level">{t.info.k === 'n' ? `Sv ${t.info.l}${t.info.b ? ' · Kadim' : ''}` : `Sv ${t.info.l} · ${t.info.cc}`}</span>
         <button type="button" className="hud-x" aria-label="Hedefi bırak" onClick={() => c.selectTarget(null)}>×</button>
       </div>
       <div className="hud-bar hp small"><span style={{ width: `${t.hp}%` }} /><em>%{t.hp}</em></div>
       <div className="hud-bar sh small"><span style={{ width: `${t.sh}%` }} /><em>%{t.sh}</em></div>
+      {t.info.k === 'p' && onPilot && (
+        <div className="hud-target-actions">
+          {!c.state.party?.members.some((m) => m.name === t.info.n) && (
+            <button type="button" className="btn btn-small btn-secondary" onClick={() => c.partyAction('invite', t.info.n)} data-testid="target-invite">
+              Gruba davet et
+            </button>
+          )}
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => onPilot(t.info.n)}>
+            Özel mesaj
+          </button>
+        </div>
+      )}
       <div className="hud-target-foot">
         {d !== null && <span>{fmt(d)} birim</span>}
         {c.state.combat.attacking ? (inRange ? <span className="hud-tag danger">Ateş ediliyor</span> : <span className="hud-tag warn">Menzil dışı — yaklaş</span>) : null}
@@ -567,10 +592,16 @@ export function QuestDrawer({ c, onClose }: { c: GameController; onClose: () => 
 }
 
 // ====================================================================== üst çubuk
-export function TopBar({ onGalaxy, onSettings, onQuests, touch, c }: { onGalaxy: () => void; onSettings: () => void; onQuests: () => void; touch: boolean; c: GameController }) {
+export function TopBar({ onGalaxy, onSettings, onQuests, onChat, touch, c }: { onGalaxy: () => void; onSettings: () => void; onQuests: () => void; onChat?: () => void; touch: boolean; c: GameController }) {
   const ready = c.state.quests.filter((q) => q.status === 'completed').length;
   return (
     <div className="hud-topbar">
+      {onChat && (
+        <button type="button" className="hud-btn" onClick={onChat} title="Sohbet" aria-label="Sohbet" data-testid="hud-chat-btn">
+          💬<span>Sohbet</span>
+          {c.state.chatUnread > 0 && <span className="quest-ready-dot" aria-label={`${c.state.chatUnread} yeni mesaj`}>{Math.min(99, c.state.chatUnread)}</span>}
+        </button>
+      )}
       <button type="button" className="hud-btn" onClick={onQuests} title="Görevler (Q)" aria-label="Görevler" data-testid="hud-quests-btn">
         📜<span>Görevler</span>
         {ready > 0 && <span className="quest-ready-dot" aria-label={`${ready} ödül hazır`}>{ready}</span>}

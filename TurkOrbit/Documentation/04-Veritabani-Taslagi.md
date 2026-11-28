@@ -11,7 +11,8 @@
 | [database/migrations/0005_combat.sql](../database/migrations/0005_combat.sql) | ✅ **Uygulanan migration** (Aşama 9). |
 | [database/migrations/0006_quests.sql](../database/migrations/0006_quests.sql) | ✅ **Uygulanan migration** (Aşama 10). |
 | [database/migrations/0007_economy.sql](../database/migrations/0007_economy.sql) | ✅ **Uygulanan migration** (Aşama 11). |
-| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 12–17). 0001 → 0007 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 96 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
+| [database/migrations/0008_social.sql](../database/migrations/0008_social.sql) | ✅ **Uygulanan migration** (Aşama 12). |
+| [database/schema-draft.sql](../database/schema-draft.sql) | 📐 **Taslak** (Aşama 13–17). 0001 → 0008 zincirinin üzerine hatasız yüklendiği doğrulandı (toplam 100 tablo). Her aşamada ilgili bölüm gözden geçirilip yeni bir migration'a dönüştürülecek. |
 
 ## 1. Uygulanan tablolar (0001)
 
@@ -119,11 +120,31 @@ Görev ödülleri `currency_ledger` / `item_ledger` defterlerine `quest_reward` 
 | `daily_login_rewards`, `player_daily_logins` | 7 günlük takvim, oyuncu girişleri | Birincil anahtar (oyuncu, oyun günü) → günde tek ödül |
 | `shop_offers` (paket) | `title`, `description`, `bundle_items` | `offer_type = 'bundle'` için içerik zorunlu (CHECK) |
 
+## 1i. Aşama 12'de uygulanan tablolar (0008)
+
+| Tablo | Amaç | Önemli kurallar |
+|---|---|---|
+| `clans` | Klanlar | Etiket `^[A-Z0-9ÇĞİÖŞÜ]{2,5}$`, ad 3–30; sunucu başına etiket ve ad benzersiz (citext); vergi 0–5; `leader_id` pilot silinirse NULL |
+| `clan_ranks` | Rütbeler | Yetki listesi yalnızca bilinen 6 yetki (CHECK); sıra 0 = lider; `UNIQUE (clan_id, sort_order)` |
+| `clan_members` | Üyeler | `player_id` UNIQUE → tek klan; rütbe aynı klana ait (bileşik FK) |
+| `clan_applications`, `clan_invitations` | Başvuru ve davet | Bekleyen kayıt (klan, pilot) başına tek (kısmi benzersiz dizin); davet süreli |
+| `clan_diplomacy` | İttifak, saldırmazlık, savaş | Çift başına tek satır (`clan_a < clan_b`); savaş yalnızca `active`; barış önerisi yalnızca savaşta |
+| `clan_wallets`, `clan_treasury_ledger` | Hazine ve defteri | `balance >= 0`; defter yalnızca eklenebilir (tetikleyici); `idempotency_key` benzersiz |
+| `clan_events` | Klan etkinlik kaydı | Adlar o anki haliyle saklanır |
+| `friendships` | Arkadaşlık | İstek (gönderen → alan, `pending`); kabulde iki yönlü `accepted` |
+| `player_blocks` | Engelleme | Kendini engelleyemez (CHECK) |
+| `player_social_settings` | Gizlilik | Konum paylaşımı, çevrimiçi görünürlük, özel mesaj, grup daveti, arkadaşlık isteği |
+| `chat_messages` | Sohbet kaydı | Kanal adı biçimi CHECK; özel mesajda alıcı zorunlu; gövde 1–300; `filtered` işareti |
+| `reports` | Şikâyet kuyruğu | Hedef türü ve sebep CHECK; anlık `snapshot`; aynı kişi + içerik için tek açık şikâyet |
+| `notifications` | Bildirimler | Bağlantı yalnızca site içi yol (CHECK); okunmamış için kısmi dizin |
+
+Gruplar (party) tablo değildir: canlı durum Redis'te (`party:*`). Grup mesajları `chat_messages` içinde `group:<id>` kanalıyla saklanır.
+
 ## 2. Taslaktaki tablo grupları
 
 | Grup | Tablolar | Aşama |
 |---|---|---|
-| Evren ve profil | ✅ 0002'de uygulandı; taslakta yalnızca `player_settings` ve sonraki aşamaların ekleyeceği sütunlar (`active_loadout`, `clan_id`, `reward_table_id`, `max_players`) | 5 ✅ / 6, 9, 12 |
+| Evren ve profil | ✅ 0002'de uygulandı; taslakta yalnızca `player_settings` ve sonraki aşamaların ekleyeceği sütunlar (`active_loadout`, `reward_table_id`, `max_players`); klan üyeliği `players.clan_id` yerine `clan_members` ile tutuldu | 5 ✅ / 6, 9 |
 | İçerik sürümleme | `content_revisions, approval_requests` | 14 (tasarım şimdiden) |
 | Eşya, envanter, konfigürasyon, PET | ✅ 0003'te uygulandı | 6 ✅ |
 | Yetenekler | `skill_nodes, player_skills` | 9 |
@@ -132,8 +153,8 @@ Görev ödülleri `currency_ledger` / `item_ledger` defterlerine `quest_reward` 
 | Ödüller | ✅ `reward_tables, reward_entries` 0005'te uygulandı | 9 ✅ |
 | Görevler | ✅ `quests, quest_objectives, player_quests` + `player_quest_cycles` 0006'da uygulandı | 10 ✅ |
 | Ekonomi | ✅ Cüzdan/defter/mağaza 0002–0003'te; açık artırma, üretim, günlük ödül, paketler 0007'de uygulandı | 11 ✅ |
-| Sosyal | `clans, clan_ranks, clan_members, clan_applications, clan_diplomacy, clan_treasury_ledger, friendships, player_blocks, chat_messages, reports, notifications` | 12 |
-| Etkinlik/sıralama | `events, leaderboard_snapshots` | 12 |
+| Sosyal | ✅ 0008'de uygulandı (+ `clan_invitations, clan_wallets, clan_events, player_social_settings`) | 12 ✅ |
+| Etkinlik/sıralama | `events, leaderboard_snapshots` | 14 (07'deki Aşama 12 kapsamında değil) |
 | Forum | `forum_categories, forum_moderators, forum_threads, forum_posts, forum_likes, forum_follows` | 13 |
 | Destek | `support_tickets, support_messages, support_attachments` | 13 |
 | Moderasyon | `sanctions, anticheat_events` | 14 |

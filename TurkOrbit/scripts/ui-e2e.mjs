@@ -36,6 +36,7 @@ const SHOTS8 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri
 const SHOTS9 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-09');
 const SHOTS10 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-10');
 const SHOTS11 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-11');
+const SHOTS12 = path.join(ROOT, 'Documentation/DevelopmentNotes/ekran-goruntuleri/asama-12');
 const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://turkorbit:turkorbit_dev@127.0.0.1:5432/turkorbit_e2e';
 const REDIS_URL = process.env.UI_E2E_REDIS_URL ?? 'redis://127.0.0.1:6379/13';
 const API_PORT = 4101;
@@ -51,6 +52,7 @@ mkdirSync(SHOTS8, { recursive: true });
 mkdirSync(SHOTS9, { recursive: true });
 mkdirSync(SHOTS10, { recursive: true });
 mkdirSync(SHOTS11, { recursive: true });
+mkdirSync(SHOTS12, { recursive: true });
 
 const inbox = [];
 const smtp = new SMTPServer({
@@ -735,6 +737,164 @@ try {
     await teleport(pc, A.username, 2200, 6250, 'G-2');
   });
 
+  console.log('Aşama 12 — Klan ve sosyal (iki masaüstü)');
+  const desktopB = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, locale: 'tr-TR' });
+  const pcB = await desktopB.newPage();
+  pcB.on('pageerror', (e) => pageErrors.push(`pcB: ${e.message}`));
+  await step('Klan: A (seviye 5) Klan sayfasından klanı kurar; ücret düşer; Lider rütbesi ve klan bilgileri görünür', async () => {
+    // Test hazırlığı: seviye 5 ve kuruluş ücreti (gerçek oyunda NPC/görevle kazanılır)
+    await db.query(`UPDATE players SET experience = 139300 FROM users u WHERE u.id = players.user_id AND u.username = $1`, [A.username]);
+    await db.query(
+      `UPDATE wallets SET balance = 100000 FROM players p JOIN users u ON u.id = p.user_id WHERE wallets.player_id = p.id AND u.username = $1 AND wallets.currency_code = 'KREDI'`,
+      [A.username],
+    );
+    await pc.goto(`${WEB}/klan`);
+    await pc.getByRole('heading', { name: 'Klan', exact: true }).waitFor();
+    await pc.getByTestId('clan-tag-input').fill('akn');
+    await pc.getByTestId('clan-name-input').fill('Akıncılar');
+    await pc.getByTestId('clan-create-btn').click();
+    await pc.getByText('Klanın kuruldu!').waitFor();
+    const head = pc.getByTestId('my-clan');
+    await head.getByText('[AKN]').waitFor();
+    await head.getByText('Rütben: Lider').waitFor();
+    const l = await db.query(`SELECT delta FROM currency_ledger WHERE reason = 'clan_create'`);
+    if (l.rows.length !== 1 || Number(l.rows[0].delta) !== -50000) throw new Error(`klan ücreti defteri: ${JSON.stringify(l.rows)}`);
+  });
+  await step('B giriş yapar, klanı arar ve başvurur; A\'nın bildirim zilinde başvuru görünür; A kabul eder', async () => {
+    await pcB.goto(`${WEB}/giris`);
+    await pcB.getByLabel('Kullanıcı adı veya e-posta').fill(B.username);
+    await pcB.getByLabel('Parola', { exact: true }).fill(B.password);
+    await pcB.getByRole('button', { name: 'Giriş yap' }).click();
+    await pcB.getByRole('heading', { name: B.username }).waitFor();
+    await pcB.goto(`${WEB}/klan`);
+    const row = pcB.getByTestId('clan-row-AKN');
+    await row.getByLabel('AKN başvuru mesajı').fill('Bozkırdan selam, katılmak isterim.');
+    await row.getByRole('button', { name: 'Başvur' }).click();
+    await pcB.getByText('[AKN] klanına başvurdun.', { exact: false }).waitFor();
+    await pc.reload();
+    await pc.getByTestId('notif-count').waitFor({ timeout: 8000 });
+    await pc.getByTestId('notif-bell').click();
+    await pc.getByTestId('notif-panel').getByText(`${B.username} (Sv 1) klana katılmak istiyor.`).waitFor();
+    await sleep(300);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '01-bildirim-zili.jpg') });
+    await pc.getByTestId('notif-bell').click();
+    await pc.getByTestId('clan-tab-applications').click();
+    await pc.getByText('“Bozkırdan selam, katılmak isterim.”').waitFor();
+    await pc.getByTestId('clan-applications').getByRole('button', { name: 'Kabul et' }).click();
+    await pc.getByText(`${B.username} klana katıldı.`).waitFor();
+    await pc.getByTestId('clan-tab-members').click();
+    await pc.getByTestId(`member-${B.username}`).waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '02-klan-uyeler.jpg') });
+  });
+  await step('Sosyal: A arkadaşlık isteği gönderir; B Sosyal sayfasında kabul eder; arkadaş listesinde klan etiketi', async () => {
+    await pc.goto(`${WEB}/sosyal`);
+    await pc.getByTestId('friend-name').fill(B.username);
+    await pc.getByRole('button', { name: 'Arkadaş ekle' }).click();
+    await pc.getByText(`${B.username} adlı pilota arkadaşlık isteği gönderildi.`).waitFor();
+    await pcB.goto(`${WEB}/sosyal`);
+    await pcB.getByTestId('social-tab-requests').click();
+    await pcB.getByTestId(`accept-${A.username}`).click();
+    await pcB.getByText(`${A.username} artık arkadaşın.`).waitFor();
+    await pc.reload();
+    const f = pc.getByTestId(`friend-${B.username}`);
+    await f.getByText('[AKN]').waitFor();
+    await f.getByText('Çevrimdışı').waitFor();
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '03-sosyal-arkadaslar.jpg') });
+  });
+  await step('Oyunda sohbet: Enter ile yazılır; B genel ve klan mesajını alır; B ada tıklayıp özel mesaj gönderir', async () => {
+    await teleport(pc, A.username, 2200, 6250, 'G-2');
+    await waitOffline(B.username);
+    await db.query(
+      `UPDATE players SET pos_x = 2600, pos_y = 6300, map_id = (SELECT id FROM maps WHERE code = 'G-2') FROM users u WHERE u.id = players.user_id AND u.username = $1`,
+      [B.username],
+    );
+    await pcB.goto(`${WEB}/oyna`);
+    await singleCanvas(pcB);
+    await pcB.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
+    await pc.getByTestId('nearby').getByText(B.username).waitFor({ timeout: 8000 });
+    await pc.keyboard.press('Enter');
+    await pc.getByTestId('chat-input').waitFor();
+    if (!(await pc.getByTestId('chat-input').evaluate((el) => el === document.activeElement))) throw new Error('Enter sohbet alanına odaklamadı');
+    await pc.keyboard.type('Selam Gökbörü!');
+    await pc.keyboard.press('Enter');
+    await pcB.getByTestId('chat-log').getByText('Selam Gökbörü!').waitFor({ timeout: 8000 });
+    await pc.getByTestId('chat-tab-clan').click();
+    await pc.getByTestId('chat-input').fill('Klan toplantısı 21:00');
+    await pc.getByTestId('chat-send').click();
+    await pcB.getByTestId('chat-log').getByText('Klan toplantısı 21:00').waitFor();
+    // B, A'nın adına tıklar → menüden özel mesaj
+    await pcB.getByTestId('chat-log').getByRole('button', { name: `[AKN] ${A.username}` }).first().click();
+    await pcB.getByTestId('pilot-menu').getByRole('menuitem', { name: 'Özel mesaj' }).click();
+    if ((await pcB.getByTestId('chat-to').inputValue()) !== A.username) throw new Error('özel mesaj alıcısı dolmadı');
+    await pcB.getByTestId('chat-input').fill('Sana özel bir mesaj');
+    await pcB.getByTestId('chat-send').click();
+    await pc.getByTestId('chat-tab-all').click();
+    await pc.getByTestId('chat-log').getByText('Sana özel bir mesaj').waitFor();
+    await sleep(500);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '04-oyun-sohbet.jpg') });
+    const r = await db.query(`SELECT split_part(channel, ':', 1) AS ch FROM chat_messages ORDER BY id`);
+    if (JSON.stringify(r.rows.map((x) => x.ch)) !== '["global","clan","dm"]') throw new Error(`sohbet kayıtları: ${JSON.stringify(r.rows)}`);
+  });
+  await step('Grup: A sohbetteki adından B\'yi davet eder; B davet kartında kabul eder; grup panelinde can/kalkan ve konum', async () => {
+    await pc.getByTestId('chat-log').getByRole('button', { name: `[AKN] ${B.username}` }).first().click();
+    await pc.getByTestId('pilot-menu').getByRole('menuitem', { name: 'Gruba davet et' }).click();
+    await pc.getByText(`${B.username} adlı pilota grup daveti gönderildi.`).waitFor();
+    const card = pcB.getByTestId('party-invite');
+    await card.getByText(A.username).waitFor({ timeout: 8000 });
+    await sleep(300);
+    await pcB.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '05-grup-daveti.jpg') });
+    await card.getByTestId('party-accept').click();
+    await pc.getByTestId(`party-member-${B.username}`).waitFor({ timeout: 8000 });
+    await pc.getByTestId(`party-where-${B.username}`).getByText(/^G-2 · \d+\/\d+$/).waitFor({ timeout: 8000 });
+    await pcB.getByTestId(`party-member-${A.username}`).waitFor();
+    await sleep(800);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '06-grup-paneli.jpg') });
+  });
+  await step('Konum izni: B başka haritaya geçer ve gizliliği "yalnızca harita" yapar → A\'nın grup panelinde koordinat gizlenir', async () => {
+    await teleport(pcB, B.username, 9000, 7000, 'G-1');
+    // Oyundan çıkan pilot gruptan ayrılır (bu testte bekleme süresi 0): iki kişilik grup dağılır → A yeniden davet eder
+    await pc.getByTestId('party-panel').waitFor({ state: 'detached', timeout: 8000 });
+    await pc.getByTestId('chat-log').getByRole('button', { name: `[AKN] ${B.username}` }).first().click();
+    await pc.getByTestId('pilot-menu').getByRole('menuitem', { name: 'Gruba davet et' }).click();
+    await pcB.getByTestId('party-invite').getByTestId('party-accept').click({ timeout: 8000 });
+    await pc.getByTestId(`party-where-${B.username}`).getByText(/^G-1 · \d+\/\d+$/).waitFor({ timeout: 8000 });
+    const tab = await desktopB.newPage();
+    await tab.goto(`${WEB}/sosyal`);
+    await tab.getByTestId('social-tab-privacy').click();
+    await tab.getByTestId('privacy-location').selectOption('map');
+    await tab.getByTestId('privacy-save').click();
+    await tab.getByText('Gizlilik ayarların kaydedildi.').waitFor();
+    await tab.close();
+    await pc.getByTestId(`party-where-${B.username}`).getByText(/^G-1$/).waitFor({ timeout: 8000 });
+    await sleep(500);
+    await pc.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '07-grup-konum-izni.jpg') });
+  });
+  await step('Şikâyet: A, B\'nin mesajını sohbetten şikâyet eder → moderasyon kuyruğunda anlık kopyasıyla kayıt', async () => {
+    await pc.getByTestId('chat-log').getByRole('button', { name: `[AKN] ${B.username}` }).first().click();
+    await pc.getByTestId('menu-report').click();
+    const dlg = pc.getByTestId('report-dialog');
+    await dlg.getByText(`${B.username}: Sana özel bir mesaj`).waitFor();
+    await dlg.getByTestId('report-reason').selectOption('spam');
+    await dlg.getByTestId('report-submit').click();
+    await pc.getByText('Şikâyetin kaydedildi; moderasyon ekibi inceleyecek.').waitFor();
+    const r = await db.query(`SELECT target_type, reason, status, snapshot->>'body' AS body FROM reports`);
+    if (r.rows.length !== 1 || r.rows[0].body !== 'Sana özel bir mesaj' || r.rows[0].status !== 'open') throw new Error(`şikâyet: ${JSON.stringify(r.rows)}`);
+  });
+  await step('Açık klan sayfası: üyeler, rütbeler; pilot profilinde klan bağlantısı', async () => {
+    await pcB.goto(`${WEB}/pilot/TR1/${A.username}`);
+    await pcB.getByTestId('pilot-clan').getByText('[AKN]').waitFor();
+    await pcB.getByTestId('pilot-social').waitFor();
+    await pcB.getByTestId('pilot-clan').getByRole('link').click();
+    const pub = pcB.getByTestId('public-clan');
+    await pub.getByRole('link', { name: A.username }).waitFor();
+    await pub.getByRole('link', { name: B.username }).waitFor();
+    await pub.getByText(`Lider: ${A.username}`).waitFor();
+    await pcB.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '08-acik-klan-sayfasi.jpg') });
+  });
+  await desktopB.close();
+  // Telefon adımları G-2'de devam eder
+  await teleport(pc, A.username, 2200, 6250, 'G-2');
+
   console.log('iPhone 13 görünümü');
   await step('Aynı hesapla telefondan giriş', async () => {
     await phone.goto(`${WEB}/giris`);
@@ -848,6 +1008,19 @@ try {
     await drawer.getByRole('button', { name: 'Kapat (Esc)' }).click();
     await drawer.waitFor({ state: 'detached' });
   });
+  await step('Telefonda sohbet: 💬 çekmecesi açılır; geçmiş mesajlar (genel + klan) yüklenir; mesaj gönderilir', async () => {
+    await phone.getByTestId('hud-chat-btn').click();
+    const drawer = phone.getByTestId('chat-drawer');
+    await drawer.getByText('Selam Gökbörü!').waitFor({ timeout: 8000 });
+    await drawer.getByText('Klan toplantısı 21:00').waitFor();
+    await drawer.getByTestId('chat-input').fill('Telefondan selam');
+    await drawer.getByTestId('chat-send').click();
+    await drawer.getByTestId('chat-log').getByText('Telefondan selam').waitFor();
+    const w = await drawer.evaluate((el) => el.getBoundingClientRect().width);
+    if (w < 380) throw new Error(`sohbet çekmecesi telefonda tam genişlikte değil: ${w}`);
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '09-mobil-sohbet.jpg') });
+    await drawer.getByRole('button', { name: 'Kapat' }).click();
+  });
   await step('PC oyuna dönünce telefon "başka cihaz" uyarısı alır (iki yönde de tek oturum)', async () => {
     await pc.goto(`${WEB}/oyna`);
     await pc.locator('.hud-minimap-title').getByText(/^G-2 · /).waitFor();
@@ -874,6 +1047,15 @@ try {
     await phone.getByTestId('market-tab-crafting').click();
     await phone.getByTestId('recipe-nebulit').waitFor();
     await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS11, '08-mobil-uretim.jpg') });
+  });
+  await step('Telefonda Klan ve Sosyal sayfaları: sekmeler tek satırda kaydırılır; klan bilgileri görünür', async () => {
+    await phone.goto(`${WEB}/klan`);
+    await phone.getByTestId('my-clan').getByText('[AKN]').waitFor();
+    await phone.getByTestId('clan-tab-members').click();
+    await phone.getByTestId('clan-members').getByText(B.username).waitFor();
+    const tabs = await phone.locator('.tabs').first().evaluate((el) => ({ h: el.getBoundingClientRect().height, sw: el.scrollWidth, cw: el.clientWidth }));
+    if (tabs.h > 70) throw new Error(`sekmeler iki satıra taştı: ${JSON.stringify(tabs)}`);
+    await phone.screenshot({ type: 'jpeg', quality: 82, path: path.join(SHOTS12, '10-mobil-klan.jpg'), fullPage: true });
   });
   await step('Oyun ekranlarında JavaScript hatası oluşmadı', async () => {
     if (pageErrors.length) throw new Error(pageErrors.join(' | '));
@@ -924,7 +1106,7 @@ try {
   for (const p of procs) p.kill('SIGTERM');
   smtp.close();
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}`);
+  console.log(`\nSonuç: ${results.length - failed}/${results.length} adım başarılı. Ekran görüntüleri: ${path.relative(ROOT, SHOTS)}, ${path.relative(ROOT, SHOTS5)}, ${path.relative(ROOT, SHOTS6)}, ${path.relative(ROOT, SHOTS7)}, ${path.relative(ROOT, SHOTS8)}, ${path.relative(ROOT, SHOTS9)}, ${path.relative(ROOT, SHOTS10)}, ${path.relative(ROOT, SHOTS11)}, ${path.relative(ROOT, SHOTS12)}`);
   process.exitCode = failed ? 1 : 0;
   setTimeout(() => process.exit(process.exitCode), 500).unref();
 }

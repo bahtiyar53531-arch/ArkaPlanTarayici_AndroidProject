@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { NotificationBell } from './social/NotificationBell';
 import { Logo } from './ui';
 
 export function PublicLayout({ children }: { children: ReactNode }) {
@@ -32,11 +33,14 @@ export function AccountLayout({ children }: { children: ReactNode }) {
           <NavLink to="/magaza">Mağaza</NavLink>
           <NavLink to="/pazar">Pazar</NavLink>
           <NavLink to="/gorevler">Görevler</NavLink>
+          <NavLink to="/klan">Klan</NavLink>
+          <NavLink to="/sosyal">Sosyal</NavLink>
           <NavLink to="/oyna" className="nav-play">Oyna</NavLink>
           <NavLink to="/hesap" end>
             Hesabım
           </NavLink>
           <NavLink to="/hesap/guvenlik">Güvenlik</NavLink>
+          <NotificationBell />
           <button
             type="button"
             className="btn btn-ghost"

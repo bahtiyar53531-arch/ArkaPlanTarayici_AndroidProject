@@ -11,6 +11,7 @@
  */
 import { z } from 'zod';
 import { AMMO_CODES, ROCKET_CODES, type CombatState, type Fx, type RewardMessage } from './combat.js';
+import { CHAT_CHANNELS, type ChatMessageView, type NotificationView, type PartyView } from './social.js';
 
 export const PROTOCOL_VERSION = 2;
 /** Sunucu simülasyon adımı (20 Hz). */
@@ -121,6 +122,18 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.strictObject({ t: z.literal('rtype'), c: z.enum(ROCKET_CODES) }),
   z.strictObject({ t: z.literal('rocket') }),
   z.strictObject({ t: z.literal('respawn') }),
+  // --- Aşama 12: sohbet ve grup (izin, hız sınırı ve filtre sunucuda)
+  z.strictObject({
+    t: z.literal('chat'),
+    ch: z.enum(CHAT_CHANNELS),
+    to: z.string().regex(/^[A-Za-z0-9_]{1,20}$/).optional(),
+    b: z.string().min(1).max(600),
+  }),
+  z.strictObject({
+    t: z.literal('party'),
+    a: z.enum(['invite', 'accept', 'decline', 'leave', 'kick', 'promote']),
+    n: z.string().regex(/^[A-Za-z0-9_]{1,20}$/).optional(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type InputCommand = z.infer<typeof inputCommand>;
@@ -158,6 +171,8 @@ export interface EntityInfo {
   z?: number;
   /** boss mu */
   b?: boolean;
+  /** Aşama 12: pilotun klan etiketi */
+  ct?: string;
 }
 
 export interface ShipInfo {
@@ -186,7 +201,17 @@ export type ServerMessage =
   /** Aşama 10: görev ilerlemesi (yalnızca değişen görevler) */
   | { t: 'qp'; u: import('./quests.js').QuestProgressUpdate[] }
   /** Aşama 10: görev listesi değişti (kabul, ödül, yeni döngü) — istemci listeyi yeniden ister */
-  | { t: 'quests' };
+  | { t: 'quests' }
+  /** Aşama 12: sohbet mesajı */
+  | { t: 'chat'; m: ChatMessageView }
+  /** Aşama 12: grup durumu (null: grupta değilsin) */
+  | { t: 'party'; p: PartyView | null }
+  /** Aşama 12: grup daveti */
+  | { t: 'pinv'; from: string; level: number; company: string; expiresIn: number }
+  /** Aşama 12: yeni bildirim */
+  | { t: 'notif'; n: NotificationView }
+  /** Aşama 12: klan/diplomasi değişti — istemci ilişki listesini yeniler */
+  | { t: 'social' };
 
 /** WebSocket kapanış kodları (4000–4999 uygulamaya ayrılmıştır) */
 export const CLOSE_CODES = {

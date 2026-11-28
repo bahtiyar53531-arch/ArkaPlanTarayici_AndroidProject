@@ -20,6 +20,10 @@ import { questRoutes } from './modules/quest/routes.js';
 import { marketRoutes } from './modules/market/routes.js';
 import { MarketService } from './modules/market/service.js';
 import { QuestService } from './modules/quest/service.js';
+import { ClanService } from './modules/social/clan.js';
+import { Notifier } from './modules/social/notifications.js';
+import { socialRoutes } from './modules/social/routes.js';
+import { SocialService } from './modules/social/service.js';
 import type { Runtime } from './runtime.js';
 
 export interface BuiltApp {
@@ -30,6 +34,9 @@ export interface BuiltApp {
   world: WorldService;
   quests: QuestService;
   market: MarketService;
+  clans: ClanService;
+  social: SocialService;
+  notifier: Notifier;
   guards: AuthGuards;
   bridge: GameBridge;
 }
@@ -139,7 +146,10 @@ export async function buildApp(
   const bridge = new GameBridge(rt.redis, app.log);
   const quests = new QuestService(rt.db, app.log, { bridge, ...(options.clock ? { clock: options.clock } : {}) });
   const hangar = new HangarService(rt.db, app.log, options.rng, bridge, quests);
-  const market = new MarketService(rt.db, app.log, { bridge, quests, ...(options.clock ? { clock: options.clock } : {}) });
+  const notifier = new Notifier(bridge);
+  const market = new MarketService(rt.db, app.log, { bridge, quests, notifier, ...(options.clock ? { clock: options.clock } : {}) });
+  const clans = new ClanService(rt.db, app.log, { bridge, notifier, ...(options.clock ? { clock: options.clock } : {}) });
+  const social = new SocialService(rt.db, app.log, notifier, { bridge });
   const world = new WorldService(rt.db, app.log);
 
   await app.register(
@@ -152,9 +162,10 @@ export async function buildApp(
       gameRoutes(api, { bridge, guards, limiter: rt.limiter, db: rt.db });
       questRoutes(api, { service: quests, guards });
       marketRoutes(api, { service: market, guards });
+      socialRoutes(api, { clans, social, guards, limiter: rt.limiter });
     },
     { prefix: '/api/v1' },
   );
 
-  return { app, auth, players, hangar, world, quests, market, guards, bridge };
+  return { app, auth, players, hangar, world, quests, market, clans, social, notifier, guards, bridge };
 }

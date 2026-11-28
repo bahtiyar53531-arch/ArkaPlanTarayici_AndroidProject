@@ -130,7 +130,13 @@ sequenceDiagram
 
 ### 4.5 Harita geçişi ve ölçekleme
 - Portal geçişinde kaynak sunucu oyuncu durumunu Redis'e yazar (`handoff:<ticket>`, 30 sn) ve istemciye hedef sunucunun adresini bildirir. Hedef haritanın sunucusu durumu alır ve devam eder.
-- Sohbet, grup ve klan mesajları farklı süreçlerde olsa bile Redis pub/sub ile iletilir.
+- Sohbet, grup ve klan mesajları farklı süreçlerde olsa bile Redis pub/sub ile iletilir (✅ Aşama 12):
+  - `game:chat`: sohbet mesajları
+  - `game:deliver`: pilota özel mesaj (bildirim, grup daveti)
+  - `game:relations`: diplomasi değişikliği
+  - `game:player-updated` sebep `social`: klan, engel ve gizlilik değişikliği
+  - Grupların canlı durumu Redis'te `party:*` anahtarlarında tutulur; üyelik değişikliği tek Lua betiğiyle atomiktir.
+  - Ayrıntı: [Aşama 12 kuralları](Asama-12-Klan-Sosyal/Klan-ve-Sosyal-Kurallari-ve-API.md).
 - **Ölçekleme adımları:** (1) tek VPS'te API + oyun sunucusu + PostgreSQL + Redis, (2) veritabanı ayrı sunucuya, (3) birden fazla oyun sunucusu (harita dağıtımı), (4) PostgreSQL okuma kopyası + PgBouncer.
 
 ### 4.6 Kalıcılık

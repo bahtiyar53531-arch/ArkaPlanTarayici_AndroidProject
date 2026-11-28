@@ -39,6 +39,7 @@ import { applyCurrencyChange, getBalances } from '../economy/wallet.js';
 import type { GameBridge } from '../game/bridge.js';
 import { activeShipStats } from '../hangar/stats.js';
 import type { QuestService } from '../quest/service.js';
+import { Outbox, type Notifier } from '../social/notifications.js';
 
 const err = (code: ConstructorParameters<typeof AppError>[0], status: number, message: string) => new AppError(code, status, message);
 const CURRENCY_NAMES: Record<string, string> = { KREDI: 'Kredi', AKCE: 'Akçe', XP: 'Deneyim', HONOR: 'Şeref' };
@@ -75,16 +76,19 @@ export class MarketService {
   private readonly clock: () => Date;
   private readonly bridge: GameBridge | null;
   private readonly quests: QuestService | null;
+  /** Aşama 12: teklifi geçilen ve açık artırmayı kazanan pilota bildirim */
+  private readonly notifier: Notifier | null;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly db: Db,
     private readonly log: Logger,
-    opts: { clock?: () => Date; bridge?: GameBridge | null; quests?: QuestService | null } = {},
+    opts: { clock?: () => Date; bridge?: GameBridge | null; quests?: QuestService | null; notifier?: Notifier | null } = {},
   ) {
     this.clock = opts.clock ?? (() => new Date());
     this.bridge = opts.bridge ?? null;
     this.quests = opts.quests ?? null;
+    this.notifier = opts.notifier ?? null;
   }
 
   // ================================================================== ortak
@@ -424,10 +428,11 @@ export class MarketService {
   async settleDue(now = this.clock()): Promise<number> {
     let settled = 0;
     const winners: string[] = [];
+    const out = new Outbox();
     for (;;) {
       const done = await withTransaction(this.db, async (c) => {
-        const a = (await c.query<{ id: string; current_bidder: string | null; current_bid: string | null; item_type_id: number; quantity: string; stackable: boolean }>(
-          `SELECT a.id, a.current_bidder, a.current_bid, a.item_type_id, a.quantity, it.stackable
+        const a = (await c.query<{ id: string; current_bidder: string | null; current_bid: string | null; item_type_id: number; quantity: string; stackable: boolean; name: string; currency_code: string }>(
+          `SELECT a.id, a.current_bidder, a.current_bid, a.item_type_id, a.quantity, it.stackable, it.name, a.currency_code
            FROM auctions a JOIN item_types it ON it.id = a.item_type_id
            WHERE a.status = 'open' AND a.ends_at <= $1 ORDER BY a.ends_at LIMIT 1 FOR UPDATE OF a SKIP LOCKED`,
           [now],
@@ -442,6 +447,12 @@ export class MarketService {
             idempotencyKey: `auction:${a.id}:win`,
           });
           winners.push(a.current_bidder);
+          await this.notifier?.create(c, out, a.current_bidder, {
+            kind: 'auction_won',
+            title: 'Açık artırmayı kazandın',
+            body: `${fmt(Number(a.quantity))} × ${a.name} envanterine eklendi (${fmt(Number(a.current_bid))} ${CURRENCY_NAMES[a.currency_code] ?? a.currency_code}).`,
+            link: '/pazar',
+          });
         }
         await c.query(`UPDATE auctions SET status = 'settled', winner_id = current_bidder, settled_at = $2 WHERE id = $1`, [a.id, now]);
         return true;
@@ -450,6 +461,7 @@ export class MarketService {
       settled++;
     }
     for (const w of new Set(winners)) await this.bridge?.notifyPlayerUpdated(w, 'quests');
+    await this.notifier?.flush(out);
     if (settled) this.log.info({ settled }, 'açık artırmalar sonuçlandı');
     return settled;
   }
@@ -514,7 +526,7 @@ export class MarketService {
   async bid(owner: { id: string }, input: unknown) {
     const d = auctionBidSchema.parse(input);
     const now = this.clock();
-    let outbid: string | null = null;
+    const out = new Outbox();
     const res = await withTransaction(this.db, async (c) => {
       const pilot = await this.pilot(c, owner.id, d.serverCode, false);
       const key = `bid:${pilot.id}:${d.requestId}`;
@@ -550,7 +562,14 @@ export class MarketService {
           idempotencyKey: `auction:${a.id}:refund:${pb?.id ?? 'x'}`,
         });
         if (pb) await c.query('UPDATE auction_bids SET refunded = true WHERE id = $1', [pb.id]);
-        if (a.current_bidder !== pilot.id) outbid = a.current_bidder;
+        if (a.current_bidder !== pilot.id) {
+          await this.notifier?.create(c, out, a.current_bidder, {
+            kind: 'auction_outbid',
+            title: 'Açık artırmada teklifin geçildi',
+            body: `${a.name}: yeni en yüksek teklif ${fmt(d.amount)} ${CURRENCY_NAMES[a.currency_code] ?? a.currency_code}. ${fmt(current)} iade edildi.`,
+            link: '/pazar',
+          });
+        }
       }
       await applyCurrencyChange(c, {
         playerId: pilot.id,
@@ -569,7 +588,7 @@ export class MarketService {
       this.log.info({ playerId: pilot.id, auction: a.id, amount: d.amount }, 'açık artırma teklifi');
       return { replay: false, auctions: await this.buildAuctions(c, pilot) };
     });
-    void outbid; // Bildirim sistemi Aşama 12'de (sohbet/bildirim); iade defterde ve listede görünür
+    await this.notifier?.flush(out);
     return res;
   }
 

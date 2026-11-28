@@ -23,10 +23,17 @@ export const GAME_CHANNELS = {
   playerUpdated: 'game:player-updated',
   /** {playerId, connId}: bu oyuncunun connId dışındaki bağlantılarını kapat (tek aktif oyun oturumu) */
   kick: 'game:kick',
+  /** Aşama 12 — {playerId, msg}: pilot hangi süreçteyse oradaki bağlantısına sunucu mesajı iletilir (bildirim, grup daveti) */
+  deliver: 'game:deliver',
+  /** Aşama 12 — {clanIds}: klanlar arası diplomasi değişti → oyun sunucuları ilişki tablosunu yeniden okur */
+  relations: 'game:relations',
+  /** Aşama 12 — sohbet mesajı: {server, channel, sender, recipient, m} → kanalı dinleyen yerel pilotlara iletilir */
+  chat: 'game:chat',
 };
 
 /** quests: görev listesi değişti (kabul, ödül, hangar olayı) → oyun sunucusu izleyiciyi, seviyeyi ve envanteri yeniler */
-export type PlayerUpdateReason = 'stats' | 'ship' | 'repair' | 'inventory' | 'quests';
+/** social (Aşama 12): klan üyeliği/etiketi, engellenenler veya gizlilik ayarı değişti */
+export type PlayerUpdateReason = 'stats' | 'ship' | 'repair' | 'inventory' | 'quests' | 'social';
 
 export interface TicketPayload {
   userId: string;
@@ -88,6 +95,41 @@ export class GameBridge {
       this.log.warn({ err, playerId }, 'çevrimiçi durum okunamadı');
       return null;
     }
+  }
+
+  /** Birden çok pilotun çevrimiçi durumu (klan üyeleri, arkadaşlar). Redis yoksa boş. */
+  async presenceMany(playerIds: string[]): Promise<Map<string, Presence>> {
+    const out = new Map<string, Presence>();
+    if (!this.redis || playerIds.length === 0) return out;
+    try {
+      const raws = await this.redis.mget(...playerIds.map((id) => GAME_KEYS.presence(id)));
+      raws.forEach((raw, i) => {
+        if (!raw) return;
+        try {
+          out.set(playerIds[i]!, JSON.parse(raw) as Presence);
+        } catch {
+          /* bozuk kayıt yok sayılır */
+        }
+      });
+    } catch (err) {
+      this.log.warn({ err }, 'çevrimiçi durumlar okunamadı');
+    }
+    return out;
+  }
+
+  /** Pilot oyundaysa (hangi süreçte olursa olsun) bağlantısına mesaj iletilir; değilse hiçbir şey olmaz. */
+  async deliver(playerId: string, msg: unknown) {
+    if (!this.redis) return;
+    await this.redis.publish(GAME_CHANNELS.deliver, JSON.stringify({ playerId, msg })).catch((err: unknown) => {
+      this.log.warn({ err, playerId }, 'oyun sunucusuna mesaj iletilemedi');
+    });
+  }
+
+  async notifyRelationsChanged(clanIds: string[]) {
+    if (!this.redis) return;
+    await this.redis.publish(GAME_CHANNELS.relations, JSON.stringify({ clanIds })).catch((err: unknown) => {
+      this.log.warn({ err }, 'diplomasi değişikliği bildirilemedi');
+    });
   }
 
   /** Oyuncu oyundaysa ve istasyonda değilse ekipman değiştiremez. Oyun dışındaysa (web hangarı) serbesttir. */

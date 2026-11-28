@@ -87,7 +87,10 @@ export async function resetDatabase(rt: Runtime) {
          ('movement', '{"tolerance": 1.25, "slack": 300, "max_elapsed_seconds": 10}'::jsonb),
          ('portal', '{"jump_radius": 450}'::jsonb),
          ('combat', '{"respawn_hp_ratio": 0.1, "shield_regen_delay_ms": 4000, "shield_regen_ratio_per_sec": 0.08, "repair_delay_ms": 5000, "loot_owner_ms": 15000, "loot_ttl_ms": 60000, "loot_pickup_radius": 90, "pvp_honor": 100, "damage_variance": 0.1, "out_of_combat_ms": 5000}'::jsonb),
-         ('quests', '{"daily_count": 3, "weekly_count": 3, "daily_rerolls": 1, "weekly_rerolls": 1, "reset_hour_tr": 5, "max_active": 10, "kill_credit_min_share": 0.2}'::jsonb)
+         ('quests', '{"daily_count": 3, "weekly_count": 3, "daily_rerolls": 1, "weekly_rerolls": 1, "reset_hour_tr": 5, "max_active": 10, "kill_credit_min_share": 0.2}'::jsonb),
+         ('clan', '{"create_cost": {"currency": "KREDI", "amount": 50000}, "create_min_level": 5, "max_members": 50, "invitation_days": 7, "max_relations": 10}'::jsonb),
+         ('social', '{"max_friends": 200, "max_blocks": 500, "party_max": 8, "party_invite_seconds": 60, "notification_keep": 200}'::jsonb),
+         ('chat', '{"max_length": 300, "rate_count": 5, "rate_window_seconds": 10, "history": 50, "mute_seconds": 60, "banned_words": ["amk", "aq", "orospu", "siktir", "yarrak", "pezevenk", "şerefsiz"]}'::jsonb)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     );
     await rt.db.query(`UPDATE game_servers SET is_open = true, is_maintenance = false`);

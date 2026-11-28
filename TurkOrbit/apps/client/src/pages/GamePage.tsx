@@ -27,6 +27,7 @@ import {
   useController,
 } from '../components/game/GameHud';
 import { SettingsPanel } from '../components/game/SettingsPanel';
+import { ChatDock, ChatPanel, PartyInvites, PartyPanel } from '../components/game/SocialHud';
 import { GameController, SERVER } from '../game/controller';
 import { SpaceScene } from '../game/SpaceScene';
 import '../styles/game.css';
@@ -97,7 +98,15 @@ export function GamePage() {
 function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: DeviceClass; touch: boolean }) {
   useController(c);
   const host = useRef<HTMLDivElement>(null);
-  const [overlay, setOverlay] = useState<'none' | 'galaxy' | 'settings' | 'quests'>('none');
+  const [overlay, setOverlay] = useState<'none' | 'galaxy' | 'settings' | 'quests' | 'chat'>('none');
+  /** Aşama 12: özel mesaj alıcısı ve sohbet alanına odaklanma isteği */
+  const [dm, setDm] = useState('');
+  const [chatFocus, setChatFocus] = useState(0);
+  const openDm = (name: string) => {
+    setDm(name);
+    if (touch) setOverlay('chat');
+    else setChatFocus((n) => n + 1);
+  };
   const [portraitHint, setPortraitHint] = useState(false);
   const { quality, fpsLimit } = c.settings.graphics;
 
@@ -142,13 +151,18 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
       else if (e.code === k.jump) c.jump();
       else if (e.code === k.galaxy) setOverlay('galaxy');
       else if (e.code === k.quests) setOverlay('quests');
+      else if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !touch) {
+        // Sohbet alanına geç (yazarken oyun kısayolları devre dışı)
+        e.preventDefault();
+        setChatFocus((n) => n + 1);
+      }
       else if (e.code === k.zoomIn) c.zoomDelta = 0.15;
       else if (e.code === k.zoomOut) c.zoomDelta = -0.15;
       else if (e.code === k.fullscreen) void toggleFullscreen();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [c, overlay]);
+  }, [c, overlay, touch]);
 
   // Telefonda dikey tutuşta yatay mod önerisi (oyun dikeyde de oynanabilir).
   useEffect(() => {
@@ -169,15 +183,31 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
           <PilotPanel c={c} />
           <QuestTracker c={c} max={deviceClass === 'phone' ? 2 : 3} onOpen={() => setOverlay('quests')} />
           {!touch && overlay === 'none' && (
-            <div className="hud-help muted small">WASD: hareket · Tıkla: hedef seç / git · Boşluk: ateş · 1–5: mühimmat · R: roket · Tab: en yakın hedef · {s.keys.jump.replace(/^Key/, '')}: geçit · {s.keys.galaxy.replace(/^Key/, '')}: galaksi · {s.keys.quests.replace(/^Key/, '')}: görevler</div>
+            <div className="hud-help muted small">WASD: hareket · Tıkla: hedef seç / git · Boşluk: ateş · 1–5: mühimmat · R: roket · Tab: en yakın hedef · {s.keys.jump.replace(/^Key/, '')}: geçit · {s.keys.galaxy.replace(/^Key/, '')}: galaksi · {s.keys.quests.replace(/^Key/, '')}: görevler · Enter: sohbet</div>
           )}
         </div>
         <div className="hud-corner tr">
-          <TopBar c={c} touch={touch} onGalaxy={() => setOverlay('galaxy')} onSettings={() => setOverlay('settings')} onQuests={() => setOverlay('quests')} />
+          <TopBar
+            c={c}
+            touch={touch}
+            onGalaxy={() => setOverlay('galaxy')}
+            onSettings={() => setOverlay('settings')}
+            onQuests={() => setOverlay('quests')}
+            {...(touch ? { onChat: () => setOverlay('chat') } : {})}
+          />
           <Minimap c={c} />
           <NearbyPanel c={c} max={deviceClass === 'phone' ? 3 : 5} />
+          {deviceClass !== 'phone' && <PartyPanel c={c} />}
         </div>
-        <div className="hud-corner tc"><TargetPanel c={c} /></div>
+        <div className="hud-corner tc">
+          <TargetPanel c={c} onPilot={openDm} />
+          <PartyInvites c={c} />
+        </div>
+        {!touch && (
+          <div className="hud-corner bl">
+            <ChatDock c={c} dm={dm} setDm={setDm} focusKey={chatFocus} />
+          </div>
+        )}
         <div className="hud-corner bc">
           <PortalPrompt c={c} />
           <ActionBar c={c} touch={touch} />
@@ -195,6 +225,20 @@ function GameView({ c, deviceClass, touch }: { c: GameController; deviceClass: D
       </div>
       {overlay === 'galaxy' && <GalaxyOverlay onClose={() => setOverlay('none')} />}
       {overlay === 'quests' && <QuestDrawer c={c} onClose={() => setOverlay('none')} />}
+      {overlay === 'chat' && (
+        <div className="hud-drawer-backdrop" onClick={() => setOverlay('none')}>
+          <aside className="hud-drawer chat-drawer" role="dialog" aria-label="Sohbet ve grup" data-testid="chat-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head">
+              <h2>Sohbet</h2>
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => setOverlay('none')}>
+                Kapat
+              </button>
+            </div>
+            <PartyPanel c={c} />
+            <ChatPanel c={c} dm={dm} setDm={setDm} />
+          </aside>
+        </div>
+      )}
       {overlay === 'settings' && (
         <SettingsPanel initial={s} deviceClass={deviceClass} onClose={() => setOverlay('none')} onSave={(next) => c.saveSettings(next, deviceClass)} />
       )}

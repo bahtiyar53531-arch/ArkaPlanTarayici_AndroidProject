@@ -17,10 +17,13 @@ import {
   stepShip,
   TICK_MS,
   type AmmoCode,
+  type ChatChannel,
+  type ChatMessageView,
   type CombatState,
   type EntityInfo,
   type Fx,
   type MapResponse,
+  type PartyView,
   type RewardMessage,
   type RocketCode,
   type MoveInput,
@@ -79,7 +82,18 @@ export interface HudState {
   quests: QuestView[];
   /** Sunucu "quests" bildirdikçe artar: açık görev çekmecesi listeyi yeniden ister */
   questsVersion: number;
+  // --- Aşama 12: sohbet, grup, bildirim
+  chat: ChatMessageView[];
+  /** sohbet paneli kapalıyken gelen mesaj sayısı */
+  chatUnread: number;
+  party: PartyView | null;
+  partyInvites: Array<{ from: string; level: number; company: string; expiresAt: number }>;
+  /** klan/diplomasi değişti (sunucu "social") — açık klan bilgileri yenilenir */
+  socialVersion: number;
 }
+
+/** Sohbette tutulan en fazla mesaj */
+const CHAT_KEEP = 200;
 
 export interface RemoteShip {
   info: EntityInfo;
@@ -172,7 +186,65 @@ export class GameController {
       dead: null,
       quests: [],
       questsVersion: 0,
+      chat: [],
+      chatUnread: 0,
+      party: null,
+      partyInvites: [],
+      socialVersion: 0,
     };
+  }
+
+  // ================================================================== sohbet ve grup (Aşama 12)
+  /** Sohbet paneli açık mı (kapalıyken gelen mesajlar okunmamış sayılır) */
+  chatOpen = false;
+  private historyLoaded = false;
+
+  sendChat(ch: ChatChannel, text: string, to?: string) {
+    const b = text.trim();
+    if (!b) return;
+    this.send({ t: 'chat', ch, b, ...(ch === 'dm' && to ? { to } : {}) });
+  }
+
+  partyAction(a: 'invite' | 'accept' | 'decline' | 'leave' | 'kick' | 'promote', n?: string) {
+    if (a === 'accept' || a === 'decline') this.state.partyInvites = this.state.partyInvites.filter((i) => i.from !== n);
+    this.send({ t: 'party', a, ...(n ? { n } : {}) });
+    this.emit();
+  }
+
+  setChatOpen(open: boolean) {
+    this.chatOpen = open;
+    if (open) this.state.chatUnread = 0;
+    if (open && !this.historyLoaded) void this.loadChatHistory();
+    this.emit();
+  }
+
+  /** Genel, şirket ve klan kanallarının son mesajları (REST); canlı mesajlarla birleştirilir. */
+  async loadChatHistory() {
+    this.historyLoaded = true;
+    const all: ChatMessageView[] = [];
+    for (const ch of ['global', 'company', 'clan'] as const) {
+      try {
+        const r = await api<{ messages: ChatMessageView[] }>('GET', `/chat/history?server=${SERVER}&channel=${ch}`);
+        all.push(...r.messages);
+      } catch {
+        /* klansız pilot için klan geçmişi yok */
+      }
+    }
+    const seen = new Set(this.state.chat.map((m) => m.id));
+    this.state.chat = [...all.filter((m) => !seen.has(m.id)), ...this.state.chat].sort((a, b) => a.id - b.id).slice(-CHAT_KEEP);
+    this.emit();
+  }
+
+  /** Özel mesaj geçmişi (sekme açılınca) */
+  async loadDmHistory(name: string) {
+    try {
+      const r = await api<{ messages: ChatMessageView[] }>('GET', `/chat/history?server=${SERVER}&channel=dm&with=${encodeURIComponent(name)}`);
+      const seen = new Set(this.state.chat.map((m) => m.id));
+      this.state.chat = [...this.state.chat, ...r.messages.filter((m) => !seen.has(m.id))].sort((a, b) => a.id - b.id).slice(-CHAT_KEEP);
+      this.emit();
+    } catch (e) {
+      this.toast('error', e instanceof ApiError ? e.message : 'Mesaj geçmişi alınamadı.');
+    }
   }
 
   // ================================================================== olaylar (HUD)
@@ -342,7 +414,13 @@ export class GameController {
         this.onSnapshot(m);
         break;
       case 'enter':
-        for (const info of m.e) if (info.id !== this.myEntityId) this.ships.set(info.id, { info, buf: [], x: NaN, y: NaN, h: 0, hp: 100, sh: 0 });
+        for (const info of m.e) {
+          if (info.id === this.myEntityId) continue;
+          const known = this.ships.get(info.id);
+          // Bilgisi güncellenen (ör. klan etiketi) varlığın konum tamponu korunur
+          if (known) known.info = info;
+          else this.ships.set(info.id, { info, buf: [], x: NaN, y: NaN, h: 0, hp: 100, sh: 0 });
+        }
         break;
       case 'leave':
         for (const id of m.e) this.ships.delete(id);
@@ -357,6 +435,29 @@ export class GameController {
         break;
       case 'notice':
         this.toast(m.kind, m.text);
+        break;
+      case 'chat':
+        this.state.chat = [...this.state.chat, m.m].slice(-CHAT_KEEP);
+        if (!this.chatOpen) this.state.chatUnread++;
+        this.emit();
+        break;
+      case 'party':
+        this.state.party = m.p;
+        this.emit();
+        break;
+      case 'pinv':
+        this.state.partyInvites = [
+          ...this.state.partyInvites.filter((i) => i.from !== m.from),
+          { from: m.from, level: m.level, company: m.company, expiresAt: Date.now() + m.expiresIn * 1000 },
+        ];
+        this.emit();
+        break;
+      case 'notif':
+        this.toast('info', m.n.body ? `${m.n.title}: ${m.n.body}` : m.n.title);
+        break;
+      case 'social':
+        this.state.socialVersion++;
+        this.emit();
         break;
       case 'error':
         this.state.jumping = false;
@@ -585,6 +686,7 @@ export class GameController {
     if (m.honor) parts.push(`+${fmtN(m.honor)} şeref`);
     for (const c of m.currencies) parts.push(`+${fmtN(c.amount)} ${c.code === 'KREDI' ? 'Kredi' : c.code === 'AKCE' ? 'Akçe' : c.code}`);
     for (const it of m.items) parts.push(`${fmtN(it.amount)} × ${it.name}`);
+    if (m.clanTax) parts.push(`klan vergisi −${fmtN(m.clanTax)} Kredi`);
     this.toast('success', `${m.source}: ${parts.join(' · ') || 'ödül yok'}`);
     if (m.levelUp) {
       this.map = { ...this.map, pilot: { ...this.map.pilot, level: m.level } };

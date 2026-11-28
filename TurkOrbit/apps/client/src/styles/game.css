@@ -336,3 +336,64 @@
 /* ================================================================== Madencilik (Aşama 11) */
 .hud-cargo { font-size: 12px; color: #c9d2f4; margin-top: 2px; }
 .hud-cargo.full { color: #f5b700; font-weight: 700; }
+
+/* ================================================================== Sosyal (Aşama 12) */
+.hud-corner.bl { bottom: calc(env(safe-area-inset-bottom) + 10px); left: calc(env(safe-area-inset-left) + 10px); }
+/* Sohbet sol altta; mühimmat çubuğuyla çakışmaması için 320 px. Dar masaüstünde çubuğun üstüne kalkar. */
+.hud-chat { width: 320px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 1240px) { .device-desktop .hud-corner.bl { bottom: calc(env(safe-area-inset-bottom) + 84px); } }
+.hud-chat.collapsed { width: auto; }
+.hud-chat-toggle { background: none; border: 0; color: var(--text); font: inherit; font-weight: 700; font-size: 13px; text-align: left; cursor: pointer; padding: 2px 0; }
+.chat { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.chat-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.chat-tabs::-webkit-scrollbar { display: none; }
+.chat-tab { flex: none; background: #0b1230; border: 1px solid #1b2550; color: var(--muted); font: inherit; font-size: 11px; font-weight: 700; padding: 3px 6px; border-radius: 6px; cursor: pointer; min-height: 26px; }
+.chat-drawer .chat-tab { font-size: 13px; padding: 6px 9px; min-height: 36px; }
+.chat-tab.active { color: var(--text); border-color: var(--cyan); }
+.chat-log { height: 140px; overflow-y: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.35; padding-right: 4px; }
+/* Telefon çekmecesi: mesaj listesi kalan alanı doldurur, yazma alanı en altta kalır */
+.chat-drawer .chat { flex: 1; min-height: 0; }
+.chat-drawer .chat-log { height: auto; flex: 1; min-height: 200px; }
+.chat-empty { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.chat-line { word-break: break-word; }
+.chat-time { color: #6b7aa8; font-size: 11px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.chat-ch { color: #8aa0d8; font-size: 11px; margin-right: 3px; }
+.chat-name { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: #7fdcff; cursor: pointer; }
+.chat-name:hover { text-decoration: underline; }
+.chat-line.ch-company .chat-name { color: #f5b700; }
+.chat-line.ch-clan .chat-name { color: #a78bfa; }
+.chat-line.ch-group .chat-name { color: #34d399; }
+.chat-line.ch-dm .chat-name { color: #f472b6; }
+.chat-line.ch-map .chat-name { color: #93c5fd; }
+.chat-text { color: #e5e9ff; }
+.chat-form { display: flex; gap: 4px; flex: none; }
+.chat-form input { min-width: 0; min-height: 34px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: #070c22; color: var(--text); font: inherit; font-size: 14px; }
+.chat-input { flex: 1; }
+.chat-to { width: 110px; flex: none; }
+.chat-menu-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(2, 4, 14, 0.35); display: flex; align-items: center; justify-content: center; }
+.chat-menu { display: flex; flex-direction: column; min-width: 200px; background: #0a1030; border: 1px solid var(--border-strong, #2b3a72); border-radius: 10px; padding: 6px; box-shadow: 0 10px 30px #000a; }
+.chat-menu-title { font-weight: 700; padding: 6px 10px; border-bottom: 1px solid #1b2550; margin-bottom: 4px; }
+.chat-menu button, .chat-menu a { text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 10px; border-radius: 6px; cursor: pointer; text-decoration: none; min-height: 40px; }
+.chat-menu button:hover, .chat-menu a:hover { background: #ffffff10; }
+.chat-menu .danger { color: var(--danger); }
+.hud-party { width: 230px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.chat-drawer .hud-party { width: auto; }
+.hud-party-head { display: flex; align-items: center; gap: 6px; }
+.hud-party-head .btn { margin-left: auto; }
+.party-member { border-top: 1px solid #1b2550; padding-top: 5px; font-size: 12px; }
+.party-member.offline { opacity: 0.55; }
+.party-member.you b { color: #7fdcff; }
+.party-member-head { display: flex; align-items: center; gap: 6px; }
+.party-bars { display: flex; flex-direction: column; gap: 2px; margin: 3px 0; }
+.hud-bar.tiny { height: 5px; border-radius: 3px; }
+.hud-bar.tiny span { border-radius: 3px; }
+.party-where, .party-offline { color: #9fb0d3; font-size: 11px; }
+.party-actions { display: flex; gap: 4px; margin-top: 3px; }
+.party-invite { display: flex; gap: 4px; }
+.party-invite input { flex: 1; min-width: 0; min-height: 30px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); background: #070c22; color: var(--text); font: inherit; font-size: 13px; }
+.btn-tiny { min-height: 26px; padding: 2px 8px; font-size: 12px; }
+.party-invites { display: flex; flex-direction: column; gap: 6px; }
+.party-invite-card { max-width: 360px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; border-color: #34d39966; }
+.party-invite-actions { display: flex; gap: 6px; }
+.hud-target-actions { display: flex; gap: 6px; margin-top: 4px; }
+.device-tablet .hud-chat { max-width: 44vw; }

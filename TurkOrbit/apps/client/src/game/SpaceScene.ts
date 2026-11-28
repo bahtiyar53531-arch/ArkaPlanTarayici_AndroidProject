@@ -35,6 +35,9 @@ function isTyping(e: KeyboardEvent) {
   return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 }
 
+/** Pilot etiketi: [KLAN] Ad · Sv N */
+const pilotLabel = (info: { n: string; l: number; ct?: string }) => `${info.ct ? `[${info.ct}] ` : ''}${info.n} · Sv ${info.l}`;
+
 export class SpaceScene extends Phaser.Scene {
   private c!: GameController;
   private touch = false;
@@ -388,7 +391,7 @@ export class SpaceScene extends Phaser.Scene {
           k === 'c' || k === 'r'
             ? null
             : this.add
-                .text(s.x, s.y - 95 * size, k === 'n' ? `${s.info.n} · Sv ${s.info.l}${s.info.b ? ' ★' : ''}` : `${s.info.n} · Sv ${s.info.l}`, {
+                .text(s.x, s.y - 95 * size, k === 'n' ? `${s.info.n} · Sv ${s.info.l}${s.info.b ? ' ★' : ''}` : pilotLabel(s.info), {
                   fontFamily: 'system-ui, sans-serif',
                   fontSize: '34px',
                   color: s.info.c,
@@ -404,6 +407,8 @@ export class SpaceScene extends Phaser.Scene {
       r.img.setPosition(s.x, s.y);
       if (s.info.k !== 'c' && s.info.k !== 'r') r.img.rotation = s.h + Math.PI / 2;
       r.label?.setPosition(s.x, s.y - 95 * r.size);
+      // Klan etiketi değişebilir (klana katılma/ayrılma): Phaser metni yalnızca değişince yeniden çizer
+      if (s.info.k === 'p') r.label?.setText(pilotLabel(s.info));
       // Can/kalkan çubukları: hedefteyse veya hasarlıysa
       r.bars.clear();
       if (s.info.k !== 'c' && s.info.k !== 'r' && (id === targetId || s.hp < 100)) {

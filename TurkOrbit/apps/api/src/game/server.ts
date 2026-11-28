@@ -12,7 +12,13 @@ import {
   AMMO_LABELS,
   applyDamage,
   canAttack,
+  cleanChatText,
   clientMessageSchema,
+  DEFAULT_CHAT_SETTINGS,
+  DEFAULT_SOCIAL_SETTINGS,
+  dmChannel,
+  filterChat,
+  partyLocation,
   CLOSE_CODES,
   DETECTION,
   IDLE_INPUT,
@@ -32,7 +38,14 @@ import {
   TICK_MS,
   volleyIntervalMs,
   type AmmoCode,
+  type ChatMessageView,
+  type ChatSettings,
+  type ClientMessage,
+  type DiplomacyRelation,
   type EntityInfo,
+  type PartyView,
+  type PilotRelation,
+  type SocialSettings,
   type EntityState,
   type Fx,
   type MapResponse,
@@ -54,6 +67,9 @@ import { activeShipStats } from '../modules/hangar/stats.js';
 import { WorldService } from '../modules/world/service.js';
 import { syncAchievements } from '../modules/player/achievements.js';
 import { QuestService, type QuestInterest } from '../modules/quest/service.js';
+import { getSetting } from '../modules/auth/repository.js';
+import { PartyStore, type PartyMemberStatus, type PartySnapshot } from '../modules/social/party.js';
+import { DEFAULT_SOCIAL_LIMITS, loadSocialSettings, type SocialLimits } from '../modules/social/service.js';
 import { GameContent, type NpcSpawn, type NpcType, type ResourceNodeGroup } from './content.js';
 import { CombatStore, type GrantResult } from './persistence.js';
 
@@ -72,6 +88,10 @@ const AOI_CELL = 2000;
 const QUEST_FLUSH_TICKS = 20;
 /** NPC lazer efekti için mühimmat sırası yerine kullanılan değer */
 const NPC_BEAM = 9;
+/** Grup durumu bu kadar tikte bir yazılır/okunur (1 sn) */
+const PARTY_TICKS = 20;
+/** Bu süreden eski grup üyesi durumu "çevrimdışı" sayılır */
+const PARTY_STALE_MS = 10_000;
 
 export type Rng = () => number;
 
@@ -257,6 +277,26 @@ interface Player {
   // --- madencilik (Aşama 11): ambardaki kaynak / kapasite
   cargoUsed: number;
   cargoCap: number;
+  // --- sosyal (Aşama 12)
+  serverId: number;
+  clanId: string | null;
+  clanTag: string | null;
+  /** bu pilotun engellediği pilotlar (mesajları ona iletilmez) */
+  blocked: Set<string>;
+  social: SocialSettings;
+  partyId: string | null;
+  /** son gönderilen grup görünümü (değişmediyse tekrar gönderilmez) */
+  partySent: string;
+  chat: { times: number[]; mutedUntil: number; chain: Promise<unknown> };
+}
+
+/** Süreçler arası sohbet zarfı (Redis game:chat) */
+interface ChatEnvelope {
+  server: number;
+  channel: string;
+  sender: string;
+  recipient: string | null;
+  m: ChatMessageView;
 }
 
 const send = (ws: WebSocket | null, msg: ServerMessage) => {
@@ -295,6 +335,14 @@ export class GameServer {
   private jobs: Promise<unknown> = Promise.resolve();
   /** Beklenmeden başlatılan arka plan işleri (kayıt, çıkış, geçit); kapanışta hepsi beklenir */
   private inflight = new Set<Promise<unknown>>();
+  // --- sosyal (Aşama 12)
+  private readonly parties: PartyStore;
+  private partyRun: Promise<void> | null = null;
+  private partyAgain = false;
+  /** Etkin klan ilişkileri: klan → (diğer klan → ilişki) */
+  private relations = new Map<string, Map<string, DiplomacyRelation>>();
+  private chatSettings: ChatSettings = { ...DEFAULT_CHAT_SETTINGS };
+  private socialLimits: SocialLimits = { ...DEFAULT_SOCIAL_LIMITS };
 
   constructor(private readonly o: GameServerOptions) {
     this.world = new WorldService(o.db, o.log);
@@ -303,6 +351,7 @@ export class GameServer {
     this.clock = o.clock ?? (() => new Date());
     this.quests = new QuestService(o.db, o.log, { clock: this.clock });
     this.rng = o.rng ?? Math.random;
+    this.parties = new PartyStore(o.redis);
   }
 
   private now() {
@@ -338,6 +387,8 @@ export class GameServer {
   // ================================================================== yaşam döngüsü
   async listen(port: number, host = '0.0.0.0'): Promise<number> {
     await this.content.load(this.o.db);
+    await this.loadRelations();
+    await this.loadSocialConfig();
     this.http = createServer((req, res) => {
       if (req.url === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -473,6 +524,7 @@ export class GameServer {
       p.lastInput = IDLE_INPUT;
       p.attacking = false;
       p.visible.clear();
+      p.partySent = '';
       await this.reloadStats(p, 'stats', false);
     } else {
       const { map } = await this.world.enterWorld(ticket.playerId);
@@ -482,6 +534,7 @@ export class GameServer {
       p.counts = await this.store.ammoCounts(p.playerId);
       p.cargoUsed = await this.store.resourceLoad(p.playerId);
       p.shield = p.maxShield;
+      await this.loadSocial(p);
       this.byPlayer.set(p.playerId, p);
       await this.joinRoom(p, map);
       await this.o.db.query('UPDATE players SET last_online_at = now() WHERE id = $1', [p.playerId]);
@@ -497,6 +550,7 @@ export class GameServer {
     if (p.map.notice) send(ws, { t: 'notice', kind: 'info', text: p.map.notice });
     if (p.dead) send(ws, { t: 'dead', by: null, kind: 'other' });
     p.map = { ...p.map, notice: null };
+    this.bg(this.partyTick());
     this.o.log.info({ playerId: p.playerId, map: p.room.code, entityId: p.entityId }, 'oyuna girdi');
     // Görevler: etkin hedefler yüklenir, bulunulan harita "ziyaret" sayılır
     const entered = p;
@@ -576,6 +630,14 @@ export class GameServer {
       quest: { interests: [], types: new Set(), cycle: '', resetHour: 5, killMinShare: 0.2, pending: new Map(), dist: 0, loaded: false },
       cargoUsed: 0,
       cargoCap: 0,
+      serverId: 0,
+      clanId: null,
+      clanTag: null,
+      blocked: new Set(),
+      social: { ...DEFAULT_SOCIAL_SETTINGS },
+      partyId: null,
+      partySent: 'null',
+      chat: { times: [], mutedUntil: 0, chain: Promise.resolve() },
     };
   }
 
@@ -654,6 +716,17 @@ export class GameServer {
       case 'respawn':
         if (p.dead) this.bg(this.respawn(p));
         break;
+      case 'chat': {
+        // Aynı pilotun mesajları sırayla işlenir (sıra bozulmaz)
+        const m = msg;
+        const next = p.chat.chain.then(() => this.handleChat(p, m)).catch((err: unknown) => this.o.log.error({ err, playerId: p.playerId }, 'sohbet mesajı işlenemedi'));
+        p.chat.chain = next;
+        this.bg(next);
+        break;
+      }
+      case 'party':
+        this.bg(this.handleParty(p, msg).catch((err: unknown) => this.o.log.error({ err, playerId: p.playerId }, 'grup işlemi başarısız')));
+        break;
       case 'hello':
         break;
     }
@@ -686,6 +759,8 @@ export class GameServer {
     await this.flushCombat([p]);
     await this.o.db.query('UPDATE players SET last_online_at = now() WHERE id = $1', [p.playerId]).catch(() => undefined);
     await this.o.redis.del(GAME_KEYS.presence(p.playerId)).catch(() => 0);
+    // Oyundan tamamen çıkan pilot grubundan ayrılır (bağlantısı kısa süre kopan pilot bekleme süresinde grupta kalır)
+    if (p.partyId && !this.closing) await this.partyLeave(p, false).catch(() => undefined);
     this.o.log.info({ playerId: p.playerId }, 'oyundan çıktı');
   }
 
@@ -829,6 +904,7 @@ export class GameServer {
     }
     if (this.tickNo % SNAPSHOT_EVERY === 0) this.broadcast();
     if (this.tickNo % QUEST_FLUSH_TICKS === 0) this.flushQuests([...this.byPlayer.values()]);
+    if (this.tickNo % PARTY_TICKS === 0) this.bg(this.partyTick());
   }
 
   private effectiveSpeed(p: Player) {
@@ -947,6 +1023,7 @@ export class GameServer {
       ...(t.kind === 'pilot' ? { targetCompany: t.player.company } : {}),
       attackerInSafeZone: this.inSafe(p.room, p.state),
       targetInSafeZone: this.inSafe(p.room, pos),
+      relation: t.kind === 'pilot' ? this.relationBetween(p, t.player) : null,
     });
   }
 
@@ -1262,6 +1339,7 @@ export class GameServer {
       level: r.level,
       levelUp: r.level > r.levelBefore,
       ...(share !== undefined ? { share: Math.round(share * 1000) / 1000 } : {}),
+      ...(r.clanTax ? { clanTax: r.clanTax } : {}),
     });
   }
 
@@ -1640,16 +1718,28 @@ export class GameServer {
 
   // ================================================================== canlı değişiklikler (Redis)
   private async subscribe() {
-    await this.o.sub.subscribe(GAME_CHANNELS.kick, GAME_CHANNELS.playerUpdated);
+    await this.o.sub.subscribe(GAME_CHANNELS.kick, GAME_CHANNELS.playerUpdated, GAME_CHANNELS.deliver, GAME_CHANNELS.relations, GAME_CHANNELS.chat);
     this.o.sub.on('message', (channel: string, raw: string) => {
-      let data: { playerId?: string; connId?: string; reason?: PlayerUpdateReason };
+      let data: { playerId?: string; connId?: string; reason?: PlayerUpdateReason; msg?: ServerMessage; clanIds?: string[] };
       try {
         data = JSON.parse(raw) as typeof data;
       } catch {
         return;
       }
+      if (channel === GAME_CHANNELS.chat) {
+        this.deliverChat(data as unknown as ChatEnvelope);
+        return;
+      }
+      if (channel === GAME_CHANNELS.relations) {
+        this.bg(this.onRelationsChanged(data.clanIds ?? []));
+        return;
+      }
       const p = data.playerId ? this.byPlayer.get(data.playerId) : undefined;
       if (!p) return;
+      if (channel === GAME_CHANNELS.deliver) {
+        if (data.msg && typeof data.msg === 'object' && typeof (data.msg as { t?: unknown }).t === 'string') send(p.ws, data.msg);
+        return;
+      }
       if (channel === GAME_CHANNELS.kick && data.connId && !this.localConns.has(data.connId) && p.connId !== data.connId) {
         // Başka bir süreç (veya bu süreç) aynı pilot için yeni bağlantı kabul etti.
         this.kickConnection(p, CLOSE_CODES.REPLACED, 'Hesabınla başka bir cihazdan oyuna girildi.');
@@ -1658,6 +1748,7 @@ export class GameServer {
         const reason = data.reason ?? 'stats';
         if (reason === 'inventory') this.bg(this.reloadInventory(p));
         else if (reason === 'quests') this.bg(this.onQuestsChanged(p));
+        else if (reason === 'social') this.bg(this.reloadSocial(p));
         else this.bg(this.reloadStats(p, reason, true));
       }
     });
@@ -1667,7 +1758,7 @@ export class GameServer {
    * Hangarda ekipman/gemi/konfigürasyon değişince hız, can, kalkan, lazer ve radar canlı güncellenir.
    * Can yalnızca tamirde veya gemi değişiminde veritabanından okunur (oyundaki güncel can korunur).
    */
-  private async reloadStats(p: Player, reason: Exclude<PlayerUpdateReason, 'inventory' | 'quests'>, notify: boolean) {
+  private async reloadStats(p: Player, reason: Exclude<PlayerUpdateReason, 'inventory' | 'quests' | 'social'>, notify: boolean) {
     const ship = await activeShipStats(this.o.db, p.playerId);
     if (!ship) return;
     const s = ship.stats;
@@ -1800,6 +1891,7 @@ export class GameServer {
 
   /** Yönetim Merkezi haritayı bakıma alırsa içerideki pilotlar şirket haritasına taşınır. */
   async checkMaps() {
+    await this.loadSocialConfig().catch(() => undefined);
     const occupied = new Map<string, Player[]>();
     for (const p of this.byPlayer.values()) {
       const list = occupied.get(p.room.code);
@@ -1816,6 +1908,385 @@ export class GameServer {
         if (relocated) await this.moveToMap(p, map, 'map_closed');
       }
     }
+  }
+
+  // ================================================================== sosyal (Aşama 12)
+  private async loadSocialConfig() {
+    this.chatSettings = { ...DEFAULT_CHAT_SETTINGS, ...(await getSetting<Partial<ChatSettings>>(this.o.db, 'chat')) };
+    this.socialLimits = { ...DEFAULT_SOCIAL_LIMITS, ...(await getSetting<Partial<SocialLimits>>(this.o.db, 'social')) };
+  }
+
+  private async loadRelations() {
+    const r = await this.o.db.query<{ clan_a: string; clan_b: string; relation: DiplomacyRelation }>(
+      `SELECT clan_a, clan_b, relation FROM clan_diplomacy WHERE status = 'active'`,
+    );
+    const m = new Map<string, Map<string, DiplomacyRelation>>();
+    const put = (a: string, b: string, rel: DiplomacyRelation) => {
+      let x = m.get(a);
+      if (!x) m.set(a, (x = new Map()));
+      x.set(b, rel);
+    };
+    for (const row of r.rows) {
+      put(row.clan_a, row.clan_b, row.relation);
+      put(row.clan_b, row.clan_a, row.relation);
+    }
+    this.relations = m;
+  }
+
+  private async onRelationsChanged(clanIds: string[]) {
+    await this.loadRelations();
+    const set = new Set(clanIds);
+    for (const p of this.byPlayer.values()) if (p.clanId && set.has(p.clanId)) send(p.ws, { t: 'social' });
+  }
+
+  /** Saldırı kuralı için iki pilot arasındaki ilişki: grup > klan > klanlar arası diplomasi. */
+  private relationBetween(a: Player, b: Player): PilotRelation | null {
+    if (a.partyId && a.partyId === b.partyId) return 'party';
+    if (a.clanId && a.clanId === b.clanId) return 'clan';
+    if (a.clanId && b.clanId) return this.relations.get(a.clanId)?.get(b.clanId) ?? null;
+    return null;
+  }
+
+  /** Sunucu, klan, engellenenler ve gizlilik ayarı okunur. Klan etiketi değiştiyse çevredekilere yeniden tanıtılır. */
+  private async loadSocial(p: Player) {
+    const r = await this.o.db.query<{ server_id: number; clan_id: string | null; tag: string | null }>(
+      `SELECT p.server_id, cm.clan_id, c.tag::text AS tag FROM players p
+       LEFT JOIN clan_members cm ON cm.player_id = p.id LEFT JOIN clans c ON c.id = cm.clan_id WHERE p.id = $1`,
+      [p.playerId],
+    );
+    const b = await this.o.db.query<{ blocked_id: string }>('SELECT blocked_id FROM player_blocks WHERE player_id = $1', [p.playerId]);
+    p.social = await loadSocialSettings(this.o.db, p.playerId);
+    p.blocked = new Set(b.rows.map((x) => x.blocked_id));
+    const row = r.rows[0];
+    if (!row) return;
+    p.serverId = row.server_id;
+    p.clanId = row.clan_id;
+    if ((p.clanTag ?? null) !== (row.tag ?? null)) {
+      p.clanTag = row.tag;
+      const { ct: _old, ...rest } = p.info;
+      p.info = row.tag ? { ...rest, ct: row.tag } : rest;
+      // Çevredeki pilotlar bir sonraki anlık görüntüde güncel adı/etiketi alır
+      if (p.room) for (const q of p.room.players.values()) q.visible.delete(p.entityId);
+    }
+  }
+
+  private async reloadSocial(p: Player) {
+    await this.loadSocial(p);
+    send(p.ws, { t: 'social' });
+  }
+
+  // ------------------------------------------------------------------ sohbet
+  private async handleChat(p: Player, msg: Extract<ClientMessage, { t: 'chat' }>) {
+    const s = this.chatSettings;
+    const now = Date.now();
+    if (p.chat.mutedUntil > now) {
+      this.notice(p, `Çok hızlı mesaj gönderdin. ${Math.ceil((p.chat.mutedUntil - now) / 1000)} sn sonra tekrar yazabilirsin.`);
+      return;
+    }
+    p.chat.times = p.chat.times.filter((t) => now - t < s.rate_window_seconds * 1000);
+    if (p.chat.times.length >= s.rate_count) {
+      p.chat.mutedUntil = now + s.mute_seconds * 1000;
+      p.chat.times = [];
+      this.notice(p, `Çok hızlı mesaj gönderdin; ${s.mute_seconds} sn boyunca yazamazsın.`);
+      return;
+    }
+    const text = cleanChatText(msg.b);
+    if (!text) return;
+    if ([...text].length > s.max_length) {
+      this.notice(p, `Mesaj en fazla ${s.max_length} karakter olabilir.`);
+      return;
+    }
+    p.chat.times.push(now);
+    let channel: string;
+    let recipient: { id: string; name: string } | null = null;
+    switch (msg.ch) {
+      case 'global':
+        channel = 'global';
+        break;
+      case 'company':
+        channel = `company:${p.company}`;
+        break;
+      case 'map':
+        channel = `map:${p.room.code}`;
+        break;
+      case 'clan':
+        if (!p.clanId) return this.notice(p, 'Bir klanda değilsin. Klan kanalı yalnızca klan üyelerine açıktır.');
+        channel = `clan:${p.clanId}`;
+        break;
+      case 'group':
+        if (!p.partyId) return this.notice(p, 'Bir grupta değilsin. Bir pilotu gruba davet ederek başlayabilirsin.');
+        channel = `group:${p.partyId}`;
+        break;
+      case 'dm': {
+        if (!msg.to) return this.notice(p, 'Özel mesaj için pilot adı gerekli.');
+        const r = await this.o.db.query<{ id: string; name: string; dm_policy: string | null; blocked_me: boolean; i_blocked: boolean; friends: boolean }>(
+          `SELECT t.id, t.pilot_name::text AS name, ss.dm_policy,
+                  EXISTS (SELECT 1 FROM player_blocks b WHERE b.player_id = t.id AND b.blocked_id = $3) AS blocked_me,
+                  EXISTS (SELECT 1 FROM player_blocks b WHERE b.player_id = $3 AND b.blocked_id = t.id) AS i_blocked,
+                  EXISTS (SELECT 1 FROM friendships f WHERE f.player_id = t.id AND f.friend_id = $3 AND f.status = 'accepted') AS friends
+           FROM players t LEFT JOIN player_social_settings ss ON ss.player_id = t.id WHERE t.server_id = $1 AND t.pilot_name = $2`,
+          [p.serverId, msg.to, p.playerId],
+        );
+        const t = r.rows[0];
+        if (!t) return this.notice(p, `"${msg.to}" adlı pilot bulunamadı.`);
+        if (t.id === p.playerId) return this.notice(p, 'Kendine özel mesaj gönderemezsin.');
+        if (t.i_blocked) return this.notice(p, `${t.name} adlı pilotu engellemişsin. Mesaj göndermek için önce engeli kaldır.`);
+        const policy = t.dm_policy ?? 'everyone';
+        // Engellenmiş olmak ile özel mesaja kapalı olmak aynı mesajla bildirilir (kimin engellediği sızmaz)
+        if (t.blocked_me || policy === 'nobody' || (policy === 'friends' && !t.friends)) {
+          return this.notice(p, `${t.name} şu an senden özel mesaj kabul etmiyor.`);
+        }
+        recipient = { id: t.id, name: t.name };
+        channel = dmChannel(p.playerId, t.id);
+        break;
+      }
+    }
+    const f = filterChat(text, s.banned_words);
+    const ins = await this.o.db.query<{ id: string; created_at: Date }>(
+      `INSERT INTO chat_messages (server_id, channel, sender_id, recipient_id, body, filtered) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id::text, created_at`,
+      [p.serverId, channel, p.playerId, recipient?.id ?? null, f.text, f.filtered],
+    );
+    const m: ChatMessageView = {
+      id: Number(ins.rows[0]!.id),
+      ch: msg.ch,
+      from: { name: p.info.n, company: p.company, clanTag: p.clanTag, level: p.info.l },
+      ...(recipient ? { to: recipient.name } : {}),
+      b: f.text,
+      at: ins.rows[0]!.created_at.toISOString(),
+    };
+    const env: ChatEnvelope = { server: p.serverId, channel, sender: p.playerId, recipient: recipient?.id ?? null, m };
+    await this.o.redis.publish(GAME_CHANNELS.chat, JSON.stringify(env));
+  }
+
+  /** Redis'ten gelen mesaj bu süreçteki uygun pilotlara iletilir; gönderen engellenmişse iletilmez. */
+  private deliverChat(e: ChatEnvelope) {
+    if (!e || typeof e.channel !== 'string' || !e.m) return;
+    const ch = e.channel;
+    for (const q of this.byPlayer.values()) {
+      if (!q.ws || q.serverId !== e.server) continue;
+      if (q.blocked.has(e.sender)) continue;
+      let ok: boolean;
+      if (ch === 'global') ok = true;
+      else if (ch.startsWith('company:')) ok = ch === `company:${q.company}`;
+      else if (ch.startsWith('map:')) ok = ch === `map:${q.room.code}`;
+      else if (ch.startsWith('clan:')) ok = q.clanId !== null && ch === `clan:${q.clanId}`;
+      else if (ch.startsWith('group:')) ok = q.partyId !== null && ch === `group:${q.partyId}`;
+      else if (ch.startsWith('dm:')) ok = q.playerId === e.sender || q.playerId === e.recipient;
+      else ok = false;
+      if (ok) send(q.ws, { t: 'chat', m: e.m });
+    }
+  }
+
+  // ------------------------------------------------------------------ grup
+  private async pilotByName(serverId: number, name: string, viewer: Player) {
+    const r = await this.o.db.query<{ id: string; name: string; group_invites: string | null; blocked_me: boolean; i_blocked: boolean; friends: boolean; same_clan: boolean }>(
+      `SELECT t.id, t.pilot_name::text AS name, ss.group_invites,
+              EXISTS (SELECT 1 FROM player_blocks b WHERE b.player_id = t.id AND b.blocked_id = $3) AS blocked_me,
+              EXISTS (SELECT 1 FROM player_blocks b WHERE b.player_id = $3 AND b.blocked_id = t.id) AS i_blocked,
+              EXISTS (SELECT 1 FROM friendships f WHERE f.player_id = t.id AND f.friend_id = $3 AND f.status = 'accepted') AS friends,
+              EXISTS (SELECT 1 FROM clan_members a JOIN clan_members b2 ON b2.clan_id = a.clan_id WHERE a.player_id = t.id AND b2.player_id = $3) AS same_clan
+       FROM players t LEFT JOIN player_social_settings ss ON ss.player_id = t.id WHERE t.server_id = $1 AND t.pilot_name = $2`,
+      [serverId, name, viewer.playerId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  private async handleParty(p: Player, msg: Extract<ClientMessage, { t: 'party' }>) {
+    const max = this.socialLimits.party_max;
+    const tell = (playerId: string, text: string, kind: 'info' | 'error' | 'success' = 'info') => this.bridge.deliver(playerId, { t: 'notice', kind, text });
+    if (msg.a === 'leave') {
+      if (!p.partyId && !(await this.parties.partyOf(p.playerId))) return this.notice(p, 'Bir grupta değilsin.');
+      await this.partyLeave(p, true);
+      return;
+    }
+    if (!msg.n) return;
+    const t = await this.pilotByName(p.serverId, msg.n, p);
+    if (!t) return this.notice(p, `"${msg.n}" adlı pilot bulunamadı.`);
+    switch (msg.a) {
+      case 'invite': {
+        if (t.id === p.playerId) return this.notice(p, 'Kendini gruba davet edemezsin.');
+        if (t.i_blocked) return this.notice(p, `${t.name} adlı pilotu engellemişsin.`);
+        const policy = t.group_invites ?? 'everyone';
+        if (t.blocked_me || policy === 'nobody' || (policy === 'friends_clan' && !t.friends && !t.same_clan)) {
+          return this.notice(p, `${t.name} şu an senden grup daveti kabul etmiyor.`);
+        }
+        if (!(await this.o.redis.exists(GAME_KEYS.presence(t.id)))) return this.notice(p, `${t.name} şu an oyunda değil.`);
+        const mine = await this.parties.partyOf(p.playerId);
+        if (mine) {
+          const snap = (await this.parties.read([mine])).get(mine);
+          if (snap && snap.leader !== p.playerId) return this.notice(p, 'Yalnızca grup lideri davet gönderebilir.');
+          if (snap && snap.members.length >= max) return this.notice(p, `Grup dolu (en fazla ${max} pilot).`);
+        }
+        if (await this.parties.partyOf(t.id)) return this.notice(p, `${t.name} zaten bir grupta.`);
+        const secs = this.socialLimits.party_invite_seconds;
+        await this.parties.invite(t.id, p.playerId, { name: p.info.n, level: p.info.l, company: p.company }, secs);
+        await this.bridge.deliver(t.id, { t: 'pinv', from: p.info.n, level: p.info.l, company: p.company, expiresIn: secs });
+        this.notice(p, `${t.name} adlı pilota grup daveti gönderildi.`, 'success');
+        return;
+      }
+      case 'accept': {
+        const r = await this.parties.accept(t.id, p.playerId, randomUUID(), max, Date.now());
+        switch (r[0]) {
+          case 'OK':
+            p.partyId = r[1] ?? null;
+            this.notice(p, `${t.name} adlı pilotun grubuna katıldın.`, 'success');
+            await tell(t.id, `${p.info.n} grubuna katıldı.`, 'success');
+            await this.partyTick();
+            return;
+          case 'NO_INVITE':
+            return this.notice(p, 'Bu davetin süresi dolmuş.');
+          case 'TARGET_IN_PARTY':
+            return this.notice(p, 'Zaten bir gruptasın. Önce gruptan ayrıl.');
+          case 'NOT_LEADER':
+            return this.notice(p, `${t.name} artık grup lideri değil; davet geçersiz.`);
+          case 'FULL':
+            return this.notice(p, `Grup dolu (en fazla ${max} pilot).`);
+          default:
+            return this.notice(p, 'Gruba katılınamadı.');
+        }
+      }
+      case 'decline':
+        if (await this.parties.declineInvite(p.playerId, t.id)) await tell(t.id, `${p.info.n} grup davetini reddetti.`);
+        return;
+      case 'kick':
+      case 'promote': {
+        const r = msg.a === 'kick' ? await this.parties.kick(p.playerId, t.id) : await this.parties.promote(p.playerId, t.id);
+        switch (r[0]) {
+          case 'NONE':
+            return this.notice(p, 'Bir grupta değilsin.');
+          case 'NOT_LEADER':
+            return this.notice(p, 'Bu işlemi yalnızca grup lideri yapabilir.');
+          case 'NOT_MEMBER':
+            return this.notice(p, `${t.name} grubunda değil.`);
+          case 'PROMOTED':
+            await tell(t.id, 'Grup lideri oldun.', 'success');
+            this.notice(p, `Grup liderliği ${t.name} adlı pilota geçti.`, 'success');
+            break;
+          default:
+            // LEFT / DISBANDED
+            await tell(t.id, 'Gruptan çıkarıldın.', 'error');
+            if (r[0] === 'DISBANDED') this.notice(p, 'Grupta başka pilot kalmadığı için grup dağıldı.');
+            break;
+        }
+        await this.partyTick();
+        return;
+      }
+    }
+  }
+
+  /** Gruptan ayrılır; grupta bir kişi kalırsa grup dağılır (kalan pilota bildirilir). */
+  private async partyLeave(p: Player, notify: boolean) {
+    const r = await this.parties.leave(p.playerId);
+    p.partyId = null;
+    if (r[0] === 'DISBANDED') {
+      for (const id of r.slice(2)) if (id !== p.playerId) await this.bridge.deliver(id, { t: 'notice', kind: 'info', text: 'Grupta başka pilot kalmadığı için grup dağıldı.' });
+    }
+    if (notify) {
+      this.notice(p, 'Gruptan ayrıldın.', 'info');
+      p.partySent = 'null';
+      send(p.ws, { t: 'party', p: null });
+    }
+    await this.partyTick();
+  }
+
+  /**
+   * Her saniye: yerel pilotların grup kimliği Redis'ten okunur, gruptakilerin durumu yazılır ve her pilota
+   * grubun güncel görünümü (değiştiyse) gönderilir. Konum, ÜYENİN kendi izin ayarına göre gösterilir.
+   */
+  async partyTick(): Promise<void> {
+    // Çalışan bir tur varsa bir tur daha istenir ve aynı söz döner (arayan güncel görünümü bekleyebilir)
+    if (this.partyRun) {
+      this.partyAgain = true;
+      return this.partyRun;
+    }
+    this.partyRun = (async () => {
+      do {
+        this.partyAgain = false;
+        await this.partyTickOnce();
+      } while (this.partyAgain);
+    })().finally(() => (this.partyRun = null));
+    return this.partyRun;
+  }
+
+  private async partyTickOnce() {
+    try {
+      const list = [...this.byPlayer.values()];
+      const ids = await this.parties.partiesOf(list.map((p) => p.playerId));
+      list.forEach((p, i) => (p.partyId = ids[i] ?? null));
+      const partied = list.filter((p) => p.partyId);
+      const now = Date.now();
+      await this.parties.writeStatus(
+        partied.map((p) => ({
+          partyId: p.partyId!,
+          playerId: p.playerId,
+          status: {
+            name: p.info.n,
+            level: p.info.l,
+            company: p.company,
+            map: p.room.code,
+            mapName: p.map.map.name,
+            x: Math.round(p.state.x),
+            y: Math.round(p.state.y),
+            hp: pct(p.hp, p.maxHp),
+            sh: pct(p.shield, p.maxShield),
+            sharing: p.social.locationSharing,
+            entityId: p.entityId,
+            online: p.ws !== null,
+            at: now,
+          } satisfies PartyMemberStatus,
+        })),
+      );
+      const snaps = await this.parties.read([...new Set(partied.map((p) => p.partyId!))]);
+      for (const p of list) {
+        let view: PartyView | null = null;
+        if (p.partyId) {
+          const snap = snaps.get(p.partyId);
+          if (snap) view = this.partyView(p, snap, now);
+          else p.partyId = null;
+        }
+        const json = JSON.stringify(view);
+        if (json !== p.partySent) {
+          p.partySent = json;
+          send(p.ws, { t: 'party', p: view });
+        }
+      }
+    } catch (err) {
+      this.o.log.warn({ err }, 'grup durumu güncellenemedi');
+    }
+  }
+
+  private partyView(viewer: Player, snap: PartySnapshot, now: number): PartyView {
+    const members: PartyView['members'] = [];
+    for (const id of snap.members) {
+      const st = snap.status.get(id);
+      if (!st) continue;
+      const you = id === viewer.playerId;
+      const online = st.online && now - st.at < PARTY_STALE_MS;
+      const loc = you
+        ? partyLocation('group', { mapCode: st.map, mapName: st.mapName, x: st.x, y: st.y, entityId: st.entityId }, viewer.room.code)
+        : partyLocation(st.sharing, { mapCode: st.map, mapName: st.mapName, x: st.x, y: st.y, entityId: st.entityId }, viewer.room.code);
+      members.push({
+        name: st.name,
+        level: st.level,
+        company: st.company,
+        leader: snap.leader === id,
+        online,
+        hp: online ? st.hp : null,
+        sh: online ? st.sh : null,
+        map: loc.map,
+        x: loc.x,
+        y: loc.y,
+        entityId: online && !you ? loc.entityId : null,
+        you,
+      });
+    }
+    return { id: snap.id, members, max: this.socialLimits.party_max };
+  }
+
+  /** Test yardımcısı */
+  socialOf(playerId: string) {
+    const p = this.byPlayer.get(playerId);
+    return p ? { clanId: p.clanId, clanTag: p.clanTag, partyId: p.partyId, blocked: [...p.blocked], sharing: p.social.locationSharing } : null;
   }
 
   /** Test/izleme: bir haritadaki NPC'lerin özeti. */

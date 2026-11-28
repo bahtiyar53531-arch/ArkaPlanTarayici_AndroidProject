@@ -15,6 +15,8 @@ export interface GrantResult {
   currencies: Array<{ code: string; amount: number }>;
   items: Array<{ code: string; name: string; amount: number }>;
   honor: number;
+  /** Aşama 12: Kredi ödülünden klan hazinesine aktarılan vergi (currencies brüt tutarı gösterir) */
+  clanTax?: number;
 }
 
 export interface ItemResolver {

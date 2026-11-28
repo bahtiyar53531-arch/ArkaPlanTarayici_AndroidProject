@@ -125,8 +125,8 @@ export interface PilotProfile {
   achievements: { earned: number; total: number; items: AchievementProgress[] };
   motto: string | null;
   companyChange: { availableAt: string | null; cost: { currency: string; amount: number }; cooldownDays: number };
-  /** Klan sistemi Aşama 12'de gelir; o zamana kadar her zaman null. */
-  clan: null;
+  /** Aşama 12: pilotun klanı (yoksa null) */
+  clan: { tag: string; name: string; rank: string } | null;
   createdAt: string;
   lastOnlineAt: string | null;
 }
@@ -144,6 +144,8 @@ export interface PublicPilotProfile {
   stats: Pick<PilotStats, 'npcKills' | 'playerKills' | 'gatesCompleted'>;
   achievements: { earned: number; total: number; items: Array<Pick<AchievementProgress, 'code' | 'name' | 'completedAt'>> };
   activeShip: { name: string; spriteKey: string } | null;
+  /** Aşama 12 */
+  clan: { tag: string; name: string; rank: string } | null;
   createdAt: string;
 }
 
@@ -171,4 +173,9 @@ export const LEDGER_REASON_LABELS_TR: Record<string, string> = {
   cargo_loot: 'Kargo kutusu',
   crafting_input: 'Üretim ücreti',
   daily_login: 'Günlük giriş ödülü',
+  clan_create: 'Klan kuruluşu',
+  clan_deposit: 'Klan hazinesine yatırma',
+  clan_payout: 'Klan hazinesinden ödeme',
+  clan_tax: 'Klan vergisi',
+  clan_disband: 'Klan dağıtıldı (hazine iadesi)',
 };

@@ -6,6 +6,7 @@ import type { RolledReward } from '@turkorbit/shared';
 import { withTransaction, type Db } from '../db/pool.js';
 import { grantRewards, lockPlayer, type GrantResult } from '../modules/economy/rewards.js';
 import { removeItem } from '../modules/economy/inventory.js';
+import { applyClanTax, clanTaxes } from '../modules/social/treasury.js';
 import type { GameContent } from './content.js';
 
 export type { GrantResult } from '../modules/economy/rewards.js';
@@ -33,6 +34,13 @@ export class CombatStore {
       const out = new Map<string, GrantResult>();
       for (const g of [...grants].sort((a, b) => (a.playerId < b.playerId ? -1 : 1))) {
         out.set(g.playerId, await grantRewards(c, this.items, g.playerId, g.rewards, { key: `npc:${killId}:${g.playerId}`, reason: 'npc_reward', refType: 'npc_kill', refId: killId }));
+      }
+      // Aşama 12: klan vergisi (pilot cüzdanları zaten kilitli; klan cüzdanları klan sırasıyla kilitlenir)
+      for (const t of await clanTaxes(c, [...out.keys()])) {
+        const res = out.get(t.playerId)!;
+        const credits = res.currencies.filter((x) => x.code === 'KREDI').reduce((sum, x) => sum + x.amount, 0);
+        const tax = await applyClanTax(c, { ...t, credits, key: `npc:${killId}:${t.playerId}`, refType: 'npc_kill', refId: killId });
+        if (tax > 0) res.clanTax = tax;
       }
       await c.query(
         `INSERT INTO player_stats (player_id, npc_kills) VALUES ($1, 1)

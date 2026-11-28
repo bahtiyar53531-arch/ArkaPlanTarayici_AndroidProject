@@ -13,6 +13,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { AccountLayout, PublicLayout } from '../components/Layout';
 import { ShipArt } from '../components/ShipArt';
+import { ReportDialog } from '../components/social/ReportDialog';
 import { Alert, Card, ErrorAlert, formatDate } from '../components/ui';
 
 const nf = new Intl.NumberFormat('tr-TR');
@@ -506,11 +507,21 @@ export function PublicPilotPage() {
           </div>
           <div className="hero-sub"><span className="mono">Oyuncu ID #{pilot.playerId}</span> · {pilot.server.name} · {formatDate(pilot.createdAt)} tarihinden beri pilot</div>
           {pilot.motto && <div className="motto">“{pilot.motto}”</div>}
+          {pilot.clan && (
+            <div className="hero-sub" data-testid="pilot-clan">
+              Klan:{' '}
+              <Link to={`/klan/${pilot.server.code}/${encodeURIComponent(pilot.clan.tag)}`}>
+                <span className="clan-tag">[{pilot.clan.tag}]</span> {pilot.clan.name}
+              </Link>{' '}
+              · {pilot.clan.rank}
+            </div>
+          )}
           <div className="tiles inline">
             <Tile label="Seviye" value={String(pilot.level)} />
             <Tile label="Rütbe" value={pilot.rank.name} />
             <Tile label="Şeref" value={fmt(pilot.honor)} />
           </div>
+          {me && <PilotSocialActions server={pilot.server.code} name={pilot.pilotName} />}
         </div>
       </section>
       <section className="panel">
@@ -530,5 +541,65 @@ export function PublicPilotPage() {
         </ul>
       </section>
     </Layout>
+  );
+}
+
+/** Aşama 12: açık profilde arkadaşlık, engelleme ve şikâyet (kendi profilinde ve pilotu olmayan hesapta gösterilmez). */
+function PilotSocialActions({ server, name }: { server: string; name: string }) {
+  type Rel = { friend: 'none' | 'pending_out' | 'pending_in' | 'friends'; blocked: boolean; self: boolean };
+  const [rel, setRel] = useState<Rel | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [report, setReport] = useState(false);
+  const load = useCallback(() => {
+    api<Rel>('GET', `/social/relation?server=${encodeURIComponent(server)}&name=${encodeURIComponent(name)}`)
+      .then(setRel)
+      .catch(() => setRel(null));
+  }, [server, name]);
+  useEffect(load, [load]);
+  if (!rel || rel.self) return null;
+  const run = async (url: string, body: Record<string, unknown>, ok: string) => {
+    try {
+      await api('POST', url, { serverCode: server, pilotName: name, ...body });
+      setMsg({ kind: 'success', text: ok });
+      load();
+    } catch (e) {
+      setMsg({ kind: 'error', text: e instanceof ApiError ? e.message : 'İşlem yapılamadı.' });
+    }
+  };
+  return (
+    <>
+      <div className="pilot-social-actions" data-testid="pilot-social">
+        {!rel.blocked && rel.friend === 'none' && (
+          <button type="button" className="btn btn-small btn-secondary" onClick={() => void run('/social/friends/request', {}, 'Arkadaşlık isteği gönderildi.')} data-testid="add-friend">
+            Arkadaş ekle
+          </button>
+        )}
+        {rel.friend === 'pending_in' && (
+          <button type="button" className="btn btn-small btn-primary btn-auto" onClick={() => void run('/social/friends/respond', { accept: true }, 'Artık arkadaşsınız.')}>
+            İsteği kabul et
+          </button>
+        )}
+        {rel.friend === 'pending_out' && <span className="badge badge-muted">İstek gönderildi</span>}
+        {rel.friend === 'friends' && (
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => void run('/social/friends/remove', {}, 'Arkadaşlıktan çıkarıldı.')}>
+            Arkadaşlıktan çıkar
+          </button>
+        )}
+        {rel.blocked ? (
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => void run('/social/unblock', {}, 'Engel kaldırıldı.')}>
+            Engeli kaldır
+          </button>
+        ) : (
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => void run('/social/block', {}, 'Pilot engellendi.')}>
+            Engelle
+          </button>
+        )}
+        <button type="button" className="btn btn-small btn-ghost" onClick={() => setReport(true)}>
+          Şikâyet et
+        </button>
+      </div>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {report && <ReportDialog target={{ type: 'player', id: name, label: `Pilot: ${name}` }} onClose={() => setReport(false)} onDone={(t) => setMsg({ kind: 'success', text: t })} />}
+    </>
   );
 }

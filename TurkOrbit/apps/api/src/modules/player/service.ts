@@ -15,6 +15,7 @@ import {
 import { uniqueViolation, withTransaction, type Db, type Queryable } from '../../db/pool.js';
 import { AppError, Errors } from '../../lib/errors.js';
 import type { Logger } from '../auth/service.js';
+import { ClanService } from '../social/clan.js';
 import { getSetting } from '../auth/repository.js';
 import { applyCurrencyChange, getBalances, listLedger } from '../economy/wallet.js';
 import { ensureStarterKit } from '../hangar/starter-kit.js';
@@ -166,11 +167,12 @@ export class PlayerService {
       damageTaken: Number(r.damage_taken),
     };
     const playtimeSeconds = Number(r.playtime_seconds);
-    const [ranks, currencies, achievements, ccSetting] = await Promise.all([
+    const [ranks, currencies, achievements, ccSetting, clan] = await Promise.all([
       repo.listRanks(this.db),
       getBalances(this.db, r.id),
       this.syncAchievements(r.id, { level: levelForXp(experience), playtimeSeconds, ...stats }),
       getSetting<CompanyChangeSetting>(this.db, 'company.change'),
+      ClanService.profileClan(this.db, r.id),
     ]);
     const points = rankPoints({ experience, honor, ...stats });
     const rank = rankFor(points, ranks);
@@ -224,7 +226,7 @@ export class PlayerService {
         cost: cc.cost,
         cooldownDays: cc.cooldown_days,
       },
-      clan: null,
+      clan,
       createdAt: r.created_at.toISOString(),
       lastOnlineAt: r.last_online_at?.toISOString() ?? null,
     };
@@ -329,6 +331,7 @@ export class PlayerService {
           .map((a) => ({ code: a.code, name: a.name, completedAt: a.completedAt })),
       },
       activeShip: full.activeShip ? { name: full.activeShip.name, spriteKey: full.activeShip.spriteKey } : null,
+      clan: full.clan,
       createdAt: full.createdAt,
     };
   }

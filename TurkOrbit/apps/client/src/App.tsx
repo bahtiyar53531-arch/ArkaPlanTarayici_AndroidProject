@@ -13,6 +13,8 @@ import { NotFoundPage, PrivacyPage, TermsPage } from './pages/InfoPages';
 import { HangarPage, ShopPage } from './pages/HangarPages';
 import { PilotPage, PublicPilotPage } from './pages/PilotPages';
 import { QuestsPage } from './pages/QuestPages';
+import { ClanPage, PublicClanPage } from './pages/ClanPages';
+import { SocialPage } from './pages/SocialPages';
 import { MarketPage } from './pages/MarketPages';
 
 // Oyun ekranı (Phaser dahil) ayrı parça olarak yalnızca /oyna açılınca indirilir.
@@ -61,6 +63,9 @@ export function App() {
           <Route path="/magaza" element={<RequireAuth><ShopPage /></RequireAuth>} />
           <Route path="/gorevler" element={<RequireAuth><QuestsPage /></RequireAuth>} />
           <Route path="/pazar" element={<RequireAuth><MarketPage /></RequireAuth>} />
+          <Route path="/klan" element={<RequireAuth><ClanPage /></RequireAuth>} />
+          <Route path="/klan/:server/:tag" element={<PublicClanPage />} />
+          <Route path="/sosyal" element={<RequireAuth><SocialPage /></RequireAuth>} />
           <Route path="/oyna" element={<RequireAuth><Suspense fallback={<Splash />}><GamePage /></Suspense></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

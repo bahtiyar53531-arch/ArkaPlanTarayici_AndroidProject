@@ -100,6 +100,8 @@ export interface AttackContext {
   targetCompany?: string;
   attackerInSafeZone: boolean;
   targetInSafeZone: boolean;
+  /** Aşama 12: pilotlar arası ilişki (grup, klan, klanlar arası diplomasi) */
+  relation?: import('./social.js').PilotRelation | null;
 }
 
 export type AttackVerdict = { ok: true } | { ok: false; reason: string };
@@ -111,6 +113,21 @@ export function canAttack(c: AttackContext): AttackVerdict {
   if (c.targetInSafeZone) return { ok: false, reason: 'Hedef güvenli bölgede.' };
   if (c.targetKind === 'pilot') {
     if (!c.mapPvp) return { ok: false, reason: 'Bu haritada pilotlara saldırılamaz.' };
+    switch (c.relation) {
+      case 'party':
+        return { ok: false, reason: 'Grup arkadaşına saldıramazsın.' };
+      case 'clan':
+        return { ok: false, reason: 'Kendi klanından pilota saldıramazsın.' };
+      case 'alliance':
+        return { ok: false, reason: 'Müttefik klandan pilota saldıramazsın.' };
+      case 'non_aggression':
+        return { ok: false, reason: 'Saldırmazlık anlaşması olan klandan pilota saldıramazsın.' };
+      case 'war':
+        // Savaştaki klanlar aynı şirketten olsa da birbirine saldırabilir (PvP haritası ve güvenli bölge kuralları geçerli)
+        return { ok: true };
+      default:
+        break;
+    }
     if (c.targetCompany === c.attackerCompany) return { ok: false, reason: 'Kendi şirketinden pilota saldıramazsın.' };
   }
   return { ok: true };
@@ -241,4 +258,6 @@ export interface RewardMessage {
   levelUp: boolean;
   /** Birden çok pilot vurduysa bu pilotun hasar payı (0–1); tek başına öldürdüyse yok */
   share?: number;
+  /** Aşama 12: Kredi ödülünden klan hazinesine giden vergi */
+  clanTax?: number;
 }
