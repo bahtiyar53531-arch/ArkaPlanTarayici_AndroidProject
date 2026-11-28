@@ -1,0 +1,27 @@
+{
+  // Türk Orbit — GitHub Codespaces: oyun sunucusu tarayıcıdan (telefon dahil) açılır.
+  // Codespace açılınca: PostgreSQL + Redis + Mailpit kalkar, oyun derlenir ve 8080 portunda başlar;
+  // oyun linki terminalde gösterilir. Rehber: TurkOrbit/Documentation/Asama-15-Mobil/Codespaces-ile-Telefondan-Test.md
+  "name": "Türk Orbit (oyun sunucusu)",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [8080, 8025],
+  "portsAttributes": {
+    "8080": { "label": "Türk Orbit oyun", "onAutoForward": "notify" },
+    "8025": { "label": "E-posta kutusu (Mailpit)", "onAutoForward": "silent" }
+  },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+  "postCreateCommand": "bash TurkOrbit/scripts/codespace-kur.sh",
+  "postStartCommand": "bash TurkOrbit/scripts/codespace-baslat.sh",
+  "postAttachCommand": "bash TurkOrbit/scripts/codespace-durum.sh",
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["TurkOrbit/Documentation/Asama-15-Mobil/Codespaces-ile-Telefondan-Test.md"]
+    }
+  }
+}

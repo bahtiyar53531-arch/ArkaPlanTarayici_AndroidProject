@@ -1,0 +1,34 @@
+# Türk Orbit — Codespaces geliştirme ortamı. Tüm servisler PostgreSQL kapsayıcısının ağını paylaşır:
+# uygulama veritabanına localhost:5432, Redis'e localhost:6379, Mailpit'e localhost:1025/8025 ile ulaşır.
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    network_mode: service:postgres
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: turkorbit
+      POSTGRES_PASSWORD: turkorbit_dev
+      POSTGRES_DB: turkorbit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    network_mode: service:postgres
+
+  # Gönderilen e-postalar (kayıt doğrulama, şifre sıfırlama) burada görünür: 8025 portu
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    network_mode: service:postgres
+
+volumes:
+  pgdata:

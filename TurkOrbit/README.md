@@ -33,6 +33,8 @@ Ayrıntılı kurulum ve dosya yerleştirme: [Documentation/Asama-01-Kayit-Giris/
 | `npm run mobile:test-apk` | Android test APK'sı (sunucu adresi uygulamada sorulur; telefonda deneme: [cihaz test rehberi](Documentation/Asama-15-Mobil/Mobil-Derleme-ve-Cihaz-Testi.md)) |
 | `npm run mobile:release` | İmzalı Android APK + AAB (Google Play); `VITE_SERVER_URL=https://…` ve `TURKORBIT_*` imza değişkenleri |
 | `npm run mobile:ios` | iOS projesini eşitler (macOS'ta Xcode ile derlenir) |
+| `node scripts/tek-port-sunucu.mjs` | Derlenmiş oyunu nginx olmadan tek porttan (8080) sunar: web, `/yonetim/`, `/api`, `/game` |
+| GitHub Codespaces | PC olmadan telefondan test: [Codespaces ile Telefondan Test](Documentation/Asama-15-Mobil/Codespaces-ile-Telefondan-Test.md) |
 | `npm run package:phase -- Asama-15-Mobil` | Aşama ZIP teslimatı |
 
 ## Belgeler

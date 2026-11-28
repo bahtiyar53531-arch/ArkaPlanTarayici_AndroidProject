@@ -23,6 +23,8 @@ Bu rehber Türk Orbit'in Android ve iOS uygulamasını derlemeyi ve **gerçek te
 
 ## 2. Test APK'sı ile telefonda deneme (Android)
 
+> **Bilgisayarın yoksa:** Sunucuyu GitHub Codespaces'ta, yalnızca telefonla çalıştırabilirsin: [Codespaces ile Telefondan Test](Codespaces-ile-Telefondan-Test.md). Aşağıdaki adımlar sunucuyu kendi bilgisayarında çalıştırmak içindir.
+
 ### 2.1 Bilgisayarda sunucuyu aç
 1. Aşama 1–15 kurulumu yapılmış olsun (bkz. [Kurulum rehberi](Kurulum-ve-Dosya-Yerlestirme-Rehberi.md)).
 2. Bilgisayarın yerel IP adresini bul:

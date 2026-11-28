@@ -35,6 +35,7 @@ Bu paket (`Deliveries/TurkOrbit-Asama-15-Mobil.zip`) **Aşama 1–14'ü de içer
 | `packages/shared/src/{admin.ts, api-types.ts}` | `client` ayar tanımı, sürüm karşılaştırma, `CLIENT_OUTDATED`, `LINK_INVALID` |
 | `apps/admin/src/ui.tsx` | Sürüm ve https alanlarında ipucu |
 | `scripts/mobile.mjs`, `scripts/mobile-assets.mjs` | **Yeni:** test APK / sürüm / iOS derleme betiği; simge ve açılış görseli üretimi |
+| `scripts/tek-port-sunucu.mjs`, `scripts/codespace-{kur,baslat,durum}.sh`, depo kökünde `.devcontainer/` | **Yeni:** nginx'siz tek port sunucusu (web + `/yonetim/` + `/api` + `/game`); GitHub Codespaces'ta sunucuyu otomatik kurup başlatma ([telefondan test rehberi](Codespaces-ile-Telefondan-Test.md)). `.devcontainer/` depo kökünde olduğu için aşama ZIP'inde yoktur; GitHub deposunda bulunur |
 | `scripts/ui-e2e.mjs`, `apps/api/test/mobile.test.ts` | Mobil uçtan uca ve entegrasyon testleri |
 | `package.json`, `.gitignore`, `.env.example`, `scripts/package-phase.mjs` | `mobile:*` komutları, mobil derleme çıktıları ve imza anahtarlarının dışlanması |
 

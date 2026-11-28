@@ -136,6 +136,18 @@ Rehberler: [Mobil Derleme ve Cihaz Testi](../Asama-15-Mobil/Mobil-Derleme-ve-Cih
 | 7 | Tarayıcı taklidi Keystore şifrelemesini, gerçek WebView'ı ve dokunmatik donanımı denemez (K-108) | Gerçek cihaz testi |
 | 8 | Uygulama kimliği `com.turkorbit.oyun`; alan adı kesinleşince ilk mağaza yüklemesinden **önce** değiştirilebilir | Yayın öncesi karar |
 
+## 6b. Telefondan test (ek: bilgisayarı olmayan kullanıcı için)
+- **Sorun:** Kullanıcının PC'si yok. Geliştirme ortamı internetten bağlantı kabul etmiyor, ağ politikası tünel servislerine izin vermiyor. Bu yüzden buradan herkese açık oyun linki verilemedi.
+- **Çözüm:** Sunucu GitHub Codespaces'ta çalışır.
+  - Depo kökündeki `.devcontainer/` PostgreSQL, Redis ve Mailpit'i kaldırır.
+  - `scripts/codespace-baslat.sh` sunucuyu üretim modunda derleyip başlatır ve 8080'i herkese açık yapar.
+  - `scripts/tek-port-sunucu.mjs` web, panel, API ve oyun soketini tek porttan sunar.
+  - Çıkan `https://…-8080.app.github.dev` linki tarayıcıda ve test APK'sında kullanılır.
+- **Doğrulanan:** Başlatma betiği ve tek port sunucusu bu ortamda üretim moduyla denendi. Kayıt → SMTP'den doğrulama e-postası → doğrulama → giriş (`__Host-` güvenli HttpOnly çerez) → pilot → oyuna WebSocket bağlantısı, panel ve derin bağlantılar çalıştı. Klasör dışına çıkma denemesi dosya sızdırmadı.
+- **Denemede bulunan hata:** Betik ilk denemede bitmiyordu; arka plan süreçlerini başlatan alt kabuklar günlük borusunu açık tutuyordu. Düzeltildi.
+- **Doğrulanmayan:** Codespaces'ın kendisinde hiç çalıştırılmadı (erişimim yok). Portu otomatik herkese açma (`gh codespace ports visibility`) yetki nedeniyle başarısız olursa rehber elle yapma adımını gösteriyor.
+- **Rehber:** [Codespaces ile Telefondan Test](../Asama-15-Mobil/Codespaces-ile-Telefondan-Test.md)
+
 ## 7. Sonraki aşama
 **Aşama 16: Güvenlik ve performans:**
 - OWASP ASVS L2 kontrol listesi,

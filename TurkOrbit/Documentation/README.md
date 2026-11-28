@@ -24,7 +24,7 @@
 - [Asama-12-Klan-Sosyal/](Asama-12-Klan-Sosyal/): klan, rütbe, hazine, diplomasi, grup, sohbet kanalları, arkadaşlık, engelleme, bildirimler, şikâyet, protokol ve API, güncelleme rehberi
 - [Asama-13-Forum-Destek/](Asama-13-Forum-Destek/): forum (bölümler, konu, alıntı, beğeni, takip, arama, moderasyon), destek talepleri (numara, ek dosya, durum akışı, destek masası), API, güncelleme rehberi
 - [Asama-14-Yonetim-Merkezi/](Asama-14-Yonetim-Merkezi/): Yönetim Merkezi modülleri, yetki koruması, yaptırımlar, içerik sürümleme (yayın/geri alma), iki yetkili onayı, bakım modu, API, kurulum rehberi
-- [Asama-15-Mobil/](Asama-15-Mobil/): Android/iOS derleme (test APK, imzalı APK/AAB, Xcode), gerçek cihaz test listesi, Google Play/App Store hazırlığı, kurulum rehberi
+- [Asama-15-Mobil/](Asama-15-Mobil/): Android/iOS derleme (test APK, imzalı APK/AAB, Xcode), gerçek cihaz test listesi, PC olmadan telefondan test (GitHub Codespaces), Google Play/App Store hazırlığı, kurulum rehberi
 
 ## Geliştirme notları
 - [DevelopmentNotes/Asama-01-Raporu.md](DevelopmentNotes/Asama-01-Raporu.md): Aşama 1–4 raporu ve değişiklik raporu
