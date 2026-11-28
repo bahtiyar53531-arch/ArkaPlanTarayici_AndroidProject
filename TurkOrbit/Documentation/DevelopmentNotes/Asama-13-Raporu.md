@@ -58,9 +58,9 @@ Kurallar ve API: [Forum ve Destek Kuralları ve API](../Asama-13-Forum-Destek/Fo
 | `npm run typecheck` | ✅ Hatasız |
 | Paylaşılan birim testleri | ✅ 90/90 (5 yeni) |
 | API entegrasyon testleri (**gerçek PostgreSQL + Redis**, gerçek dosya deposu) | ✅ 197/197 (10 yeni: 9 forum/destek + 1 oyun sunucusu regresyon testi) |
-| API uçtan uca (gerçek API + oyun sunucusu süreçleri, gerçek SMTP) | ✅ 52/52 adım (4 yeni). Ayrıntı için aşağıdaki nota bak |
-| Tarayıcı uçtan uca (Chromium: 2 masaüstü + iPhone 13) | ✅ UI_SONUC adım (7 yeni) |
-| `npm run build`, `npm audit` | BUILD_SONUC |
+| API uçtan uca (gerçek API + oyun sunucusu süreçleri, gerçek SMTP) | ✅ 52/52 adım (4 yeni). Oyun sunucusu düzeltmesinden sonra da yeniden koşuldu. Ayrıntı için aşağıdaki nota bak |
+| Tarayıcı uçtan uca (Chromium: 2 masaüstü + iPhone 13) | ✅ 74/74 adım (7 yeni). Başsız yazılımsal çizimde FPS: masaüstü 18, telefon emülasyonu 36. Bu bir ölçüm ortamı değeridir, gerçek cihaz FPS'i değildir. Koşu geçmişi için aşağıdaki nota bak |
+| `npm run build`, `npm audit` | ✅ Hatasız · 0 açık |
 | Şema doğrulama | ✅ 0001 → 0009 + taslak boş veritabanına hatasız (100 tablo) |
 
 > **Açık not — API uçtan uca testinde rastgele bir hata:**
@@ -68,6 +68,16 @@ Kurallar ve API: [Forum ve Destek Kuralları ve API](../Asama-13-Forum-Destek/Fo
 > - **Sebep:** Pilot başına rastgele seçilen günlük görevlerden biri, testin kendi akışı sırasında (iki haritayı ziyaret) **tamamlanabiliyordu**. Adım yalnızca "aktif" görevleri saydığı için bazen eksik görüyordu.
 > - Bu bir oyun hatası değil, testin yanlış varsayımıydı. Adım artık "aktif veya tamamlanmış" görevleri sayıyor.
 > - Düzeltmeden sonra koşu yeniden yapıldı: 52/52.
+
+> **Açık not — tarayıcı testi koşuları:**
+> 1. **İlk koşu (74/74):** Düzen düzeltmelerinden önceydi.
+> 2. **İkinci koşu:** Oyun sunucusu süreci çöktü (§5.1); sonraki oyun adımları bağlanamadı. Hata düzeltildi, koşu durduruldu.
+> 3. **Üçüncü koşu (73/74):** Konteyner yeni başlamıştı, önbellekler soğuktu. Aşama 8'in "B hareket eder → A'nın ekranında anlık güncellenir" adımı düştü: B, 2 saniyede beklenen ≥300 birim yerine 128 birim gitti.
+>    - Oyun sunucusu bu koşunun tamamında çökmedi.
+>    - Hareket koduna dokunulmadı. Adım, yük altında istemcinin az girdi göndermesine karşı hassas.
+> 4. **Dördüncü koşu (74/74):** Aynı kodla, önbellekler ısınmışken; bu adım da geçti.
+>
+> Hareket adımı yük altında kırılgan; Aşama 16'daki performans çalışmasında gözden geçirilecek (bilinen sınırlamalar #10).
 
 **Doğrulananlar (entegrasyon testleri, gerçek içerikle):**
 - **Forum okuma ve yazma:**
@@ -165,6 +175,7 @@ Kurallar ve API: [Forum ve Destek Kuralları ve API](../Asama-13-Forum-Destek/Fo
 | 7 | Forumda zengin metin (kalın, bağlantı, resim) yok; düz metin ve alıntı var | İhtiyaca göre (güvenli Markdown alt kümesi) |
 | 8 | Destek talebine yanıt bekleme süresi (SLA) uyarısı ve hazır yanıt şablonları yok | Aşama 14 |
 | 9 | Gerçek telefonda deneme yok; yalnızca emülasyon | Aşama 15 |
+| 10 | Tarayıcı testindeki "B hareket eder" adımı, makine yük altındayken (ör. soğuk başlangıç) kırılgan; bir koşuda düştü, tekrarında geçti | Adımın süreye değil sunucu onaylı konuma göre beklemesi, Aşama 16 |
 
 ## 7. Sonraki aşama
 **Aşama 14: Yönetim Merkezi.**
